@@ -10,13 +10,11 @@ namespace K13A.TSMP
         private const string FieldBlockSize = TSMPEncoder.BlockSizeFieldName;
         private const string FieldSampleSize = TSMPEncoder.SampleSizeFieldName;
         private const string FieldSelectedCodec = TSMPEncoder.SelectedCodecFieldName;
-        private const string FieldSelectedCodecUdonTarget = TSMPEncoder.SelectedCodecUdonTargetFieldName;
         private const string FieldPayloadSymbolMode = TSMPEncoder.PayloadSymbolModeFieldName;
         private const string FieldCodecId = TSMPEncoder.CodecIdFieldName;
         private const string FieldOutput = TSMPEncoder.OutputFieldName;
         private const string FieldBlockExpandMaterial = TSMPEncoder.BlockExpandMaterialFieldName;
         private const string FieldBindingTargets = TSMPEncoder.BindingTargetsFieldName;
-        private const string FieldBindingUdonTargets = TSMPEncoder.BindingUdonTargetsFieldName;
         private const string FieldBindingNetworkIds = TSMPEncoder.BindingNetworkIdsFieldName;
         private const string FieldBindingVariableHashes = TSMPEncoder.BindingVariableHashesFieldName;
         private const string FieldBindingValueTypes = TSMPEncoder.BindingValueTypesFieldName;
@@ -45,7 +43,6 @@ namespace K13A.TSMP
             if (selectedCodec != null)
             {
                 SetField(encoder, FieldSelectedCodec, selectedCodec);
-                SetField(encoder, FieldSelectedCodecUdonTarget, GetBackingUdonBindingTarget(selectedCodec));
                 SetField(encoder, FieldPayloadSymbolMode, (int)selectedCodec.SymbolMode);
                 SetField(encoder, FieldCodecId, selectedCodec.codecId);
             }
@@ -152,7 +149,6 @@ namespace K13A.TSMP
 #if UNITY_EDITOR
             TransSyncBindingSnapshot snapshot = TransSyncBindingSnapshotBuilder.Build(false);
             SetField(encoder, FieldBindingTargets, snapshot.Targets);
-            SetField(encoder, FieldBindingUdonTargets, snapshot.UdonTargets);
             SetField(encoder, FieldBindingNetworkIds, snapshot.NetworkIds);
             SetField(encoder, FieldBindingVariableHashes, snapshot.VariableHashes);
             SetField(encoder, FieldBindingValueTypes, snapshot.ValueTypes);
@@ -166,7 +162,6 @@ namespace K13A.TSMP
 #if UNITY_EDITOR
             TransSyncBindingSnapshot snapshot = TransSyncBindingSnapshotBuilder.Build(true);
             SetField(decoder, FieldBindingTargets, snapshot.Targets);
-            SetField(decoder, FieldBindingUdonTargets, snapshot.UdonTargets);
             SetField(decoder, FieldBindingNetworkIds, snapshot.NetworkIds);
             SetField(decoder, FieldBindingVariableHashes, snapshot.VariableHashes);
             SetField(decoder, FieldBindingValueTypes, snapshot.ValueTypes);
@@ -174,11 +169,6 @@ namespace K13A.TSMP
             SetField(decoder, FieldBindingDirections, snapshot.Directions);
             SetField(decoder, FieldBindingPriorities, snapshot.Priorities);
 #endif
-        }
-
-        private static VRC.Udon.UdonBehaviour GetBackingUdonBindingTarget(Component component)
-        {
-            return ComponentReflection.GetBackingUdonBehaviour(component);
         }
 
         private static void MarkCodecMaterialsDirty(TSMPCodec codec)

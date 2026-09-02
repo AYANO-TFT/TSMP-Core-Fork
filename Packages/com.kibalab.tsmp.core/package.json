@@ -3,15 +3,12 @@
   "displayName": "TSMP Core",
   "version": "0.1.0",
   "unity": "2022.3",
-  "description": "Core TSMP runtime, encoder, decoder, setup tooling, shared Udon behaviours, codec base types, and streaming utilities.",
+  "description": "Core TSMP runtime, encoder, decoder, setup tooling, network behaviours, codec base types, and streaming utilities for standalone Unity projects.",
   "author": {
     "name": "KIBA_Labs"
   },
   "license": "MIT",
   "dependencies": {
-    "com.vrchat.worlds": ">=3.9.0"
-  },
-  "vpmDependencies": {
-    "com.vrchat.worlds": ">=3.9.0"
+    "com.unity.ugui": "1.0.0"
   }
 }

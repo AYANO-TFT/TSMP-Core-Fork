@@ -2,13 +2,13 @@
 
 Core runtime package for TSMP, the Trans Sync Media Protocol.
 
-Install this package with a codec package such as `TSMP Codec Luma4`, add `Samples/TSMPController.prefab` to the scene, then use `TSMPSetup` to refresh codecs and apply the setup.
+Install this package with a codec package such as `TSMP Codec Luma4`, add a TSMP encoder or decoder to the scene, then use `TSMPSetup` to refresh codecs and apply the setup.
 
 ## Requirements
 
 - Unity 2022.3
-- VRChat Worlds SDK 3.9.0 or newer when used in VRChat worlds
-- UdonSharp from the VRChat Worlds package when compiling Udon behaviours
+
+This Unity-only fork removes package-level dependencies on VRChat Worlds SDK and UdonSharp.
 
 ## Documentation
 

@@ -1,5 +1,8 @@
 using UnityEngine;
+
+#if UDONSHARP
 using VRC.Udon;
+#endif
 
 #if !UDONSHARP
 using System.Collections.Generic;
@@ -24,7 +27,9 @@ namespace K13A.TSMP
         public const string OutputFieldName = nameof(output);
         public const string BlockExpandMaterialFieldName = nameof(blockExpandMaterial);
         public const string SelectedCodecFieldName = nameof(selectedCodec);
+#if UDONSHARP
         public const string SelectedCodecUdonTargetFieldName = nameof(selectedCodecUdonTarget);
+#endif
         public const string PayloadSymbolModeFieldName = nameof(payloadSymbolMode);
         public const string CodecIdFieldName = nameof(codecId);
         public const string PayloadBytesMemberName = "PayloadBytes";
@@ -32,7 +37,9 @@ namespace K13A.TSMP
         public const string MaxPayloadBytesFieldName = nameof(maxPayloadBytes);
         public const string EncodeNowMethodName = nameof(EncodeNow);
         public const string BindingTargetsFieldName = nameof(bindingTargets);
+#if UDONSHARP
         public const string BindingUdonTargetsFieldName = nameof(bindingUdonTargets);
+#endif
         public const string BindingNetworkIdsFieldName = nameof(bindingNetworkIds);
         public const string BindingVariableHashesFieldName = nameof(bindingVariableHashes);
         public const string BindingValueTypesFieldName = nameof(bindingValueTypes);
@@ -63,7 +70,9 @@ namespace K13A.TSMP
         public bool useBlockSymbolTexture = true;
         public int transRpcRepeatFrames = 4;
         public TSMPCodec selectedCodec;
+#if UDONSHARP
         [HideInInspector] public UdonBehaviour selectedCodecUdonTarget;
+#endif
         [HideInInspector] public int payloadSymbolMode;
         public int codecId;
         public int maxPayloadBytes = 4096;
@@ -72,7 +81,9 @@ namespace K13A.TSMP
 
         public bool autoBuildVariablesFromBindings = true;
         [HideInInspector] public Component[] bindingTargets;
+#if UDONSHARP
         [HideInInspector] public UdonBehaviour[] bindingUdonTargets;
+#endif
         [HideInInspector] public ushort[] bindingNetworkIds;
         [HideInInspector] public uint[] bindingVariableHashes;
         [HideInInspector] public byte[] bindingValueTypes;

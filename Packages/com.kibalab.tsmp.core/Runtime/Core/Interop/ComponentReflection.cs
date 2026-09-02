@@ -1,6 +1,9 @@
 using System.Reflection;
 using UnityEngine;
+
+#if UDONSHARP
 using VRC.Udon;
+#endif
 
 namespace K13A.TSMP
 {
@@ -9,7 +12,9 @@ namespace K13A.TSMP
         private const BindingFlags PublicInstanceFlags = BindingFlags.Instance | BindingFlags.Public;
         private const BindingFlags AllInstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         private const string DefaultLogPrefix = "[TSMP]";
+#if UDONSHARP
         private const string UdonSharpBackingFieldName = "_udonSharpBackingUdonBehaviour";
+#endif
 
         public static void SetField(Component target, string fieldName, object value, string logPrefix)
         {
@@ -116,6 +121,7 @@ namespace K13A.TSMP
                 method.Invoke(target, null);
         }
 
+#if UDONSHARP
         public static UdonBehaviour GetBackingUdonBehaviour(Component component)
         {
             if (component == null)
@@ -137,6 +143,7 @@ namespace K13A.TSMP
 
             return component as UdonBehaviour;
         }
+#endif
 
         private static string GetLogPrefix(string logPrefix)
         {
@@ -157,14 +164,14 @@ namespace K13A.TSMP
 
     public static class UdonProxySyncBridge
     {
-#if UNITY_EDITOR && !COMPILER_UDONSHARP
+#if UNITY_EDITOR && !COMPILER_UDONSHARP && UDONSHARP
         public static System.Action<Component> SyncAction;
         public static System.Func<UdonBehaviour, Component> ResolveProxyAction;
 #endif
 
         public static void Sync(Component component)
         {
-#if UNITY_EDITOR && !COMPILER_UDONSHARP
+#if UNITY_EDITOR && !COMPILER_UDONSHARP && UDONSHARP
             if (component == null || SyncAction == null)
                 return;
 
@@ -172,6 +179,7 @@ namespace K13A.TSMP
 #endif
         }
 
+#if UDONSHARP
         public static Component ResolveProxy(UdonBehaviour behaviour)
         {
 #if UNITY_EDITOR && !COMPILER_UDONSHARP
@@ -183,5 +191,6 @@ namespace K13A.TSMP
             return null;
 #endif
         }
+#endif
     }
 }

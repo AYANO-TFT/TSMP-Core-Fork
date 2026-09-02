@@ -1,3 +1,4 @@
+#if TSMP_VRCHAT
 using K13A.TSMP.Udon;
 using UdonSharpEditor;
 using UnityEditor;
@@ -113,3 +114,4 @@ namespace K13A.TSMP.Editor
         }
     }
 }
+#endif

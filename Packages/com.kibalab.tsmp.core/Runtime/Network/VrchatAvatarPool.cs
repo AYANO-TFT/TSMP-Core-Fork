@@ -1,3 +1,4 @@
+#if TSMP_VRCHAT
 using UnityEngine;
 using VRC.SDKBase;
 
@@ -287,3 +288,4 @@ namespace K13A.TSMP.Udon
         }
     }
 }
+#endif

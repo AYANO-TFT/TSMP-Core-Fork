@@ -1,5 +1,7 @@
 using UnityEngine;
+#if UDONSHARP
 using VRC.Udon;
+#endif
 
 namespace K13A.TSMP
 {
@@ -49,6 +51,7 @@ namespace K13A.TSMP
             values[QueryOptionByte4] = optionByteCount > 4 ? codec.GetEncoderCodecOptionByte(4) : 0;
         }
 
+#if UDONSHARP
         public static void QueryBridge(UdonBehaviour codec, int width, int height, int blockSize, int fallbackCodecId, int fallbackCapacityBytes, int[] values)
         {
             CodecBridge.QueryEncoder(codec, width, height, blockSize);
@@ -85,5 +88,6 @@ namespace K13A.TSMP
 
             return CodecBridge.WritePreparedEncoderPayload(codec, pixels, pixelsAreBlocks, payloadBytes, payloadByteCount);
         }
+#endif
     }
 }

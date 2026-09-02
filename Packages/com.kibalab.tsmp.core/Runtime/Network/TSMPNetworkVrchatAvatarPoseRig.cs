@@ -1,3 +1,4 @@
+#if TSMP_VRCHAT
 using UnityEngine;
 
 namespace K13A.TSMP.Udon
@@ -843,3 +844,4 @@ namespace K13A.TSMP.Udon
     }
 
 }
+#endif

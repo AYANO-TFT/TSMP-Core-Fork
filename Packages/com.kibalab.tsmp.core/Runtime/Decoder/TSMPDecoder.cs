@@ -1,5 +1,8 @@
 using UnityEngine;
+
+#if UDONSHARP
 using VRC.Udon;
+#endif
 
 #if UDONSHARP || COMPILER_UDONSHARP
 using VRC.SDKBase;
@@ -22,7 +25,9 @@ namespace K13A.TSMP.Udon
         public const string PayloadByteTextureFieldName = nameof(payloadByteTexture);
         public const string CodecHandlersFieldName = nameof(codecHandlers);
         public const string BindingTargetsFieldName = nameof(bindingTargets);
+#if UDONSHARP
         public const string BindingUdonTargetsFieldName = nameof(bindingUdonTargets);
+#endif
         public const string BindingNetworkIdsFieldName = nameof(bindingNetworkIds);
         public const string BindingVariableHashesFieldName = nameof(bindingVariableHashes);
         public const string BindingValueTypesFieldName = nameof(bindingValueTypes);
@@ -42,7 +47,9 @@ namespace K13A.TSMP.Udon
 
         [HideInInspector] public Component[] bindingTargets;
 
+#if UDONSHARP
         [HideInInspector] public UdonBehaviour[] bindingUdonTargets;
+#endif
         [HideInInspector] public ushort[] bindingNetworkIds;
         [HideInInspector] public uint[] bindingVariableHashes;
         [HideInInspector] public byte[] bindingValueTypes;
@@ -133,7 +140,9 @@ namespace K13A.TSMP.Udon
         private bool _hasAppliedFrame;
         private uint _lastAppliedStreamId;
         private uint _lastAppliedFrameIndex;
+#if UDONSHARP
         private UdonBehaviour[] _cachedBindingUdonTargets;
+#endif
         private Component[] _cachedBindingComponentTargets;
         private ushort[] _bindingLookupNetworkIds;
         private uint[] _bindingLookupVariableHashes;
@@ -812,7 +821,7 @@ namespace K13A.TSMP.Udon
 #if UDONSHARP
             return BindingTable.GetWritableBindingCount(bindingTargets, bindingUdonTargets, true, bindingNetworkIds, bindingVariableHashes, bindingValueTypes, bindingFieldNames);
 #else
-            return BindingTable.GetWritableBindingCount(bindingTargets, bindingUdonTargets, false, bindingNetworkIds, bindingVariableHashes, bindingValueTypes, bindingFieldNames);
+            return BindingTable.GetWritableBindingCount(bindingTargets, bindingNetworkIds, bindingVariableHashes, bindingValueTypes, bindingFieldNames);
 #endif
         }
 
@@ -821,7 +830,7 @@ namespace K13A.TSMP.Udon
 #if UDONSHARP
             return BindingTable.GetTargetCount(bindingTargets, bindingUdonTargets, true);
 #else
-            return BindingTable.GetTargetCount(bindingTargets, bindingUdonTargets, false);
+            return BindingTable.GetTargetCount(bindingTargets);
 #endif
         }
 

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Reflection;
 using K13A.TSMP.Udon;
 using UnityEngine;
-using VRC.Udon;
 
 namespace K13A.TSMP
 {
@@ -152,7 +151,6 @@ namespace K13A.TSMP
     public sealed class TransSyncBindingSnapshot
     {
         public Component[] Targets;
-        public UdonBehaviour[] UdonTargets;
         public ushort[] NetworkIds;
         public uint[] VariableHashes;
         public byte[] ValueTypes;
@@ -166,11 +164,9 @@ namespace K13A.TSMP
         public static TransSyncBindingSnapshot Build(bool receive)
         {
             TSMPNetworkBehaviour[] behaviours = UnityEngine.Object.FindObjectsOfType<TSMPNetworkBehaviour>(true);
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = UnityEngine.Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
             System.Array.Sort(behaviours, CompareNetworkBehaviours);
 
             List<Component> targets = new List<Component>();
-            List<UdonBehaviour> udonTargets = new List<UdonBehaviour>();
             List<ushort> networkIds = new List<ushort>();
             List<uint> variableHashes = new List<uint>();
             List<byte> valueTypes = new List<byte>();
@@ -179,11 +175,10 @@ namespace K13A.TSMP
             List<int> priorities = new List<int>();
 
             for (int i = 0; i < behaviours.Length; i++)
-                AddBehaviour(behaviours[i], avatarPoseSyncs, receive, targets, udonTargets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
+                AddBehaviour(behaviours[i], receive, targets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
 
             TransSyncBindingSnapshot snapshot = new TransSyncBindingSnapshot();
             snapshot.Targets = targets.ToArray();
-            snapshot.UdonTargets = udonTargets.ToArray();
             snapshot.NetworkIds = networkIds.ToArray();
             snapshot.VariableHashes = variableHashes.ToArray();
             snapshot.ValueTypes = valueTypes.ToArray();
@@ -195,10 +190,8 @@ namespace K13A.TSMP
 
         private static void AddBehaviour(
             TSMPNetworkBehaviour behaviour,
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs,
             bool receive,
             List<Component> targets,
-            List<UdonBehaviour> udonTargets,
             List<ushort> networkIds,
             List<uint> variableHashes,
             List<byte> valueTypes,
@@ -207,8 +200,6 @@ namespace K13A.TSMP
             List<int> priorities)
         {
             if (behaviour == null)
-                return;
-            if (IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
                 return;
 
             ushort networkId = BindingTable.ResolveNetworkId(behaviour);
@@ -231,7 +222,6 @@ namespace K13A.TSMP
                     continue;
 
                 targets.Add(behaviour);
-                udonTargets.Add(ComponentReflection.GetBackingUdonBehaviour(behaviour));
                 networkIds.Add(networkId);
                 variableHashes.Add(field.VariableHash);
                 valueTypes.Add((byte)field.ValueType);
@@ -241,14 +231,13 @@ namespace K13A.TSMP
             }
 
             if (receive && targets.Count == targetStartCount)
-                AddRpcOnlyTarget(behaviour, networkId, targets, udonTargets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
+                AddRpcOnlyTarget(behaviour, networkId, targets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
         }
 
         private static void AddRpcOnlyTarget(
             TSMPNetworkBehaviour behaviour,
             ushort networkId,
             List<Component> targets,
-            List<UdonBehaviour> udonTargets,
             List<ushort> networkIds,
             List<uint> variableHashes,
             List<byte> valueTypes,
@@ -257,7 +246,6 @@ namespace K13A.TSMP
             List<int> priorities)
         {
             targets.Add(behaviour);
-            udonTargets.Add(ComponentReflection.GetBackingUdonBehaviour(behaviour));
             networkIds.Add(networkId);
             variableHashes.Add(0u);
             valueTypes.Add((byte)NetworkFrameProtocol.ValueTypeUnsupported);
@@ -280,40 +268,6 @@ namespace K13A.TSMP
                 return pathCompare;
 
             return left.GetInstanceID().CompareTo(right.GetInstanceID());
-        }
-
-        private static bool IsAvatarPosePoolBehaviour(TSMPNetworkBehaviour behaviour, TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs)
-        {
-            if (behaviour == null || avatarPoseSyncs == null)
-                return false;
-            if (behaviour is TSMPNetworkVrchatAvatarPoseSync)
-                return false;
-
-            Transform behaviourTransform = behaviour.transform;
-            if (behaviourTransform == null)
-                return false;
-
-            for (int i = 0; i < avatarPoseSyncs.Length; i++)
-            {
-                TSMPNetworkVrchatAvatarPoseSync sync = avatarPoseSyncs[i];
-                if (sync == null)
-                    continue;
-
-                if (sync.avatarPoolRoot != null && behaviourTransform.IsChildOf(sync.avatarPoolRoot))
-                    return true;
-
-                if (sync.avatarPool == null)
-                    continue;
-
-                for (int p = 0; p < sync.avatarPool.Length; p++)
-                {
-                    GameObject avatar = sync.avatarPool[p];
-                    if (avatar != null && avatar.transform != null && behaviourTransform.IsChildOf(avatar.transform))
-                        return true;
-                }
-            }
-
-            return false;
         }
 
         private static string GetHierarchyPath(Transform transform)

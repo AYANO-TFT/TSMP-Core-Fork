@@ -4,9 +4,6 @@ using K13A.TSMP.Udon;
 using UnityEditor;
 using UnityEditor.Callbacks;
 using UnityEngine;
-using UdonSharp;
-using UdonSharpEditor;
-using VRC.Udon;
 
 namespace K13A.TSMP.Editor
 {
@@ -18,7 +15,6 @@ namespace K13A.TSMP.Editor
         private static readonly HashSet<string> LoggedTransSyncCollisions = new HashSet<string>();
         private const string FieldNetworkBehaviours = "networkBehaviours";
         private const string FieldBindingTargets = "bindingTargets";
-        private const string FieldBindingUdonTargets = "bindingUdonTargets";
         private const string FieldBindingNetworkIds = "bindingNetworkIds";
         private const string FieldBindingVariableHashes = "bindingVariableHashes";
         private const string FieldBindingValueTypes = "bindingValueTypes";
@@ -28,8 +24,6 @@ namespace K13A.TSMP.Editor
 
         static TransSyncBindingBuilder()
         {
-            UdonProxySyncBridge.SyncAction = SyncUdonProxy;
-            UdonProxySyncBridge.ResolveProxyAction = ResolveUdonProxy;
             EditorApplication.hierarchyChanged -= QueueAutomaticRebuild;
             EditorApplication.hierarchyChanged += QueueAutomaticRebuild;
             Undo.postprocessModifications -= OnPostprocessModifications;
@@ -88,7 +82,6 @@ namespace K13A.TSMP.Editor
             SortBehaviours(behaviours);
             int assignedNetworkIds = AssignNetworkIds(behaviours);
             int assignedTransRpcEncoders = AssignTransRpcEncoders(encoders, behaviours);
-            SyncBackingUdon(behaviours);
             RefreshTransSyncCollisionDiagnostics(behaviours, logResult);
 
             int assignedEncoders = 0;
@@ -101,14 +94,12 @@ namespace K13A.TSMP.Editor
                 if (assigned)
                     assignedEncoders++;
                 totalEncoderBindings += bindingCount;
-                SyncBackingUdon(encoders[i]);
             }
 
             int totalBindings = 0;
             for (int i = 0; i < decoders.Length; i++)
             {
                 totalBindings += RebuildDecoder(decoders[i], behaviours);
-                SyncBackingUdon(decoders[i]);
             }
 
             if (logResult)
@@ -120,7 +111,6 @@ namespace K13A.TSMP.Editor
             TSMPNetworkBehaviour[] behaviours = UnityEngine.Object.FindObjectsOfType<TSMPNetworkBehaviour>(true);
             SortBehaviours(behaviours);
             int assignedNetworkIds = AssignNetworkIds(behaviours);
-            SyncBackingUdon(behaviours);
             RefreshTransSyncCollisionDiagnostics(behaviours, logResult);
 
             if (logResult)
@@ -379,12 +369,11 @@ namespace K13A.TSMP.Editor
             if (behaviours == null)
                 return;
 
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
-            ScanTransSyncCollisions(behaviours, avatarPoseSyncs, true, logCollisions);
-            ScanTransSyncCollisions(behaviours, avatarPoseSyncs, false, logCollisions);
+            ScanTransSyncCollisions(behaviours, true, logCollisions);
+            ScanTransSyncCollisions(behaviours, false, logCollisions);
         }
 
-        private static void ScanTransSyncCollisions(TSMPNetworkBehaviour[] behaviours, TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs, bool sendTable, bool logCollisions)
+        private static void ScanTransSyncCollisions(TSMPNetworkBehaviour[] behaviours, bool sendTable, bool logCollisions)
         {
             var owners = new Dictionary<BindingKey, BindingOwner>();
             string tableName = sendTable ? "send" : "receive";
@@ -393,8 +382,6 @@ namespace K13A.TSMP.Editor
             {
                 TSMPNetworkBehaviour behaviour = behaviours[i];
                 if (behaviour == null)
-                    continue;
-                if (IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
                     continue;
 
                 ushort networkId = ResolveNetworkId(behaviour);
@@ -436,12 +423,11 @@ namespace K13A.TSMP.Editor
             if (!HasPublicField(encoder, FieldNetworkBehaviours))
                 return false;
 
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
             var senders = new List<Component>();
             for (int i = 0; i < behaviours.Length; i++)
             {
                 TSMPNetworkBehaviour behaviour = behaviours[i];
-                if (behaviour != null && !IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
+                if (behaviour != null)
                     senders.Add(behaviour);
             }
 
@@ -472,13 +458,10 @@ namespace K13A.TSMP.Editor
                 return 0;
 
             int assigned = 0;
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
             for (int i = 0; i < behaviours.Length; i++)
             {
                 TSMPNetworkBehaviour behaviour = behaviours[i];
                 if (behaviour == null)
-                    continue;
-                if (IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
                     continue;
                 if (behaviour.transRpcEncoder == encoder)
                     continue;
@@ -499,22 +482,17 @@ namespace K13A.TSMP.Editor
                 return false;
 
             var targets = new List<Component>();
-            var udonTargets = new List<UdonBehaviour>();
             var networkIds = new List<ushort>();
             var variableHashes = new List<uint>();
             var valueTypes = new List<byte>();
             var fieldNames = new List<string>();
             var directions = new List<int>();
             var collisions = new Dictionary<BindingKey, BindingOwner>();
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
 
             for (int i = 0; i < behaviours.Length; i++)
             {
                 TSMPNetworkBehaviour behaviour = behaviours[i];
                 if (behaviour == null)
-                    continue;
-
-                if (IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
                     continue;
 
                 ushort networkId = ResolveNetworkId(behaviour);
@@ -546,7 +524,6 @@ namespace K13A.TSMP.Editor
                     collisions.Add(key, current);
 
                     targets.Add(behaviour);
-                    udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
                     networkIds.Add(networkId);
                     variableHashes.Add(variableHash);
                     valueTypes.Add((byte)valueType);
@@ -557,7 +534,6 @@ namespace K13A.TSMP.Editor
 
             Undo.RecordObject(encoder, "Assign TSMP encoder bindings");
             SetComponentArrayFieldValue(encoder, FieldBindingTargets, targets);
-            SetFieldValue(encoder, FieldBindingUdonTargets, udonTargets.ToArray());
             SetFieldValue(encoder, FieldBindingNetworkIds, networkIds.ToArray());
             SetFieldValue(encoder, FieldBindingVariableHashes, variableHashes.ToArray());
             SetFieldValue(encoder, FieldBindingValueTypes, valueTypes.ToArray());
@@ -574,7 +550,6 @@ namespace K13A.TSMP.Editor
                 return 0;
 
             var targets = new List<Component>();
-            var udonTargets = new List<UdonBehaviour>();
             var networkIds = new List<ushort>();
             var variableHashes = new List<uint>();
             var valueTypes = new List<byte>();
@@ -582,15 +557,11 @@ namespace K13A.TSMP.Editor
             var directions = new List<int>();
             var priorities = new List<int>();
             var collisions = new Dictionary<BindingKey, BindingOwner>();
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
 
             for (int i = 0; i < behaviours.Length; i++)
             {
                 TSMPNetworkBehaviour behaviour = behaviours[i];
                 if (behaviour == null)
-                    continue;
-
-                if (IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
                     continue;
 
                 ushort networkId = ResolveNetworkId(behaviour);
@@ -623,7 +594,6 @@ namespace K13A.TSMP.Editor
                     collisions.Add(key, current);
 
                     targets.Add(behaviour);
-                    udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
                     networkIds.Add(networkId);
                     variableHashes.Add(variableHash);
                     valueTypes.Add((byte)valueType);
@@ -633,12 +603,11 @@ namespace K13A.TSMP.Editor
                 }
 
                 if (targets.Count == targetStartCount)
-                    AddRpcOnlyTarget(behaviour, networkId, targets, udonTargets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
+                    AddRpcOnlyTarget(behaviour, networkId, targets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
             }
 
             Undo.RecordObject(decoder, "Rebuild TSMP TransSync bindings");
             SetComponentArrayFieldValue(decoder, FieldBindingTargets, targets);
-            SetFieldValue(decoder, FieldBindingUdonTargets, udonTargets.ToArray());
             SetFieldValue(decoder, FieldBindingNetworkIds, networkIds.ToArray());
             SetFieldValue(decoder, FieldBindingVariableHashes, variableHashes.ToArray());
             SetFieldValue(decoder, FieldBindingValueTypes, valueTypes.ToArray());
@@ -654,7 +623,6 @@ namespace K13A.TSMP.Editor
             TSMPNetworkBehaviour behaviour,
             ushort networkId,
             List<Component> targets,
-            List<UdonBehaviour> udonTargets,
             List<ushort> networkIds,
             List<uint> variableHashes,
             List<byte> valueTypes,
@@ -663,7 +631,6 @@ namespace K13A.TSMP.Editor
             List<int> priorities)
         {
             targets.Add(behaviour);
-            udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
             networkIds.Add(networkId);
             variableHashes.Add(0u);
             valueTypes.Add((byte)NetworkFrameProtocol.ValueTypeUnsupported);
@@ -772,49 +739,6 @@ namespace K13A.TSMP.Editor
             return identity != null ? identity.networkId : (ushort)0;
         }
 
-        private static bool IsAvatarPosePoolBehaviour(TSMPNetworkBehaviour behaviour, TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs)
-        {
-            if (behaviour == null || avatarPoseSyncs == null)
-                return false;
-
-            if (behaviour is TSMPNetworkVrchatAvatarPoseSync)
-                return false;
-
-            Transform behaviourTransform = behaviour.transform;
-            if (behaviourTransform == null)
-                return false;
-
-            for (int i = 0; i < avatarPoseSyncs.Length; i++)
-            {
-                TSMPNetworkVrchatAvatarPoseSync sync = avatarPoseSyncs[i];
-                if (sync == null)
-                    continue;
-
-                if (sync.avatarPoolRoot != null && behaviourTransform.IsChildOf(sync.avatarPoolRoot))
-                    return true;
-
-                if (sync.avatarPool == null)
-                    continue;
-
-                for (int p = 0; p < sync.avatarPool.Length; p++)
-                {
-                    GameObject avatar = sync.avatarPool[p];
-                    if (avatar != null && avatar.transform != null && behaviourTransform.IsChildOf(avatar.transform))
-                        return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static UdonBehaviour GetBackingUdonBindingTarget(TSMPNetworkBehaviour behaviour)
-        {
-            if (behaviour == null)
-                return null;
-
-            return UdonSharpEditorUtility.GetBackingUdonBehaviour(behaviour);
-        }
-
         private static bool SameArray(System.Array current, List<Component> next)
         {
             if (current == null)
@@ -848,47 +772,6 @@ namespace K13A.TSMP.Editor
             }
 
             return matches.ToArray();
-        }
-
-        private static void SyncBackingUdon(TSMPNetworkBehaviour[] behaviours)
-        {
-            if (behaviours == null)
-                return;
-
-            for (int i = 0; i < behaviours.Length; i++)
-                SyncBackingUdon(behaviours[i]);
-        }
-
-        private static void SyncBackingUdon(Component component)
-        {
-            UdonProxySyncBridge.Sync(component);
-        }
-
-        private static void SyncUdonProxy(Component component)
-        {
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
-                return;
-
-            UdonSharpBehaviour proxy = component as UdonSharpBehaviour;
-            if (proxy == null)
-                return;
-
-            try
-            {
-                UdonSharpEditorUtility.CopyProxyToUdon(proxy, ProxySerializationPolicy.All);
-            }
-            catch (System.Exception exception)
-            {
-                Debug.LogWarning("[TSMP] Failed to sync Udon proxy state for " + component.GetType().Name + ": " + exception.Message, component);
-            }
-        }
-
-        private static Component ResolveUdonProxy(UdonBehaviour behaviour)
-        {
-            if (behaviour == null)
-                return null;
-
-            return UdonSharpEditorUtility.GetProxyBehaviour(behaviour);
         }
 
         private static object GetFieldValue(Component target, string fieldName)
