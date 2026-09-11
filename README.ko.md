@@ -44,7 +44,7 @@ https://kibalab.github.io/TSMP-Core/
 
 ## 배포 상태
 
-현재 TSMP는 beta 단계입니다. 패키지 버전과 Git 태그는 `v0.0.x-beta.x` 형식을 사용합니다.
+TSMP Core 0.2.0은 베타가 아닌 정식 릴리즈입니다. 릴리즈 태그는 `v0.x.y` 형식을 사용하며, 1.0 이전에는 공개 API가 변경될 수 있습니다.
 
 ## 라이선스
 

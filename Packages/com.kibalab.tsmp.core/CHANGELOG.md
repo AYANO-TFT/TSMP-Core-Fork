@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
+- Promote 0.2.0 out of beta with the SDK-optional Unity support and shared Controller workflow introduced in 0.2.0-beta.1.
+- Improve humanoid Continuous interpolation by converting received world rotations to local targets, handling skipped ancestors and applying root rotation only once (PR #1 by AYANO-TFT).
 - Reserve existing Network IDs before assigning IDs to new objects or resolving duplicates.
 - Refresh binding, humanoid rig, Animator parameter and codec configuration caches when their contents change, including same-length replacements. Check decoder binding configuration once per network frame.
 - Preserve configured codec instances when Setup adds, removes or reorders codec sources, or changes the instance root.

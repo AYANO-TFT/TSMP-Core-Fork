@@ -44,7 +44,7 @@ https://kibalab.github.io/TSMP-Core/
 
 ## Release Status
 
-TSMP is currently in beta. Package versions and Git tags use the `v0.0.x-beta.x` format.
+TSMP Core 0.2.0 is a non-prerelease version. Release tags use the `v0.x.y` format; public APIs may still evolve before 1.0.
 
 ## License
 
