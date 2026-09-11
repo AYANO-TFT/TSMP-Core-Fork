@@ -79,10 +79,15 @@ namespace K13A.TSMP.Editor
             {
                 AnimatorControllerParameter parameter = parameters[i];
                 byte type = ConvertParameterType(parameter.type);
-                using (new EditorGUI.DisabledScope(type == 0))
+                bool selected = ContainsParameter(sync, parameter.name);
+                int selectedCount = sync.parameterNames != null ? sync.parameterNames.Length : 0;
+                bool atLimit = !selected && selectedCount >= TSMPNetworkAnimatorSync.MaxEncodedParameters;
+                using (new EditorGUI.DisabledScope(type == 0 || atLimit))
                 {
-                    bool selected = ContainsParameter(sync, parameter.name);
-                    GUIContent label = new GUIContent(parameter.name, type == 0 ? "Trigger parameters cannot be sampled from Animator." : parameter.type.ToString());
+                    string tooltip = type == 0 ? "Trigger parameters cannot be sampled from Animator." : parameter.type.ToString();
+                    if (atLimit)
+                        tooltip = "Maximum 255 parameters per packet.";
+                    GUIContent label = new GUIContent(parameter.name, tooltip);
                     bool next = EditorGUILayout.ToggleLeft(label, selected);
                     if (next != selected)
                         SetParameter(sync, parameter.name, type, next);
@@ -110,9 +115,15 @@ namespace K13A.TSMP.Editor
             for (int i = 0; i < layerCount; i++)
             {
                 bool selected = ContainsLayer(sync.layerIndices, i);
-                bool next = EditorGUILayout.ToggleLeft(new GUIContent(animator.GetLayerName(i), "Sync current state, normalized time, and layer weight."), selected);
-                if (next != selected)
-                    SetLayer(sync, i, next);
+                int selectedCount = sync.layerIndices != null ? sync.layerIndices.Length : 0;
+                bool unavailable = !selected && (selectedCount >= TSMPNetworkAnimatorSync.MaxEncodedLayers || i > TSMPNetworkAnimatorSync.MaxLayerIndex);
+                using (new EditorGUI.DisabledScope(unavailable))
+                {
+                    string tooltip = unavailable ? "Maximum 255 layers per packet; layer index must fit in one byte." : "Sync current state, normalized time, and layer weight.";
+                    bool next = EditorGUILayout.ToggleLeft(new GUIContent(animator.GetLayerName(i), tooltip), selected);
+                    if (next != selected)
+                        SetLayer(sync, i, next);
+                }
             }
         }
 
@@ -143,12 +154,12 @@ namespace K13A.TSMP.Editor
 
         private static void SetParameter(TSMPNetworkAnimatorSync sync, string name, byte type, bool selected)
         {
-            Undo.RecordObject(sync, "Change TSMP Animator Parameter Selection");
-
             int currentLength = sync.parameterNames != null ? sync.parameterNames.Length : 0;
             bool exists = ContainsParameter(sync, name);
-            if (selected == exists)
+            if (selected == exists || (selected && currentLength >= TSMPNetworkAnimatorSync.MaxEncodedParameters))
                 return;
+
+            Undo.RecordObject(sync, "Change TSMP Animator Parameter Selection");
 
             int nextLength = selected ? currentLength + 1 : Mathf.Max(0, currentLength - 1);
             string[] nextNames = new string[nextLength];
@@ -193,7 +204,7 @@ namespace K13A.TSMP.Editor
             }
 
             int count = 0;
-            for (int i = 0; i < parameters.Length; i++)
+            for (int i = 0; i < parameters.Length && count < TSMPNetworkAnimatorSync.MaxEncodedParameters; i++)
             {
                 if (ConvertParameterType(parameters[i].type) != 0)
                     count++;
@@ -202,7 +213,7 @@ namespace K13A.TSMP.Editor
             string[] names = new string[count];
             byte[] types = new byte[count];
             int cursor = 0;
-            for (int i = 0; i < parameters.Length; i++)
+            for (int i = 0; i < parameters.Length && cursor < count; i++)
             {
                 byte type = ConvertParameterType(parameters[i].type);
                 if (type == 0)
@@ -234,12 +245,14 @@ namespace K13A.TSMP.Editor
 
         private static void SetLayer(TSMPNetworkAnimatorSync sync, int layer, bool selected)
         {
-            Undo.RecordObject(sync, "Change TSMP Animator Layer Selection");
-
             int currentLength = sync.layerIndices != null ? sync.layerIndices.Length : 0;
             bool exists = ContainsLayer(sync.layerIndices, layer);
             if (selected == exists)
                 return;
+            if (selected && (currentLength >= TSMPNetworkAnimatorSync.MaxEncodedLayers || layer < 0 || layer > TSMPNetworkAnimatorSync.MaxLayerIndex))
+                return;
+
+            Undo.RecordObject(sync, "Change TSMP Animator Layer Selection");
 
             int nextLength = selected ? currentLength + 1 : Mathf.Max(0, currentLength - 1);
             int[] next = new int[nextLength];
@@ -272,7 +285,7 @@ namespace K13A.TSMP.Editor
                 return;
             }
 
-            int[] layers = new int[animator.layerCount];
+            int[] layers = new int[Mathf.Min(animator.layerCount, TSMPNetworkAnimatorSync.MaxEncodedLayers)];
             for (int i = 0; i < layers.Length; i++)
                 layers[i] = i;
 

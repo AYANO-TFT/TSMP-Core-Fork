@@ -19,7 +19,7 @@ Use this page when you need to drive encoding from code, inspect frame counters,
 | `selectedCodec` | Codec component used to convert payload bytes into pixels. Luma4 is the default codec. |
 | `useBlockSymbolTexture` | Uses the codec block texture path when the selected codec supports it. |
 | `networkBehaviours` | Bound behaviours that can contribute `[TransSync]` data and TSMP RPC messages. |
-| `transRpcRepeatFrames` | Number of additional frames that keep a queued RPC visible. Increase this for lossy capture paths. |
+| `transRpcRepeatFrames` | Total successful frames carrying each queued TransRPC, including its first transmission (1-16). Failed encoding attempts do not consume a repeat. |
 | `streamId` | Logical stream identifier written into the frame header. |
 | `layoutId` | Logical layout identifier written into the frame header. |
 
@@ -84,6 +84,8 @@ public void QueueTransRpc(int networkId, uint rpcHash, string methodName)
 Queues a TSMP RPC by network ID and method hash. This is the encoder-side entry point used by `TSMPNetworkBehaviour.SendTransRPC()`.
 
 The queue is written into subsequent frames according to `transRpcRepeatFrames`, so a single event can survive short frame drops in the texture path.
+
+This is repeated transmission, not an acknowledged delivery guarantee. An event can still be lost if every frame carrying it is dropped. The Decoder suppresses repeats using Stream ID, Network ID, method hash and event ID, retaining the most recent 32 distinct events. Independent senders sharing a Decoder should use distinct `streamId` values. Restarting a sender with the same Stream ID and reused event IDs can still collide with that cache.
 
 ## Raw variable writer API
 
