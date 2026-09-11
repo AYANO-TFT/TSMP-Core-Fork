@@ -267,6 +267,9 @@ namespace K13A.TSMP
 
             Graphics.Blit(_stagingTexture, output);
             frameIndex++;
+            if (rpcMessageCount > 0)
+                EncoderNativeFrameBuilder.AdvanceQueuedRpcs(_queuedRpcs);
+            queuedRpcCount = _queuedRpcs.Count;
         }
 
         private TSMPCodec ResolveCodec()

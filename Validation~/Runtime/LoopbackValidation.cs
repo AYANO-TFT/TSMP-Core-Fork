@@ -66,6 +66,26 @@ public sealed class LoopbackValidation : MonoBehaviour
             framesChecked++;
         }
         Check(receivedValues.rpcCalls == 1, "Remote RPC applied exactly once despite repeats: " + receivedValues.rpcCalls);
+        uint firstStream = encoder.streamId;
+        uint secondStream = firstStream == uint.MaxValue ? 0 : firstStream + 1;
+        encoder.transRpcRepeatFrames = 1;
+        for (int i = 0; i < 3 && !failed; i++)
+        {
+            encoder.streamId = i == 1 ? secondStream : firstStream;
+            Check(encoder.QueueTransRpc(sentValues.networkId, StableHash.Fnv1A32(nameof(LoopbackProbe.RecordRpc)),
+                nameof(LoopbackProbe.RecordRpc), 314), "Cross-stream RPC queued");
+            encoder.EncodeNow();
+            Check(string.IsNullOrEmpty(encoder.lastError), "Cross-stream encode: " + encoder.lastError);
+            yield return null;
+            decoder.DecodeNow();
+            float deadline = Time.realtimeSinceStartup + 10f;
+            while (decoder.readbackInFlight && Time.realtimeSinceStartup < deadline)
+                yield return null;
+            Check(!decoder.readbackInFlight && decoder.lastFrameValid, "Cross-stream decode: " + decoder.lastError);
+            Check(decoder.lastStreamId == encoder.streamId, "Stream ID recovered from encoded header");
+            Check(receivedValues.rpcCalls == (i == 0 ? 2 : 3), "Independent streams delivered; returning repeat suppressed: " + receivedValues.rpcCalls);
+            framesChecked++;
+        }
         int previousValue = receivedValues.number;
         RenderTexture blank = new RenderTexture(encoder.output.width, encoder.output.height, 0, RenderTextureFormat.ARGB32);
         blank.Create();

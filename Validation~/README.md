@@ -17,12 +17,18 @@ $runner = '.\Validation~\Run-Validation.ps1'
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Workflow
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Play
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step ArrayCache
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step EditorEncoding
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step NetworkEdges
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step RpcDelivery
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Build
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Player
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Inspect
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step InitializeSdk
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step Udon
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step UdonArrays
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step EditorEncoding
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step NetworkEdges
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step RpcDelivery
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step Workflow
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step World
 ```
@@ -35,6 +41,12 @@ Run steps sequentially after import settles. `InitializeSdk` uses the SDK's `Env
 
 Both array steps cover byte, bool, int, float, Vector2, Vector3, Quaternion and Unicode string arrays: separate binding ownership, updates with unchanged lengths, resized arrays and empty arrays. Within a binding, same-length updates intentionally reuse the received array. Consumers needing historical snapshots must copy it. See `ArrayCache/RESULTS.md` for the recorded run.
 
+`EditorEncoding` runs in either project with the shared Controller prefab and real Luma4 codec. It invokes the Controller's registered editor callbacks once to check that a due tick creates one frame, checks the written header CRC and payload size, then tests the frame-rate deadline, automatic/manual controls and callback registration through disable/enable/destroy. This is a deterministic editor scheduling test, not a wall-clock throughput benchmark. In ordinary Unity the native Encoder drives itself; only UdonSharp needs Setup's editor delegate. No user conversion or additional setup step is required. See `EditorEncoding/RESULTS.md` for the recorded run.
+
+`NetworkEdges` runs component-level regression tests in either project: repeated blendshape packets after an external weight change, Renderer replacement, None/disabled/Continuous transitions, and malformed packets; Animator parameter/layer packing at and above the 255-entry limit, invalid selections, exact packet sizing, value round-trips, buffer reuse and Inspector selection limits. The SDK project executes the C# proxy path here, not the Udon VM. Run `Udon` separately for client compilation. See `NetworkEdges/RESULTS.md` for results and limitations.
+
+`RpcDelivery` checks native RPC queue retention across codec failures, exceptions, capacity and serialization failures, then retries through the real Luma4 writer. It checks FIFO/repeat counts and an RPC queued during a variable-only codec write. Both projects test Decoder payload parsing and real GameObject Toggle dispatch across streams, repeated events, distinct key fields and legacy event IDs. The SDK test executes C# proxies, not Udon bytecode. Run `Udon` for client compilation and `Play` for real texture encoding, header decoding, GPU readback and cross-stream RPC delivery. See `RpcDelivery/RESULTS.md` for results and delivery limits.
+
 ## Assertions
 
 - The same package Controller prefab in both environments, without a conversion menu or an explicit Apply Setup call in the workflow test.
@@ -46,6 +58,7 @@ Both array steps cover byte, bool, int, float, Vector2, Vector3, Quaternion and 
 - AnimationClip sampled onto valid humanoid Animator avatars, arm rotation and hips position reception.
 - Reflection-based int and Unicode string TransSync fields.
 - Remote RPC, sender exclusion and duplicate retransmission suppression.
+- Independent streams reusing an RPC event ID, with repeats still suppressed when switching back to the first stream.
 - Blank texture rejection without applying new variable values. The expected header-mismatch error is explicitly allowed only during this negative test.
 - Unity native custom inspectors: Setup, Encoder, Decoder, Transform, Humanoid and base NetworkBehaviour.
 - All installed Udon programs compiled for the client, with nonempty bytecode checked for TSMP programs; shared Controller and backing Udon binding generation.

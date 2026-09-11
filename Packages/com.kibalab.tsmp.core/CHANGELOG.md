@@ -3,6 +3,11 @@
 ## Unreleased
 
 - Give each decoder binding its own received array buffer so updating one field cannot overwrite another field or recipient. Reuse buffers for same-length updates within each binding.
+- Prevent duplicate automatic encoding in the SDK-free Editor: the native Encoder drives itself, while Setup delegates editor encoding only when UdonSharp is present. Manual encoding and automatic setup preparation are unchanged.
+- Restore discrete blendshape values on receipt when animation or another script has changed the Renderer since the previous packet.
+- Use the same bounded Animator selection for packet sizing and writing. Limit parameters and layers to 255 entries, reject unrepresentable layer indices, and enforce selection limits in the Inspector.
+- Consume native Encoder RPC repeats only after successful frame output, preserving pending events when payload construction, capacity checks or codec writing fail.
+- Include Stream ID in the Decoder RPC deduplication key so independent streams can reuse event IDs without losing calls.
 
 ## 0.2.0-beta.1
 

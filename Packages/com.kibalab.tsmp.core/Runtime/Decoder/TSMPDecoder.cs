@@ -150,6 +150,7 @@ namespace K13A.TSMP.Udon
         private uint[] _crc32Table;
         private int _cachedBindingTargetCount = -1;
         private const int RpcDedupCacheSize = 32;
+        private uint[] _recentRpcStreamIds;
         private ushort[] _recentRpcNetworkIds;
         private uint[] _recentRpcHashes;
         private int[] _recentRpcEventIds;
@@ -651,6 +652,8 @@ namespace K13A.TSMP.Udon
             {
                 if (_recentRpcEventIds[i] != eventId)
                     continue;
+                if (_recentRpcStreamIds[i] != lastStreamId)
+                    continue;
                 if (_recentRpcNetworkIds[i] != networkId)
                     continue;
                 if (_recentRpcHashes[i] != rpcHash)
@@ -659,6 +662,7 @@ namespace K13A.TSMP.Udon
                 return true;
             }
 
+            _recentRpcStreamIds[_recentRpcWriteIndex] = lastStreamId;
             _recentRpcNetworkIds[_recentRpcWriteIndex] = networkId;
             _recentRpcHashes[_recentRpcWriteIndex] = rpcHash;
             _recentRpcEventIds[_recentRpcWriteIndex] = eventId;
@@ -671,6 +675,8 @@ namespace K13A.TSMP.Udon
 
         private void EnsureRpcDedupCache()
         {
+            if (_recentRpcStreamIds == null || _recentRpcStreamIds.Length != RpcDedupCacheSize)
+                _recentRpcStreamIds = new uint[RpcDedupCacheSize];
             if (_recentRpcNetworkIds == null || _recentRpcNetworkIds.Length != RpcDedupCacheSize)
                 _recentRpcNetworkIds = new ushort[RpcDedupCacheSize];
             if (_recentRpcHashes == null || _recentRpcHashes.Length != RpcDedupCacheSize)
