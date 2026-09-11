@@ -125,10 +125,10 @@ namespace K13A.TSMP.Udon
         private bool[] _hasTargetBoneRotation;
         private Quaternion[] _receivedBoneWorldRotations;
         private bool[] _hasReceivedBoneWorldRotation;
+        private bool[] _cachedHasReceivedBoneWorldRotation;
         private int[] _boneParentIdsById;
         private int[] _receivedAncestorBoneIdsById;
         private bool _receivedAncestorBoneIdsValid;
-        private int _receivedAncestorBoneIdsHash;
         private bool _hasContinuousBoneTargets;
         private bool _hasContinuousRootTarget;
         private bool _continuousRootIsLocal;
@@ -692,36 +692,33 @@ namespace K13A.TSMP.Udon
 
         private void EnsureReceivedAncestorBoneIdsCache()
         {
-            if (_receivedAncestorBoneIdsById == null || _hasReceivedBoneWorldRotation == null)
+            if (_receivedAncestorBoneIdsById == null || _hasReceivedBoneWorldRotation == null || _cachedHasReceivedBoneWorldRotation == null)
                 return;
-
-            int hash = ComputeReceivedBoneWorldRotationHash();
-            if (_receivedAncestorBoneIdsValid && _receivedAncestorBoneIdsHash == hash)
-                return;
-
-            _receivedAncestorBoneIdsHash = hash;
-            _receivedAncestorBoneIdsValid = true;
 
             int count = _receivedAncestorBoneIdsById.Length;
-            for (int i = 0; i < count; i++)
-                _receivedAncestorBoneIdsById[i] = FindReceivedAncestorBoneId(i);
-        }
-
-        private int ComputeReceivedBoneWorldRotationHash()
-        {
-            if (_hasReceivedBoneWorldRotation == null)
-                return 0;
-
-            int hash = 17;
-            int count = _hasReceivedBoneWorldRotation.Length;
-            hash = hash * 31 + count;
-            for (int i = 0; i < count; i++)
+            if (_receivedAncestorBoneIdsValid)
             {
-                if (_hasReceivedBoneWorldRotation[i])
-                    hash = hash * 31 + i;
+                bool receivedBoneSetMatches = true;
+                for (int i = 0; i < count; i++)
+                {
+                    if (_cachedHasReceivedBoneWorldRotation[i] == _hasReceivedBoneWorldRotation[i])
+                        continue;
+
+                    receivedBoneSetMatches = false;
+                    break;
+                }
+
+                if (receivedBoneSetMatches)
+                    return;
             }
 
-            return hash;
+            for (int i = 0; i < count; i++)
+            {
+                _cachedHasReceivedBoneWorldRotation[i] = _hasReceivedBoneWorldRotation[i];
+                _receivedAncestorBoneIdsById[i] = FindReceivedAncestorBoneId(i);
+            }
+
+            _receivedAncestorBoneIdsValid = true;
         }
 
         private int FindReceivedAncestorBoneId(int boneId)
@@ -818,6 +815,11 @@ namespace K13A.TSMP.Udon
                 _receivedBoneWorldRotations = new Quaternion[lastBone];
             if (_hasReceivedBoneWorldRotation == null || _hasReceivedBoneWorldRotation.Length != lastBone)
                 _hasReceivedBoneWorldRotation = new bool[lastBone];
+            if (_cachedHasReceivedBoneWorldRotation == null || _cachedHasReceivedBoneWorldRotation.Length != lastBone)
+            {
+                _cachedHasReceivedBoneWorldRotation = new bool[lastBone];
+                _receivedAncestorBoneIdsValid = false;
+            }
             if (_boneParentIdsById == null || _boneParentIdsById.Length != lastBone)
             {
                 _boneParentIdsById = new int[lastBone];
