@@ -32,7 +32,6 @@ namespace K13A.TSMP.Udon
         private int _cachedBlendShapeIndexLength = -1;
         private int _cachedBlendShapeIndexHash;
         private int _cachedBlendShapeCount = -2;
-        private int[] _lastAppliedBlendShapeValues;
         private float[] _targetBlendShapeValues;
         private bool[] _hasTargetBlendShapeValue;
         private bool _hasContinuousTarget;
@@ -149,12 +148,10 @@ namespace K13A.TSMP.Udon
                     continue;
                 }
 
-                if (_lastAppliedBlendShapeValues != null && index < _lastAppliedBlendShapeValues.Length && _lastAppliedBlendShapeValues[index] == value)
+                if (targetRenderer.GetBlendShapeWeight(index) == (float)value)
                     continue;
 
                 targetRenderer.SetBlendShapeWeight(index, value);
-                if (_lastAppliedBlendShapeValues != null && index < _lastAppliedBlendShapeValues.Length)
-                    _lastAppliedBlendShapeValues[index] = value;
             }
         }
 
@@ -204,8 +201,6 @@ namespace K13A.TSMP.Udon
 
             if (_selectedBlendShapeLookup == null || _selectedBlendShapeLookup.Length != lookupLength)
                 _selectedBlendShapeLookup = new bool[lookupLength];
-            if (_lastAppliedBlendShapeValues == null || _lastAppliedBlendShapeValues.Length != lookupLength)
-                _lastAppliedBlendShapeValues = ArrayUtil.CreateFilledIntArray(lookupLength, -1);
             if (_targetBlendShapeValues == null || _targetBlendShapeValues.Length != lookupLength)
                 _targetBlendShapeValues = new float[lookupLength];
             if (_hasTargetBlendShapeValue == null || _hasTargetBlendShapeValue.Length != lookupLength)
@@ -301,8 +296,6 @@ namespace K13A.TSMP.Udon
                 {
                     targetRenderer.SetBlendShapeWeight(i, targetValue);
                     _hasTargetBlendShapeValue[i] = false;
-                    if (_lastAppliedBlendShapeValues != null && i < _lastAppliedBlendShapeValues.Length)
-                        _lastAppliedBlendShapeValues[i] = Mathf.RoundToInt(targetValue);
                     continue;
                 }
 

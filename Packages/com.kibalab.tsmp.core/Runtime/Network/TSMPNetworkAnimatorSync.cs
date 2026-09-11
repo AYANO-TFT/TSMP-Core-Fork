@@ -15,6 +15,10 @@ namespace K13A.TSMP.Udon
 
     public class TSMPNetworkAnimatorSync : TSMPNetworkBehaviour
     {
+        public const int MaxEncodedParameters = 255;
+        public const int MaxEncodedLayers = 255;
+        public const int MaxLayerIndex = 255;
+
         public Animator animator;
         public string[] parameterNames;
         public byte[] parameterTypes;
@@ -44,6 +48,8 @@ namespace K13A.TSMP.Udon
 
         private int[] _parameterHashes;
         private int _parameterHashLength = -1;
+        private int[] _selectedParameterIndices;
+        private int[] _selectedLayerIndices;
 
         public byte[] AnimatorBytes
         {
@@ -70,81 +76,63 @@ namespace K13A.TSMP.Udon
 
             EnsureParameterHashes();
 
-            int parameterCount = GetValidParameterCount();
-            int layerCount = GetValidLayerCount();
+            int parameterCount;
+            int parameterBytes = CollectParameters(out parameterCount);
+            int layerCount = CollectLayers();
             byte flags = 0;
             if (parameterCount > 0)
                 flags |= FlagHasParameters;
             if (layerCount > 0)
                 flags |= FlagHasLayers;
 
-            int requiredBytes = HeaderBytes + ComputeParameterBytes() + layerCount * LayerBytes;
+            int requiredBytes = HeaderBytes + parameterBytes + layerCount * LayerBytes;
             if (animatorBytes == null || animatorBytes.Length != requiredBytes)
                 animatorBytes = new byte[requiredBytes];
 
             animatorBytes[0] = PacketVersion;
             animatorBytes[1] = flags;
-            animatorBytes[2] = (byte)(parameterCount & 0xFF);
-            animatorBytes[3] = (byte)(layerCount & 0xFF);
+            animatorBytes[2] = (byte)parameterCount;
+            animatorBytes[3] = (byte)layerCount;
             animatorBytes[4] = 0;
 
             int cursor = HeaderBytes;
-            int writtenParameters = 0;
-            if (parameterNames != null && parameterTypes != null)
+            for (int i = 0; i < parameterCount; i++)
             {
-                int count = parameterNames.Length < parameterTypes.Length ? parameterNames.Length : parameterTypes.Length;
-                for (int i = 0; i < count; i++)
+                int index = _selectedParameterIndices[i];
+                int hash = _parameterHashes[index];
+                byte type = parameterTypes[index];
+                Binary.WriteInt32LE(animatorBytes, cursor, hash);
+                cursor += 4;
+                animatorBytes[cursor++] = type;
+
+                if (type == (byte)AnimatorParameterType.Bool)
                 {
-                    if (!IsValidParameter(i))
-                        continue;
-
-                    int hash = _parameterHashes[i];
-                    byte type = parameterTypes[i];
-                    Binary.WriteInt32LE(animatorBytes, cursor, hash);
+                    animatorBytes[cursor++] = animator.GetBool(parameterNames[index]) ? (byte)1 : (byte)0;
+                }
+                else if (type == (byte)AnimatorParameterType.Int)
+                {
+                    Binary.WriteInt32LE(animatorBytes, cursor, animator.GetInteger(parameterNames[index]));
                     cursor += 4;
-                    animatorBytes[cursor++] = type;
-
-                    if (type == (byte)AnimatorParameterType.Bool)
-                    {
-                        animatorBytes[cursor++] = animator.GetBool(parameterNames[i]) ? (byte)1 : (byte)0;
-                    }
-                    else if (type == (byte)AnimatorParameterType.Int)
-                    {
-                        Binary.WriteInt32LE(animatorBytes, cursor, animator.GetInteger(parameterNames[i]));
-                        cursor += 4;
-                    }
-                    else
-                    {
-                        cursor = Binary.WriteFloat32LE(animatorBytes, cursor, animator.GetFloat(parameterNames[i]));
-                    }
-
-                    writtenParameters++;
+                }
+                else
+                {
+                    cursor = Binary.WriteFloat32LE(animatorBytes, cursor, animator.GetFloat(parameterNames[index]));
                 }
             }
 
-            int writtenLayers = 0;
-            if (layerIndices != null)
+            for (int i = 0; i < layerCount; i++)
             {
-                for (int i = 0; i < layerIndices.Length; i++)
-                {
-                    int layer = layerIndices[i];
-                    if (layer < 0 || layer >= animator.layerCount)
-                        continue;
-
-                    AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(layer);
-                    animatorBytes[cursor++] = (byte)(layer & 0xFF);
-                    Binary.WriteInt32LE(animatorBytes, cursor, state.fullPathHash);
-                    cursor += 4;
-                    cursor = Binary.WriteFloat32LE(animatorBytes, cursor, state.normalizedTime);
-                    cursor = Binary.WriteFloat32LE(animatorBytes, cursor, animator.GetLayerWeight(layer));
-                    writtenLayers++;
-                }
+                int layer = _selectedLayerIndices[i];
+                AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(layer);
+                animatorBytes[cursor++] = (byte)layer;
+                Binary.WriteInt32LE(animatorBytes, cursor, state.fullPathHash);
+                cursor += 4;
+                cursor = Binary.WriteFloat32LE(animatorBytes, cursor, state.normalizedTime);
+                cursor = Binary.WriteFloat32LE(animatorBytes, cursor, animator.GetLayerWeight(layer));
             }
 
-            animatorBytes[2] = (byte)(writtenParameters & 0xFF);
-            animatorBytes[3] = (byte)(writtenLayers & 0xFF);
-            encodedParameterCount = writtenParameters;
-            encodedLayerCount = writtenLayers;
+            encodedParameterCount = parameterCount;
+            encodedLayerCount = layerCount;
             encodedAnimatorBytes = cursor;
         }
 
@@ -271,69 +259,50 @@ namespace K13A.TSMP.Udon
             _parameterHashLength = length;
         }
 
-        private int GetValidParameterCount()
+        private int CollectParameters(out int count)
         {
+            count = 0;
             if (parameterNames == null || parameterTypes == null)
                 return 0;
 
-            int count = parameterNames.Length < parameterTypes.Length ? parameterNames.Length : parameterTypes.Length;
-            if (count > 255)
-                count = 255;
+            if (_selectedParameterIndices == null || _selectedParameterIndices.Length != MaxEncodedParameters)
+                _selectedParameterIndices = new int[MaxEncodedParameters];
 
-            int valid = 0;
-            for (int i = 0; i < count; i++)
-            {
-                if (IsValidParameter(i))
-                    valid++;
-            }
-
-            return valid;
-        }
-
-        private int GetValidLayerCount()
-        {
-            if (layerIndices == null || animator == null)
-                return 0;
-
-            int max = layerIndices.Length;
-            if (max > 255)
-                max = 255;
-
-            int valid = 0;
-            for (int i = 0; i < max; i++)
-            {
-                int layer = layerIndices[i];
-                if (layer >= 0 && layer < animator.layerCount)
-                    valid++;
-            }
-
-            return valid;
-        }
-
-        private int ComputeParameterBytes()
-        {
-            if (parameterNames == null || parameterTypes == null)
-                return 0;
-
-            int count = parameterNames.Length < parameterTypes.Length ? parameterNames.Length : parameterTypes.Length;
-            if (count > 255)
-                count = 255;
-
+            int length = parameterNames.Length < parameterTypes.Length ? parameterNames.Length : parameterTypes.Length;
             int bytes = 0;
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < length && count < MaxEncodedParameters; i++)
             {
                 if (!IsValidParameter(i))
                     continue;
 
-                byte type = parameterTypes[i];
+                _selectedParameterIndices[count++] = i;
                 bytes += ParameterHeaderBytes;
-                if (type == (byte)AnimatorParameterType.Bool)
-                    bytes += BoolValueBytes;
-                else
-                    bytes += 4;
+                bytes += parameterTypes[i] == (byte)AnimatorParameterType.Bool ? BoolValueBytes : IntValueBytes;
             }
 
             return bytes;
+        }
+
+        private int CollectLayers()
+        {
+            if (layerIndices == null || animator == null)
+                return 0;
+
+            if (_selectedLayerIndices == null || _selectedLayerIndices.Length != MaxEncodedLayers)
+                _selectedLayerIndices = new int[MaxEncodedLayers];
+
+            int layerCount = animator.layerCount;
+            int count = 0;
+            for (int i = 0; i < layerIndices.Length && count < MaxEncodedLayers; i++)
+            {
+                int layer = layerIndices[i];
+                if (layer < 0 || layer >= layerCount || layer > MaxLayerIndex)
+                    continue;
+
+                _selectedLayerIndices[count++] = layer;
+            }
+
+            return count;
         }
 
         private bool IsValidParameter(int index)
