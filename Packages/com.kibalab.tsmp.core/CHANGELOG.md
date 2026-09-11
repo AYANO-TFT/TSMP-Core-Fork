@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Give each decoder binding its own received array buffer so updating one field cannot overwrite another field or recipient. Reuse buffers for same-length updates within each binding.
+
 ## 0.2.0-beta.1
 
 - Support installation, native component bindings, encoding, decoding, and Windows Mono Player builds without VRCSDK/UdonSharp.

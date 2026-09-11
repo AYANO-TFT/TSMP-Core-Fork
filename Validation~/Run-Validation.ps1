@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)][string]$UnityEditor,
     [Parameter(Mandatory = $true)][string]$Project,
     [Parameter(Mandatory = $true)][string]$Results,
-    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'Udon', 'World', 'Workflow')][string]$Step
+    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays')][string]$Step
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,7 +19,19 @@ $oldBuild = $env:TSMP_VALIDATION_BUILD
 try {
     $env:TSMP_VALIDATION_RESULT = $result
     $env:TSMP_VALIDATION_BUILD = $build
-    if ($Step -eq 'Workflow') {
+    if ($Step -in @('ArrayCache', 'UdonArrays')) {
+        $destination = Join-Path $Project 'Assets/Validation/ArrayCache'
+        $editor = Join-Path $destination 'Editor'
+        New-Item -ItemType Directory -Path $editor -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ArrayCache/Editor/ArrayCacheCases.cs') -Destination $editor -Force
+        if ($Step -eq 'ArrayCache') {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ArrayCache/Editor/DecoderArrayCacheValidation.cs') -Destination $editor -Force
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ArrayCache/Runtime') -Destination $destination -Recurse -Force
+        } else {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ArrayCache/VRCEditor/DecoderArrayCacheUdonValidation.cs') -Destination $editor -Force
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ArrayCache/Udon') -Destination $destination -Recurse -Force
+        }
+    } elseif ($Step -eq 'Workflow') {
         $destination = Join-Path $Project 'Assets/Validation/Editor'
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Editor/SharedWorkflowValidation.cs') -Destination $destination -Force
@@ -40,6 +52,8 @@ try {
         Udon = 'VrcSupportValidation.Compile'
         World = 'VrcSupportValidation.BuildWorld'
         Workflow = 'SharedWorkflowValidation.Run'
+        ArrayCache = 'DecoderArrayCacheValidation.Run'
+        UdonArrays = 'DecoderArrayCacheUdonValidation.Run'
     }
     if ($Step -eq 'Player') {
         $arguments = "-screen-fullscreen 0 -screen-width 640 -screen-height 360 -logFile `"$log`""
@@ -47,7 +61,7 @@ try {
     } else {
         $arguments = "-projectPath `"$Project`" -logFile `"$log`""
         if ($Step -ne 'Inspect') { $arguments += ' -batchmode' }
-        if ($Step -in @('Import', 'Build', 'InitializeSdk', 'Udon')) { $arguments += ' -quit' }
+        if ($Step -in @('Import', 'Build', 'InitializeSdk', 'Udon', 'ArrayCache', 'UdonArrays')) { $arguments += ' -quit' }
         if ($methods.ContainsKey($Step)) { $arguments += ' -executeMethod ' + $methods[$Step] }
         if ($Step -eq 'Build') { New-Item -ItemType Directory -Path (Split-Path -Parent $build) -Force | Out-Null }
         $process = Start-Process -FilePath $UnityEditor -ArgumentList $arguments -WindowStyle Hidden -PassThru
@@ -59,7 +73,7 @@ try {
     }
     $process.Refresh()
     if ($process.ExitCode -ne 0) { throw "Validation exited $($process.ExitCode); see $log" }
-    if ($Step -in @('Play', 'Player', 'Inspect', 'Udon', 'World', 'Workflow')) {
+    if ($Step -in @('Play', 'Player', 'Inspect', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays')) {
         if (!(Test-Path -LiteralPath $result) -or (Get-Content -LiteralPath $result -First 1) -ne 'PASS') {
             throw "Validation did not produce PASS; see $log"
         }

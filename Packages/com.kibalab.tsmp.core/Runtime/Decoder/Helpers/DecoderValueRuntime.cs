@@ -11,29 +11,14 @@ namespace K13A.TSMP
             int valueOffset,
             int valueLength,
             byte[][] rawByteValueArrays,
-            bool[] boolValueArray,
-            int[] intValueArray,
-            float[] floatValueArray,
-            Vector2[] vector2ValueArray,
-            Vector3[] vector3ValueArray,
-            Quaternion[] quaternionValueArray,
-            string[] stringValueArray,
-            out bool[] nextBoolValueArray,
-            out int[] nextIntValueArray,
-            out float[] nextFloatValueArray,
-            out Vector2[] nextVector2ValueArray,
-            out Vector3[] nextVector3ValueArray,
-            out Quaternion[] nextQuaternionValueArray,
-            out string[] nextStringValueArray)
+            bool[][] boolValueArrays,
+            int[][] intValueArrays,
+            float[][] floatValueArrays,
+            Vector2[][] vector2ValueArrays,
+            Vector3[][] vector3ValueArrays,
+            Quaternion[][] quaternionValueArrays,
+            string[][] stringValueArrays)
         {
-            nextBoolValueArray = boolValueArray;
-            nextIntValueArray = intValueArray;
-            nextFloatValueArray = floatValueArray;
-            nextVector2ValueArray = vector2ValueArray;
-            nextVector3ValueArray = vector3ValueArray;
-            nextQuaternionValueArray = quaternionValueArray;
-            nextStringValueArray = stringValueArray;
-
             object decodedValue = NetworkValueReader.ReadScalarObject(payloadBytes, valueType, valueOffset, valueLength);
             if (decodedValue != null)
                 return decodedValue;
@@ -41,40 +26,19 @@ namespace K13A.TSMP
             if (valueType == NetworkFrameProtocol.ValueTypeRawBytes)
                 return DecoderValueCache.CopyRawBytes(payloadBytes, valueOffset, valueLength, rawByteValueArrays, bindingIndex);
             if (valueType == NetworkFrameProtocol.ValueTypeBoolArray)
-            {
-                nextBoolValueArray = DecoderValueCache.CopyBoolArray(payloadBytes, valueOffset, valueLength, boolValueArray);
-                return nextBoolValueArray;
-            }
+                return DecoderValueCache.CopyBoolArray(payloadBytes, valueOffset, valueLength, boolValueArrays, bindingIndex);
             if (valueType == NetworkFrameProtocol.ValueTypeInt32Array)
-            {
-                nextIntValueArray = DecoderValueCache.CopyInt32Array(payloadBytes, valueOffset, valueLength, intValueArray);
-                return nextIntValueArray;
-            }
+                return DecoderValueCache.CopyInt32Array(payloadBytes, valueOffset, valueLength, intValueArrays, bindingIndex);
             if (valueType == NetworkFrameProtocol.ValueTypeFloat32Array)
-            {
-                nextFloatValueArray = DecoderValueCache.CopyFloat32Array(payloadBytes, valueOffset, valueLength, floatValueArray);
-                return nextFloatValueArray;
-            }
+                return DecoderValueCache.CopyFloat32Array(payloadBytes, valueOffset, valueLength, floatValueArrays, bindingIndex);
             if (valueType == NetworkFrameProtocol.ValueTypeVector2Array)
-            {
-                nextVector2ValueArray = DecoderValueCache.CopyVector2Array(payloadBytes, valueOffset, valueLength, vector2ValueArray);
-                return nextVector2ValueArray;
-            }
+                return DecoderValueCache.CopyVector2Array(payloadBytes, valueOffset, valueLength, vector2ValueArrays, bindingIndex);
             if (valueType == NetworkFrameProtocol.ValueTypeVector3Array)
-            {
-                nextVector3ValueArray = DecoderValueCache.CopyVector3Array(payloadBytes, valueOffset, valueLength, vector3ValueArray);
-                return nextVector3ValueArray;
-            }
+                return DecoderValueCache.CopyVector3Array(payloadBytes, valueOffset, valueLength, vector3ValueArrays, bindingIndex);
             if (valueType == NetworkFrameProtocol.ValueTypeQuaternionArray)
-            {
-                nextQuaternionValueArray = DecoderValueCache.CopyQuaternionArray(payloadBytes, valueOffset, valueLength, quaternionValueArray);
-                return nextQuaternionValueArray;
-            }
+                return DecoderValueCache.CopyQuaternionArray(payloadBytes, valueOffset, valueLength, quaternionValueArrays, bindingIndex);
             if (valueType == NetworkFrameProtocol.ValueTypeUTF8StringArray)
-            {
-                nextStringValueArray = DecoderValueCache.CopyStringArray(payloadBytes, valueOffset, valueLength, stringValueArray);
-                return nextStringValueArray;
-            }
+                return DecoderValueCache.CopyStringArray(payloadBytes, valueOffset, valueLength, stringValueArrays, bindingIndex);
 
             return null;
         }

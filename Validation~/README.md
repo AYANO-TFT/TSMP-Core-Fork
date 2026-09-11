@@ -16,11 +16,13 @@ $runner = '.\Validation~\Run-Validation.ps1'
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Import
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Workflow
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Play
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step ArrayCache
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Build
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Player
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Inspect
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step InitializeSdk
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step Udon
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step UdonArrays
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step Workflow
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step World
 ```
@@ -28,6 +30,10 @@ $runner = '.\Validation~\Run-Validation.ps1'
 Run steps sequentially after import settles. `InitializeSdk` uses the SDK's `EnvConfig.SetActiveSDKDefines` to configure the isolated Worlds project; restart Unity before `Udon`. `World` uses `IVRCSdkWorldBuilderApi.Build`, including SDK validation and callbacks, and never calls an upload API. A first SDK build can change Player settings and request another Unity compile. Wait for that import and retry rather than bypassing validation.
 
 `Build` creates a Development Windows x64 Mono Player with managed stripping disabled. `Player` deliberately does not use `-batchmode` or `-nographics`: an earlier Windows batch-mode Player did not complete GPU readback in the test timeout despite reporting a graphics adapter. The harness enables Run In Background. `Inspect` opens an EditorWindow and executes the six custom inspectors' IMGUI paths, then exits; it is not a screenshot-based layout review.
+
+`ArrayCache` runs the decoder's payload parsing and field dispatch in the SDK-free Editor. It verifies independent arrays for different fields and for multiple recipients of the same variable. `UdonArrays` compiles all installed UdonSharp programs for the client, then executes the array-decoding helpers as real Udon bytecode in the Editor VM. Neither array step exercises a GPU; run `Play` separately for the existing texture loopback. Keep the two array steps in their respective SDK-free and SDK projects.
+
+Both array steps cover byte, bool, int, float, Vector2, Vector3, Quaternion and Unicode string arrays: separate binding ownership, updates with unchanged lengths, resized arrays and empty arrays. Within a binding, same-length updates intentionally reuse the received array. Consumers needing historical snapshots must copy it. See `ArrayCache/RESULTS.md` for the recorded run.
 
 ## Assertions
 

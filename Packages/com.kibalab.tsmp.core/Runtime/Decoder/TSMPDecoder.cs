@@ -127,13 +127,13 @@ namespace K13A.TSMP.Udon
         private int _decodeStage;
         private bool _payloadInterleaved;
         private int _payloadType;
-        private bool[] _boolValueArray;
-        private int[] _intValueArray;
-        private float[] _floatValueArray;
-        private Vector2[] _vector2ValueArray;
-        private Vector3[] _vector3ValueArray;
-        private Quaternion[] _quaternionValueArray;
-        private string[] _stringValueArray;
+        private bool[][] _boolValueArrays;
+        private int[][] _intValueArrays;
+        private float[][] _floatValueArrays;
+        private Vector2[][] _vector2ValueArrays;
+        private Vector3[][] _vector3ValueArrays;
+        private Quaternion[][] _quaternionValueArrays;
+        private string[][] _stringValueArrays;
         private bool _hasAppliedFrame;
         private uint _lastAppliedStreamId;
         private uint _lastAppliedFrameIndex;
@@ -748,20 +748,13 @@ namespace K13A.TSMP.Udon
                 _bindingLookupBindingIndices,
                 _bindingLookupCount,
                 _rawByteValueArrays,
-                _boolValueArray,
-                _intValueArray,
-                _floatValueArray,
-                _vector2ValueArray,
-                _vector3ValueArray,
-                _quaternionValueArray,
-                _stringValueArray,
-                out _boolValueArray,
-                out _intValueArray,
-                out _floatValueArray,
-                out _vector2ValueArray,
-                out _vector3ValueArray,
-                out _quaternionValueArray,
-                out _stringValueArray,
+                _boolValueArrays,
+                _intValueArrays,
+                _floatValueArrays,
+                _vector2ValueArrays,
+                _vector3ValueArrays,
+                _quaternionValueArrays,
+                _stringValueArrays,
                 out rejectedValueTypeCount);
 #else
             int appliedCount = DecoderVariableRuntime.ApplyVariableValue(
@@ -782,20 +775,13 @@ namespace K13A.TSMP.Udon
                 _bindingLookupBindingIndices,
                 _bindingLookupCount,
                 _rawByteValueArrays,
-                _boolValueArray,
-                _intValueArray,
-                _floatValueArray,
-                _vector2ValueArray,
-                _vector3ValueArray,
-                _quaternionValueArray,
-                _stringValueArray,
-                out _boolValueArray,
-                out _intValueArray,
-                out _floatValueArray,
-                out _vector2ValueArray,
-                out _vector3ValueArray,
-                out _quaternionValueArray,
-                out _stringValueArray,
+                _boolValueArrays,
+                _intValueArrays,
+                _floatValueArrays,
+                _vector2ValueArrays,
+                _vector3ValueArrays,
+                _quaternionValueArrays,
+                _stringValueArrays,
                 out rejectedValueTypeCount);
 #endif
 
@@ -847,7 +833,10 @@ namespace K13A.TSMP.Udon
             if (!BindingTable.IsComponentTargetCacheValid(_cachedBindingComponentTargets, targetCount))
                 cacheValid = false;
 #endif
-            if (!DecoderBindingRuntime.IsRawByteValueCacheValid(_rawByteValueArrays, targetCount))
+            bool valueCacheValid = DecoderBindingRuntime.IsArrayValueCacheValid(
+                targetCount, _rawByteValueArrays, _boolValueArrays, _intValueArrays, _floatValueArrays,
+                _vector2ValueArrays, _vector3ValueArrays, _quaternionValueArrays, _stringValueArrays);
+            if (!valueCacheValid)
                 cacheValid = false;
             if (cacheValid && _bindingLookupSignature != lookupSignature)
                 cacheValid = false;
@@ -859,7 +848,17 @@ namespace K13A.TSMP.Udon
             }
 
             _cachedBindingTargetCount = targetCount;
-            _rawByteValueArrays = DecoderBindingRuntime.EnsureRawByteValueCache(_rawByteValueArrays, targetCount);
+            if (!valueCacheValid)
+            {
+                _rawByteValueArrays = new byte[targetCount][];
+                _boolValueArrays = new bool[targetCount][];
+                _intValueArrays = new int[targetCount][];
+                _floatValueArrays = new float[targetCount][];
+                _vector2ValueArrays = new Vector2[targetCount][];
+                _vector3ValueArrays = new Vector3[targetCount][];
+                _quaternionValueArrays = new Quaternion[targetCount][];
+                _stringValueArrays = new string[targetCount][];
+            }
 #if UDONSHARP || COMPILER_UDONSHARP
             _cachedBindingUdonTargets = BindingTable.BuildUdonTargetCache(bindingTargets, bindingUdonTargets, targetCount);
 #else

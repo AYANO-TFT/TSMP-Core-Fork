@@ -1,3 +1,5 @@
+using UnityEngine;
+
 namespace K13A.TSMP
 {
     public static class DecoderBindingRuntime
@@ -7,24 +9,25 @@ namespace K13A.TSMP
             return BindingLookup.ComputeSignature(targetCount, bindingNetworkIds, bindingVariableHashes);
         }
 
-        public static bool IsRawByteValueCacheValid(byte[][] rawByteValueArrays, int targetCount)
+        public static bool IsArrayValueCacheValid(
+            int targetCount,
+            byte[][] rawByteValueArrays,
+            bool[][] boolValueArrays,
+            int[][] intValueArrays,
+            float[][] floatValueArrays,
+            Vector2[][] vector2ValueArrays,
+            Vector3[][] vector3ValueArrays,
+            Quaternion[][] quaternionValueArrays,
+            string[][] stringValueArrays)
         {
-            if (rawByteValueArrays == null)
-                return false;
-
-            return rawByteValueArrays.Length == targetCount;
-        }
-
-        public static byte[][] EnsureRawByteValueCache(byte[][] rawByteValueArrays, int targetCount)
-        {
-            if (targetCount < 0)
-                targetCount = 0;
-            if (rawByteValueArrays == null)
-                return new byte[targetCount][];
-            if (rawByteValueArrays.Length != targetCount)
-                return new byte[targetCount][];
-
-            return rawByteValueArrays;
+            return rawByteValueArrays != null && rawByteValueArrays.Length == targetCount
+                && boolValueArrays != null && boolValueArrays.Length == targetCount
+                && intValueArrays != null && intValueArrays.Length == targetCount
+                && floatValueArrays != null && floatValueArrays.Length == targetCount
+                && vector2ValueArrays != null && vector2ValueArrays.Length == targetCount
+                && vector3ValueArrays != null && vector3ValueArrays.Length == targetCount
+                && quaternionValueArrays != null && quaternionValueArrays.Length == targetCount
+                && stringValueArrays != null && stringValueArrays.Length == targetCount;
         }
 
         public static void EnsureBindingLookup(

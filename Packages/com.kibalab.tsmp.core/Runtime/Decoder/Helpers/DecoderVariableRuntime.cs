@@ -30,29 +30,15 @@ namespace K13A.TSMP
             int[] bindingLookupBindingIndices,
             int bindingLookupCount,
             byte[][] rawByteValueArrays,
-            bool[] boolValueArray,
-            int[] intValueArray,
-            float[] floatValueArray,
-            Vector2[] vector2ValueArray,
-            Vector3[] vector3ValueArray,
-            Quaternion[] quaternionValueArray,
-            string[] stringValueArray,
-            out bool[] nextBoolValueArray,
-            out int[] nextIntValueArray,
-            out float[] nextFloatValueArray,
-            out Vector2[] nextVector2ValueArray,
-            out Vector3[] nextVector3ValueArray,
-            out Quaternion[] nextQuaternionValueArray,
-            out string[] nextStringValueArray,
+            bool[][] boolValueArrays,
+            int[][] intValueArrays,
+            float[][] floatValueArrays,
+            Vector2[][] vector2ValueArrays,
+            Vector3[][] vector3ValueArrays,
+            Quaternion[][] quaternionValueArrays,
+            string[][] stringValueArrays,
             out int rejectedValueTypeCount)
         {
-            nextBoolValueArray = boolValueArray;
-            nextIntValueArray = intValueArray;
-            nextFloatValueArray = floatValueArray;
-            nextVector2ValueArray = vector2ValueArray;
-            nextVector3ValueArray = vector3ValueArray;
-            nextQuaternionValueArray = quaternionValueArray;
-            nextStringValueArray = stringValueArray;
             rejectedValueTypeCount = 0;
 
             int lookupStart = BindingLookup.FindStart(bindingLookupNetworkIds, bindingLookupVariableHashes, bindingLookupCount, networkId, variableHash);
@@ -99,20 +85,13 @@ namespace K13A.TSMP
                     valueOffset,
                     valueLength,
                     rawByteValueArrays,
-                    nextBoolValueArray,
-                    nextIntValueArray,
-                    nextFloatValueArray,
-                    nextVector2ValueArray,
-                    nextVector3ValueArray,
-                    nextQuaternionValueArray,
-                    nextStringValueArray,
-                    out nextBoolValueArray,
-                    out nextIntValueArray,
-                    out nextFloatValueArray,
-                    out nextVector2ValueArray,
-                    out nextVector3ValueArray,
-                    out nextQuaternionValueArray,
-                    out nextStringValueArray);
+                    boolValueArrays,
+                    intValueArrays,
+                    floatValueArrays,
+                    vector2ValueArrays,
+                    vector3ValueArrays,
+                    quaternionValueArrays,
+                    stringValueArrays);
 
                 if (DecoderVariableDispatcher.Apply(targets, bindingIndex, fieldName, variableHash, decodedValue))
                     appliedCount++;
