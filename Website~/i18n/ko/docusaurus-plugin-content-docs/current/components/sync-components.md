@@ -85,6 +85,12 @@ Receiver도 선택한 blend shape list를 whitelist로 사용합니다. 수신�
 
 Receiver가 play/pause와 timeline time을 따라야 할 때 사용합니다. Sender와 receiver의 director setup이 일관되어야 합니다.
 
+일반 Unity에서는 Director의 실제 재생 상태를 읽습니다. 일시 정지 중 시간을 변경해도 재생으로 판단하지 않으며, 같은 시간을 두 번 캡처해도 일시 정지로 판단하지 않습니다.
+
+VRChat에서는 Director를 직접 호출하는 대신 송신 측 `TSMPNetworkTimelineSync`의 `Play()`, `Pause()`, `Resume()`, `Stop()`으로 제어하세요. Udon에는 Director의 재생 상태와 PlayableGraph를 읽는 API가 없으므로, `playOnAwake`를 초기 상태로 삼고 이 명령들을 추적합니다. 외부 스크립트의 직접 제어와 Timeline의 자동 종료는 정확하게 감지할 수 없습니다. 시퀀스가 끝나면 의도에 맞게 `Stop()` 또는 `Pause()`를 호출해야 합니다. 재생 시간은 계속 Director에서 읽습니다.
+
+[Scripting API의 Timeline 제어](../scripting-api/network-components.md#timeline-controls)도 참고하세요.
+
 ## GameObject toggle
 
 `TSMPNetworkGameObjectToggle`은 TSMP RPC로 toggle되는 간단한 interactable object입니다.

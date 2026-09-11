@@ -85,6 +85,12 @@ Use `TSMPNetworkTimelineSync` for `PlayableDirector` or Timeline playback state.
 
 Use it when a receiver should follow play/pause and timeline time. Keep the director setup consistent between sender and receiver.
 
+In ordinary Unity, the component reads the Director's actual playback state. Seeking while paused does not start playback, and sampling twice at the same time does not pause it.
+
+In VRChat, control the sender through `TSMPNetworkTimelineSync.Play()`, `Pause()`, `Resume()` and `Stop()`, rather than calling these methods on the Director directly. Udon does not expose the Director's playback-state getter or PlayableGraph. The component therefore tracks these commands, using `playOnAwake` as the initial state. Direct external controls and automatic end-of-timeline state changes cannot be observed reliably; send the appropriate `Stop()` or `Pause()` command when your sequence ends. Timeline time is still read from the Director.
+
+See [Timeline controls in the Scripting API](../scripting-api/network-components.md#timeline-controls).
+
 ## GameObject toggle
 
 Use `TSMPNetworkGameObjectToggle` as a simple interactable object that toggles through TSMP RPC.

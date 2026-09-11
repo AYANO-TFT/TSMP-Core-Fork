@@ -29,6 +29,19 @@ TSMP는 VRChat world에서 자주 쓰는 synchronization case를 위한 여러 `
 | `TSMPNetworkGameObjectToggle` | TSMP RPC를 통한 toggle event. |
 | `TSMPDebugCanvas` | Frame counters, bitrate, loss, header metadata 표시용 text UI. |
 
+## Timeline 제어 {#timeline-controls}
+
+`TSMPNetworkTimelineSync`는 인자 없는 메서드 네 개를 제공합니다. Udon custom event로도 호출할 수 있습니다.
+
+| 메서드 | 동작 |
+| --- | --- |
+| `Play()` | Director를 재생하고 Playing을 기록합니다. |
+| `Pause()` | Director를 일시 정지하고 Paused를 기록합니다. 재생 시간이 0이어도 같습니다. |
+| `Resume()` | Director의 재생을 재개하고 Playing을 기록합니다. |
+| `Stop()` | Director를 정지하고 Stopped를 기록합니다. |
+
+명령은 로컬 재생을 제어하며, Encoder가 다음 캡처 때 해당 상태를 전송합니다. 일반 Unity에서는 `director.state`와 graph 유효성을 읽으므로 외부 스크립트의 제어도 감지합니다. Udon에서는 명령을 추적하므로 이 컴포넌트를 통해 제어하고, 시퀀스 종료 시에도 명시적으로 명령을 호출해야 합니다. Director 직접 제어와 자동 종료는 정확히 감지할 수 없습니다. Director 교체 시 추적 상태는 새 Director의 `playOnAwake`를 기준으로 초기화됩니다.
+
 ## Choosing a component
 
 Data model이 맞으면 built-in component를 사용하세요. 다음 경우 custom `TSMPNetworkBehaviour`를 작성합니다.

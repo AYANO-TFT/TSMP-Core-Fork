@@ -25,7 +25,8 @@ namespace K13A.TSMP.Udon
         private const byte StateStopped = 0;
         private const byte StatePaused = 1;
         private const byte StatePlaying = 2;
-        private double _lastEncodedTime = -1.0;
+        private PlayableDirector _resolvedDirector;
+        private byte _directorState;
 
         public byte[] TimelineBytes
         {
@@ -58,7 +59,6 @@ namespace K13A.TSMP.Udon
             Binary.WriteFloat32LE(timelineBytes, 2, (float)director.time);
             Binary.WriteFloat32LE(timelineBytes, 6, (float)director.duration);
             encodedTimelineBytes = PacketBytes;
-            _lastEncodedTime = director.time;
         }
 
         public override void OnTSMPVariableReceived()
@@ -90,15 +90,15 @@ namespace K13A.TSMP.Udon
 
             if (state == StatePlaying)
             {
-                director.Play();
+                Play();
             }
             else if (state == StatePaused)
             {
-                director.Pause();
+                Pause();
             }
             else
             {
-                director.Stop();
+                Stop();
             }
         }
 
@@ -106,18 +106,62 @@ namespace K13A.TSMP.Udon
         {
             if (director == null)
                 director = GetComponent<PlayableDirector>();
+            if (_resolvedDirector == director)
+                return;
+
+            _resolvedDirector = director;
+            _directorState = director != null && director.playOnAwake ? StatePlaying : StateStopped;
+#if !COMPILER_UDONSHARP
+            if (!Application.isPlaying)
+                _directorState = StateStopped;
+#endif
         }
 
         private byte GetDirectorState()
         {
-            double currentTime = director.time;
-            if (_lastEncodedTime >= 0.0 && Mathf.Abs((float)(currentTime - _lastEncodedTime)) > 0.0001f)
+#if !COMPILER_UDONSHARP
+            if (director.state == PlayState.Playing)
                 return StatePlaying;
+            return director.playableGraph.IsValid() ? StatePaused : StateStopped;
+#else
+            return _directorState;
+#endif
+        }
 
-            if (currentTime > 0.0 && currentTime < director.duration)
-                return StatePaused;
+        public void Play()
+        {
+            ResolveDirector();
+            if (director == null)
+                return;
+            director.Play();
+            _directorState = StatePlaying;
+        }
 
-            return StateStopped;
+        public void Pause()
+        {
+            ResolveDirector();
+            if (director == null)
+                return;
+            director.Pause();
+            _directorState = StatePaused;
+        }
+
+        public void Stop()
+        {
+            ResolveDirector();
+            if (director == null)
+                return;
+            director.Stop();
+            _directorState = StateStopped;
+        }
+
+        public void Resume()
+        {
+            ResolveDirector();
+            if (director == null)
+                return;
+            director.Resume();
+            _directorState = StatePlaying;
         }
 
     }

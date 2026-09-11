@@ -751,6 +751,7 @@ namespace K13A.TSMP
         {
             lastEncodeStage = 1;
             lastError = string.Empty;
+            _codecQueryValid = false;
             EnsureResources();
 
             if (_currentMessageStartOffset >= 0)

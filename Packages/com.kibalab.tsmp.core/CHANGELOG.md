@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Reserve existing Network IDs before assigning IDs to new objects or resolving duplicates.
+- Refresh binding, humanoid rig, Animator parameter and codec configuration caches when their contents change, including same-length replacements. Check decoder binding configuration once per network frame.
+- Preserve configured codec instances when Setup adds, removes or reorders codec sources, or changes the instance root.
+- Read actual Timeline state in native Unity. Add Play, Pause, Resume and Stop controls for explicit Udon playback-state tracking instead of inferring state from time deltas.
+- Keep the Decoder payload buffer at its actual size between readbacks instead of reallocating it to 4096 bytes before every header.
 - Give each decoder binding its own received array buffer so updating one field cannot overwrite another field or recipient. Reuse buffers for same-length updates within each binding.
 - Prevent duplicate automatic encoding in the SDK-free Editor: the native Encoder drives itself, while Setup delegates editor encoding only when UdonSharp is present. Manual encoding and automatic setup preparation are unchanged.
 - Restore discrete blendshape values on receipt when animation or another script has changed the Renderer since the previous packet.

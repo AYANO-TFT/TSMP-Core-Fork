@@ -47,6 +47,7 @@ namespace K13A.TSMP.Udon
         private const int LayerBytes = 13;
 
         private int[] _parameterHashes;
+        private string[] _cachedParameterNames;
         private int _parameterHashLength = -1;
         private int[] _selectedParameterIndices;
         private int[] _selectedLayerIndices;
@@ -250,12 +251,18 @@ namespace K13A.TSMP.Udon
         private void EnsureParameterHashes()
         {
             int length = parameterNames != null ? parameterNames.Length : 0;
-            if (_parameterHashes != null && _parameterHashLength == length)
-                return;
-
-            _parameterHashes = new int[length];
+            if (_parameterHashes == null || _parameterHashLength != length || _cachedParameterNames == null || _cachedParameterNames.Length != length)
+            {
+                _parameterHashes = new int[length];
+                _cachedParameterNames = new string[length];
+            }
             for (int i = 0; i < length; i++)
+            {
+                if (_cachedParameterNames[i] == parameterNames[i])
+                    continue;
                 _parameterHashes[i] = string.IsNullOrEmpty(parameterNames[i]) ? 0 : Animator.StringToHash(parameterNames[i]);
+                _cachedParameterNames[i] = parameterNames[i];
+            }
             _parameterHashLength = length;
         }
 

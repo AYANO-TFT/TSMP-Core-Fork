@@ -285,6 +285,18 @@ namespace K13A.TSMP
             return targets.Length == count;
         }
 
+        public static bool MatchesUdonTargets(UdonBehaviour[] cached, Component[] components, UdonBehaviour[] targets, int count)
+        {
+            if (!IsUdonTargetCacheValid(cached, count))
+                return false;
+            for (int i = 0; i < count; i++)
+            {
+                if (cached[i] != ResolveUdonTarget(components, targets, i))
+                    return false;
+            }
+            return true;
+        }
+
 #endif
 
         public static bool IsComponentTargetCacheValid(Component[] targets, int count)
@@ -293,6 +305,19 @@ namespace K13A.TSMP
                 return false;
 
             return targets.Length == count;
+        }
+
+        public static bool MatchesComponentTargets(Component[] cached, Component[] targets, int count)
+        {
+            if (!IsComponentTargetCacheValid(cached, count))
+                return false;
+            for (int i = 0; i < count; i++)
+            {
+                Component target = targets != null && i < targets.Length ? targets[i] : null;
+                if (cached[i] != target)
+                    return false;
+            }
+            return true;
         }
 
 #if UDONSHARP || COMPILER_UDONSHARP

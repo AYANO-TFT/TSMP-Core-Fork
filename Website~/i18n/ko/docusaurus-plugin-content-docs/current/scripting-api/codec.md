@@ -74,3 +74,7 @@ VRChat 안에서 codec이 동작해야 한다면 이 methods는 UdonSharp-compat
 | `OnTSMPEncoderWritePayload()` | `WriteEncoderPayload`를 호출하고 결과를 저장합니다. |
 
 Encoder는 이 bridge를 사용해 optional codec package를 hard-code하지 않고 호출합니다.
+
+Udon Encoder는 인코딩 시도마다 한 번 조회합니다. 같은 코덱 인스턴스의 옵션을 바꿔도 용량, payload 시작 행, header 옵션이 함께 갱신됩니다. Getter는 가볍고 부작용 없이 구현하세요. 조회 결과는 해당 인코딩 안에서만 재사용하며 다음 인코딩까지 고정하지 않습니다.
+
+`OnTSMPEncoderQuery()`는 재사용되는 `int[10]`인 `encoderQueryValues`도 채웁니다. 순서는 codec ID, symbol mode, payload 시작 행, 바이트 용량, 옵션 개수, 옵션 바이트 다섯 개입니다. Bridge는 이 배열을 한 번에 읽습니다. 다음 조회에서 변경되는 읽기 전용 결과로 취급하고 설정 저장소로 사용하지 마세요. 기존 개별 결과 필드도 유지됩니다. 사용자 정의 코덱은 기존 Getter를 그대로 구현하면 되며 별도의 캐시 무효화 API는 필요하지 않습니다.

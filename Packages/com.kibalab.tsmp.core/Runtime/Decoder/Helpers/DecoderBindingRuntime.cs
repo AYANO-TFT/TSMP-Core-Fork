@@ -54,7 +54,7 @@ namespace K13A.TSMP
             nextBindingLookupCount = bindingLookupCount;
             nextBindingLookupSignature = bindingLookupSignature;
 
-            if (BindingLookup.IsCacheValid(bindingLookupNetworkIds, bindingLookupVariableHashes, bindingLookupBindingIndices, bindingLookupCount, bindingLookupSignature, count, signature))
+            if (BindingLookup.MatchesBindings(bindingLookupNetworkIds, bindingLookupVariableHashes, bindingLookupBindingIndices, bindingLookupCount, bindingNetworkIds, bindingVariableHashes, targetCount))
                 return;
 
             nextBindingLookupNetworkIds = new ushort[count];

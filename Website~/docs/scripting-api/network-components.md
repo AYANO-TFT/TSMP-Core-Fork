@@ -29,6 +29,19 @@ TSMP includes several `TSMPNetworkBehaviour` components that cover common VRChat
 | `TSMPNetworkGameObjectToggle` | Toggle event through TSMP RPC. |
 | `TSMPDebugCanvas` | Text UI for frame counters, bitrate, loss, and header metadata. |
 
+## Timeline controls {#timeline-controls}
+
+`TSMPNetworkTimelineSync` exposes four parameterless methods, also callable as Udon custom events:
+
+| Method | Effect |
+| --- | --- |
+| `Play()` | Starts the assigned Director and records Playing. |
+| `Pause()` | Pauses the assigned Director and records Paused, including at time zero. |
+| `Resume()` | Resumes the assigned Director and records Playing. |
+| `Stop()` | Stops the assigned Director and records Stopped. |
+
+These calls control local playback; the Encoder transmits the resulting state on its next capture. Native Unity reads `director.state` and graph validity, including changes made by other scripts. Udon tracks the commands instead: route playback commands through this component and issue an explicit end-of-sequence command. Udon cannot reliably observe external Director commands or automatic completion. Replacing the Director resets tracked state from its `playOnAwake` setting.
+
 ## Choosing a component
 
 Use built-in components when the data model matches your object. Write a custom `TSMPNetworkBehaviour` when:

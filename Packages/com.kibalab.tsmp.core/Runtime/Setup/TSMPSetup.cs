@@ -363,7 +363,8 @@ namespace K13A.TSMP
 
             Transform parent = codecInstanceRoot != null ? codecInstanceRoot : transform;
 
-            if (codecInstances != null && codecInstances.Length == codecPrefabs.Length)
+            if (codecInstances != null && codecInstances.Length == codecPrefabs.Length &&
+                codecInstanceSources != null && codecInstanceSources.Length == codecPrefabs.Length)
             {
                 bool valid = true;
                 for (int i = 0; i < codecInstances.Length; i++)
@@ -372,11 +373,9 @@ namespace K13A.TSMP
                         valid = false;
                     else if (codecPrefabs[i] != null && codecInstances[i] == null)
                         valid = false;
-                    else if (codecPrefabs[i] != null && codecInstances[i] != null && !codecInstances[i].name.StartsWith(codecPrefabs[i].name))
-                        valid = false;
                     else if (codecInstances[i] != null && codecInstances[i].transform.parent != parent)
                         valid = false;
-                    else if (codecInstanceSources != null && codecInstanceSources.Length == codecPrefabs.Length && codecInstanceSources[i] != codecPrefabs[i])
+                    else if (codecInstanceSources[i] != codecPrefabs[i])
                         valid = false;
                 }
 
@@ -384,7 +383,10 @@ namespace K13A.TSMP
                     return;
             }
 
-            CleanupCodecInstances(parent);
+            TSMPCodec[] previousInstances = codecInstances;
+            TSMPCodec[] previousSources = codecInstanceSources;
+            bool[] reused = new bool[previousInstances != null ? previousInstances.Length : 0];
+            RecordObject(this, "Update TSMP codec instances");
             codecInstances = new TSMPCodec[codecPrefabs.Length];
             codecInstanceSources = (TSMPCodec[])codecPrefabs.Clone();
 
@@ -394,13 +396,50 @@ namespace K13A.TSMP
                 if (prefab == null)
                     continue;
 
-                TSMPCodec instance = SetupInstantiation.InstantiateCodec(prefab, parent, this);
+                TSMPCodec instance = null;
+                for (int j = 0; j < reused.Length; j++)
+                {
+                    if (reused[j] || previousInstances[j] == null)
+                        continue;
+
+                    bool sourceMatches = previousSources != null && j < previousSources.Length
+                        ? previousSources[j] == prefab
+                        : j == i && previousInstances[j].name == prefab.name + " (Runtime)";
+                    if (!sourceMatches)
+                        continue;
+
+                    instance = previousInstances[j];
+                    reused[j] = true;
+                    break;
+                }
+
+                if (instance == null)
+                {
+                    instance = SetupInstantiation.InstantiateCodec(prefab, parent, this);
+                    if (instance != null)
+                        instance.name = prefab.name + " (Runtime)";
+                }
                 if (instance == null)
                     continue;
 
-                instance.name = prefab.name + " (Runtime)";
+                if (instance.transform.parent != parent)
+                {
+#if UNITY_EDITOR
+                    if (!Application.isPlaying)
+                        UnityEditor.Undo.SetTransformParent(instance.transform, parent, "Move TSMP codec instance");
+                    else
+#endif
+                        instance.transform.SetParent(parent, false);
+                }
                 codecInstances[i] = instance;
             }
+
+            for (int i = 0; i < reused.Length; i++)
+            {
+                if (!reused[i] && previousInstances[i] != null)
+                    DestroyCodecInstance(previousInstances[i].gameObject);
+            }
+            MarkDirty(this);
         }
 
         private void CleanupCodecInstances(Transform parent)
@@ -432,6 +471,7 @@ namespace K13A.TSMP
             }
 
             codecInstances = null;
+            codecInstanceSources = null;
         }
 
         private void DestroyCodecInstance(GameObject instance)

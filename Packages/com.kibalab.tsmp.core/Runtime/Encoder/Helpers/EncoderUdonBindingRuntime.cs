@@ -34,7 +34,7 @@ namespace K13A.TSMP
             bool cacheValid = true;
             if (cachedCount != count)
                 cacheValid = false;
-            if (!BindingTable.IsUdonTargetCacheValid(cachedTargets, count))
+            if (!BindingTable.MatchesUdonTargets(cachedTargets, bindingTargets, bindingUdonTargets, count))
                 cacheValid = false;
 
             if (cacheValid)

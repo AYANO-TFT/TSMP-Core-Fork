@@ -254,6 +254,21 @@ namespace K13A.TSMP.Editor
         {
             var usedIds = new HashSet<ushort>();
             var idOwners = new Dictionary<ushort, string>();
+            for (int i = 0; i < behaviours.Length;)
+            {
+                if (behaviours[i] == null)
+                {
+                    i++;
+                    continue;
+                }
+
+                int end = FindNextObjectGroupIndex(behaviours, i, behaviours[i].transform);
+                ushort requestedId = ResolveRequestedNetworkId(behaviours, i, end);
+                if (requestedId != 0)
+                    usedIds.Add(requestedId);
+                i = end;
+            }
+
             int assignedCount = 0;
             int index = 0;
 
@@ -329,7 +344,7 @@ namespace K13A.TSMP.Editor
             if (requestedId == 0)
                 return AllocateNetworkId(usedIds);
 
-            if (!usedIds.Contains(requestedId))
+            if (!idOwners.ContainsKey(requestedId))
                 return requestedId;
 
             string ownerPath;

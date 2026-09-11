@@ -112,10 +112,12 @@ namespace K13A.TSMP.Udon
         private bool _boneIdHashCacheValid;
         private int _boneIdHashCacheLength = -2;
         private int _boneIdHashCacheValue;
+        private int[] _boneIdHashCacheIds;
         private bool _cachedIncludeFingerBones;
         private bool _boneCacheValid;
         private bool _resolvedBones;
         private Animator _resolvedAnimator;
+        private Avatar _resolvedAvatar;
         private Transform _rootMotionTarget;
         private bool _fingerBoneIdsPrepared;
         private int _fingerBoneIdsPreparedLength = -1;
@@ -162,10 +164,10 @@ namespace K13A.TSMP.Udon
             if (!IsTSMPActive())
                 return;
 
-            EnsureFingerBoneIds();
-
             if (autoResolveBones)
                 ResolveBones();
+            else
+                EnsureFingerBoneIds();
 
             Transform rootTarget = _rootMotionTarget != null ? _rootMotionTarget : ResolveRootMotionTarget();
             bool hasRootMotionPosition = rootTarget != null;
@@ -255,10 +257,10 @@ namespace K13A.TSMP.Udon
             if (!IsTSMPActive() || poseBytes == null || poseBytes.Length < PoseHeaderBytes)
                 return;
 
-            EnsureFingerBoneIds();
-
             if (autoResolveBones)
                 ResolveBones();
+            else
+                EnsureFingerBoneIds();
 
             byte version = poseBytes[0];
             byte flags = poseBytes[1];
@@ -432,9 +434,23 @@ namespace K13A.TSMP.Udon
             if (animator == null)
                 animator = GetComponent<Animator>();
 
+            Avatar currentAvatar = animator != null ? animator.avatar : null;
+            if (_resolvedAnimator != animator || _resolvedAvatar != currentAvatar)
+            {
+                _resolvedAnimator = animator;
+                _resolvedAvatar = currentAvatar;
+                _resolvedBones = false;
+                _boneTargetsById = null;
+                _boneTargetResolvedByIndex = null;
+                _rootMotionTarget = null;
+                _activeBoneCount = 0;
+                _hasContinuousBoneTargets = false;
+                _hasContinuousRootTarget = false;
+                _hasTargetBoneRotation = null;
+            }
+
             bool cacheShapeValid =
                 _resolvedBones
-                && _resolvedAnimator == animator
                 && _boneCacheValid
                 && _cachedBoneIdLength == (boneIds != null ? boneIds.Length : -1)
                 && _cachedBoneIdHash == GetBoneIdHash()
@@ -446,7 +462,12 @@ namespace K13A.TSMP.Udon
             EnsureLookupArrays();
 
             if (boneIds == null)
+            {
+                _activeBoneCount = 0;
+                validBoneCount = 0;
+                boneTargets = null;
                 return;
+            }
 
             if (boneTargets == null || boneTargets.Length != boneIds.Length)
             {
@@ -455,16 +476,26 @@ namespace K13A.TSMP.Udon
             }
 
             if (!CanResolveHumanoidBones())
+            {
+                if (autoResolveBones)
+                {
+                    for (int i = 0; i < boneTargets.Length; i++)
+                        boneTargets[i] = null;
+                }
+                _activeBoneCount = 0;
+                validBoneCount = 0;
                 return;
+            }
 
             if (!_boneCacheValid || _cachedBoneIdLength != boneIds.Length || _cachedBoneIdHash != GetBoneIdHash() || _cachedIncludeFingerBones != includeFingerBones)
                 RebuildBoneLookup();
 
             for (int i = 0; i < boneIds.Length; i++)
             {
-                if (!_boneTargetResolvedByIndex[i] && HumanoidBoneUtil.IsValidHumanBoneId(boneIds[i]))
+                if (!_boneTargetResolvedByIndex[i])
                 {
-                    boneTargets[i] = animator.GetBoneTransform((HumanBodyBones)boneIds[i]);
+                    boneTargets[i] = HumanoidBoneUtil.IsValidHumanBoneId(boneIds[i])
+                        ? animator.GetBoneTransform((HumanBodyBones)boneIds[i]) : null;
                     _boneTargetResolvedByIndex[i] = true;
                 }
             }
@@ -480,12 +511,12 @@ namespace K13A.TSMP.Udon
 
             _rootMotionTarget = _boneTargetsById[(int)HumanBodyBones.Hips];
             RebuildActiveBoneIndices();
-            _resolvedAnimator = animator;
             _resolvedBones = true;
         }
 
         private void EnsureFingerBoneIds()
         {
+            RefreshBoneIdHash();
             int currentLength = -1;
             if (boneIds != null)
                 currentLength = boneIds.Length;
@@ -493,6 +524,7 @@ namespace K13A.TSMP.Udon
             if (_fingerBoneIdsPrepared && _fingerBoneIdsPreparedLength == currentLength && _fingerBoneIdsPreparedHash == currentHash && _fingerBoneIdsPreparedInclude == includeFingerBones)
                 return;
 
+            _resolvedBones = false;
             if (!includeFingerBones || boneIds == null)
             {
                 MarkFingerBoneIdsPrepared();
@@ -694,12 +726,37 @@ namespace K13A.TSMP.Udon
             _boneCacheValid = true;
         }
 
-        private int GetBoneIdHash()
+        private void RefreshBoneIdHash()
         {
             int length = boneIds != null ? boneIds.Length : -1;
-            if (_boneIdHashCacheValid && _boneIdHashCacheLength == length)
+            bool unchanged = _boneIdHashCacheValid && _boneIdHashCacheLength == length;
+            for (int i = 0; unchanged && i < length; i++)
+            {
+                if (_boneIdHashCacheIds[i] != boneIds[i])
+                    unchanged = false;
+            }
+            if (!unchanged)
+                _boneIdHashCacheValid = false;
+        }
+
+        private int GetBoneIdHash()
+        {
+            if (_boneIdHashCacheValid)
                 return _boneIdHashCacheValue;
 
+            int length = boneIds != null ? boneIds.Length : -1;
+            if (_boneIdHashCacheIds == null || _boneIdHashCacheIds.Length != Mathf.Max(0, length))
+                _boneIdHashCacheIds = new int[Mathf.Max(0, length)];
+            for (int i = 0; i < length; i++)
+                _boneIdHashCacheIds[i] = boneIds[i];
+            _boneCacheValid = false;
+            _resolvedBones = false;
+            _fingerBoneIdsPrepared = false;
+            if (_boneTargetResolvedByIndex != null)
+            {
+                for (int i = 0; i < _boneTargetResolvedByIndex.Length; i++)
+                    _boneTargetResolvedByIndex[i] = false;
+            }
             _boneIdHashCacheLength = length;
             _boneIdHashCacheValue = ComputeBoneIdHash();
             _boneIdHashCacheValid = true;

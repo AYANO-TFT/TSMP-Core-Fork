@@ -55,6 +55,13 @@ namespace K13A.TSMP
         public static void QueryBridge(UdonBehaviour codec, int width, int height, int blockSize, int fallbackCodecId, int fallbackCapacityBytes, int[] values)
         {
             CodecBridge.QueryEncoder(codec, width, height, blockSize);
+            int[] result = (int[])TSMPBehaviour.GetProgramVariable(codec, TSMPCodec.EncoderQueryValuesFieldName);
+            if (result != null && result.Length == QueryValueCount)
+            {
+                for (int i = 0; i < QueryValueCount; i++)
+                    values[i] = result[i];
+                return;
+            }
             values[QueryCodecId] = CodecBridge.GetEncoderCodecId(codec, fallbackCodecId);
             values[QuerySymbolMode] = CodecBridge.GetEncoderSymbolMode(codec, (int)K13A.TSMP.SymbolMode.Luma4);
             values[QueryPayloadStartRow] = CodecBridge.GetEncoderPayloadStartRow(codec, Luma4Raster.PayloadStartRow);
