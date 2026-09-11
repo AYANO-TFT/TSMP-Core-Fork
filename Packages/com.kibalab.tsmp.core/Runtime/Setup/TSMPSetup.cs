@@ -60,7 +60,9 @@ namespace K13A.TSMP
         public FrameLayout Layout => layout;
 #if UNITY_EDITOR
         private bool _prepareQueued;
+#if UDONSHARP
         private double _nextEditorEncodeTime;
+#endif
 #endif
         private bool _applying;
         private void Reset()
@@ -76,8 +78,10 @@ namespace K13A.TSMP
                 ApplyNow();
             else
                 QueuePreparation();
+#if UDONSHARP
             UnityEditor.EditorApplication.update -= EditorUpdate;
             UnityEditor.EditorApplication.update += EditorUpdate;
+#endif
 #else
             ApplyNow();
 #endif
@@ -86,7 +90,9 @@ namespace K13A.TSMP
         private void OnDisable()
         {
 #if UNITY_EDITOR
+#if UDONSHARP
             UnityEditor.EditorApplication.update -= EditorUpdate;
+#endif
             UnityEditor.EditorApplication.delayCall -= PrepareQueued;
             _prepareQueued = false;
 #endif
@@ -127,6 +133,7 @@ namespace K13A.TSMP
             ApplyNow();
         }
 
+#if UDONSHARP
         private void EditorUpdate()
         {
             if (this == null || Application.isPlaying || UnityEditor.EditorUtility.IsPersistent(this))
@@ -144,6 +151,7 @@ namespace K13A.TSMP
             SetupApplier.InvokeEncode(encoder);
             SetupApplier.BlitEncoderOutputInEditor(encoder);
         }
+#endif
 #endif
 
         [ContextMenu("Apply TSMP Setup")]
