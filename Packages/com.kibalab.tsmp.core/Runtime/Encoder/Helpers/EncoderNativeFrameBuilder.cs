@@ -54,8 +54,6 @@ namespace K13A.TSMP
             if (!WriteRpcMessages(queuedRpcs, payload, ref payloadOffset, sequence, ref networkMessageCount, out rpcMessageCount, out error))
                 return false;
 
-            AdvanceQueuedRpcs(queuedRpcs);
-
             if (!NetworkFrameWriter.EndNetworkFrame(payload, 0, networkMessageCount))
             {
                 error = "Failed to finish network frame.";
@@ -161,7 +159,7 @@ namespace K13A.TSMP
             return true;
         }
 
-        private static void AdvanceQueuedRpcs(List<QueuedRpc> queuedRpcs)
+        public static void AdvanceQueuedRpcs(List<QueuedRpc> queuedRpcs)
         {
             if (queuedRpcs == null)
                 return;

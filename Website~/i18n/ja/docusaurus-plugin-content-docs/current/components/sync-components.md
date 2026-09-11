@@ -85,6 +85,12 @@ TSMP に送信するオブジェクトにこれらのコンポーネントを追
 
 受信機が再生/一時停止およびタイムライン時間に従う必要がある場合に使用します。送信者と受信者の間でディレクターのセットアップの一貫性を保ちます。
 
+通常の Unity では Director の実際の再生状態を読み取ります。一時停止中に時間を変更しても再生中とは判断せず、同じ時間を二度取得しても一時停止とは判断しません。
+
+VRChat では Director を直接呼び出さず、送信側の `TSMPNetworkTimelineSync.Play()`、`Pause()`、`Resume()`、`Stop()` で制御してください。Udon には Director の再生状態や PlayableGraph を取得する API がないため、`playOnAwake` を初期状態としてこれらのコマンドを追跡します。外部スクリプトによる直接操作やタイムラインの自動終了は確実には検出できません。シーケンス終了時には意図に応じて `Stop()` または `Pause()` を呼び出してください。再生時間は引き続き Director から取得します。
+
+[Scripting API の Timeline 制御](../scripting-api/network-components.md#timeline-controls)も参照してください。
+
 ## ゲームオブジェクトの切り替え
 
 `TSMPNetworkGameObjectToggle` は、TSMP RPC を切り替える単純な対話可能なオブジェクトとして使用します。

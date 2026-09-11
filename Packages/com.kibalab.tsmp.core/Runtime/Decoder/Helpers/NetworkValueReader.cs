@@ -274,39 +274,95 @@ namespace K13A.TSMP
             return value;
         }
 
-        public static bool[] CopyBoolArray(byte[] source, int offset, int length, bool[] cache)
+        public static bool[] CopyBoolArray(byte[] source, int offset, int length, bool[][] cache, int bindingIndex)
         {
-            return NetworkValueReader.CopyBoolArray(source, offset, length, cache);
+            bool[] value = null;
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                value = cache[bindingIndex];
+
+            value = NetworkValueReader.CopyBoolArray(source, offset, length, value);
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                cache[bindingIndex] = value;
+
+            return value;
         }
 
-        public static int[] CopyInt32Array(byte[] source, int offset, int length, int[] cache)
+        public static int[] CopyInt32Array(byte[] source, int offset, int length, int[][] cache, int bindingIndex)
         {
-            return NetworkValueReader.CopyInt32Array(source, offset, length, cache);
+            int[] value = null;
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                value = cache[bindingIndex];
+
+            value = NetworkValueReader.CopyInt32Array(source, offset, length, value);
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                cache[bindingIndex] = value;
+
+            return value;
         }
 
-        public static float[] CopyFloat32Array(byte[] source, int offset, int length, float[] cache)
+        public static float[] CopyFloat32Array(byte[] source, int offset, int length, float[][] cache, int bindingIndex)
         {
-            return NetworkValueReader.CopyFloat32Array(source, offset, length, cache);
+            float[] value = null;
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                value = cache[bindingIndex];
+
+            value = NetworkValueReader.CopyFloat32Array(source, offset, length, value);
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                cache[bindingIndex] = value;
+
+            return value;
         }
 
-        public static Vector2[] CopyVector2Array(byte[] source, int offset, int length, Vector2[] cache)
+        public static Vector2[] CopyVector2Array(byte[] source, int offset, int length, Vector2[][] cache, int bindingIndex)
         {
-            return NetworkValueReader.CopyVector2Array(source, offset, length, cache);
+            Vector2[] value = null;
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                value = cache[bindingIndex];
+
+            value = NetworkValueReader.CopyVector2Array(source, offset, length, value);
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                cache[bindingIndex] = value;
+
+            return value;
         }
 
-        public static Vector3[] CopyVector3Array(byte[] source, int offset, int length, Vector3[] cache)
+        public static Vector3[] CopyVector3Array(byte[] source, int offset, int length, Vector3[][] cache, int bindingIndex)
         {
-            return NetworkValueReader.CopyVector3Array(source, offset, length, cache);
+            Vector3[] value = null;
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                value = cache[bindingIndex];
+
+            value = NetworkValueReader.CopyVector3Array(source, offset, length, value);
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                cache[bindingIndex] = value;
+
+            return value;
         }
 
-        public static Quaternion[] CopyQuaternionArray(byte[] source, int offset, int length, Quaternion[] cache)
+        public static Quaternion[] CopyQuaternionArray(byte[] source, int offset, int length, Quaternion[][] cache, int bindingIndex)
         {
-            return NetworkValueReader.CopyQuaternionArray(source, offset, length, cache);
+            Quaternion[] value = null;
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                value = cache[bindingIndex];
+
+            value = NetworkValueReader.CopyQuaternionArray(source, offset, length, value);
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                cache[bindingIndex] = value;
+
+            return value;
         }
 
-        public static string[] CopyStringArray(byte[] source, int offset, int length, string[] cache)
+        public static string[] CopyStringArray(byte[] source, int offset, int length, string[][] cache, int bindingIndex)
         {
-            return NetworkValueReader.CopyStringArray(source, offset, length, cache);
+            string[] value = null;
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                value = cache[bindingIndex];
+
+            value = NetworkValueReader.CopyStringArray(source, offset, length, value);
+            if (cache != null && bindingIndex >= 0 && bindingIndex < cache.Length)
+                cache[bindingIndex] = value;
+
+            return value;
         }
     }
 }

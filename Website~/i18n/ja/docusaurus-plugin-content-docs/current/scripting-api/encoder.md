@@ -19,7 +19,7 @@ title: TSMPEncoder API
 | `selectedCodec` | ペイロード バイトをピクセルに変換するために使用されるコーデック コンポーネント。 Luma4 はデフォルトのコーデックです。 |
 | `useBlockSymbolTexture` | 選択したコーデックがサポートしている場合は、コーデック ブロック テクスチャ パスを使用します。 |
 | `networkBehaviours` | `[TransSync]` データおよび TSMP RPC メッセージに寄与する可能性のあるバインドされた動作。 |
-| `transRpcRepeatFrames` | キューに入れられた RPC を表示し続ける追加フレームの数。損失の多いキャプチャ パスの場合は、これを増やします。 |
+| `transRpcRepeatFrames` | キュー内の TransRPC を含むフレームの出力に成功する総回数です。初回送信を含めて 1-16 回で、エンコードに失敗した場合は回数を消費しません。 |
 | `streamId` | フレームヘッダーに書き込まれる論理ストリーム識別子。 |
 | `layoutId` | フレームヘッダーに書き込まれる論理レイアウト識別子。 |
 
@@ -84,6 +84,8 @@ public void QueueTransRpc(int networkId, uint rpcHash, string methodName)
 ネットワーク ID とメソッド ハッシュによって TSMP RPC をキューに入れます。これは、`TSMPNetworkBehaviour.SendTransRPC()` によって使用されるエンコーダ側のエントリ ポイントです。
 
 キューは `transRpcRepeatFrames` に従って後続のフレームに書き込まれるため、単一のイベントはテクスチャ パスでの短いフレーム ドロップに耐えることができます。
+
+これは繰り返し送信であり、受信確認による配信保証ではありません。イベントを含むすべてのフレームが失われると、RPC も失われます。Decoder は Stream ID、Network ID、メソッドハッシュ、イベント ID を使って直近 32 件の異なるイベントを記憶し、重複実行を防ぎます。1 つの Decoder で複数の送信元を受信する場合は、それぞれ異なる `streamId` を使用してください。送信元を再起動して同じ Stream ID とイベント ID を再利用すると、以前のキャッシュと衝突する可能性があります。
 
 ## 生の変数ライター API
 

@@ -47,6 +47,8 @@ namespace K13A.TSMP
         public Transform codecInstanceRoot;
         [HideInInspector] public bool instantiateCodecPrefabsAtRuntime = true;
         [SerializeField, HideInInspector] private TSMPCodec[] codecInstances;
+        [SerializeField, HideInInspector] private TSMPCodec[] codecInstanceSources;
+        [HideInInspector] public SetupResources resources;
 
         [Header("Materials")]
         public bool configureMaterials = true;
@@ -57,9 +59,12 @@ namespace K13A.TSMP
 
         public FrameLayout Layout => layout;
 #if UNITY_EDITOR
-        private bool _deferEditorCodecCleanup;
+        private bool _prepareQueued;
+#if UDONSHARP
         private double _nextEditorEncodeTime;
 #endif
+#endif
+        private bool _applying;
         private void Reset()
         {
             encoder = GetComponent<TSMPEncoder>();
@@ -68,17 +73,28 @@ namespace K13A.TSMP
 
         private void OnEnable()
         {
-            ApplyNow();
 #if UNITY_EDITOR
+            if (Application.isPlaying)
+                ApplyNow();
+            else
+                QueuePreparation();
+#if UDONSHARP
             UnityEditor.EditorApplication.update -= EditorUpdate;
             UnityEditor.EditorApplication.update += EditorUpdate;
+#endif
+#else
+            ApplyNow();
 #endif
         }
 
         private void OnDisable()
         {
 #if UNITY_EDITOR
+#if UDONSHARP
             UnityEditor.EditorApplication.update -= EditorUpdate;
+#endif
+            UnityEditor.EditorApplication.delayCall -= PrepareQueued;
+            _prepareQueued = false;
 #endif
         }
 
@@ -88,15 +104,7 @@ namespace K13A.TSMP
             if (applyOnValidate)
             {
 #if UNITY_EDITOR
-                _deferEditorCodecCleanup = true;
-                try
-                {
-                    ApplyNow();
-                }
-                finally
-                {
-                    _deferEditorCodecCleanup = false;
-                }
+                QueuePreparation();
 #else
                 ApplyNow();
 #endif
@@ -104,9 +112,31 @@ namespace K13A.TSMP
         }
 
 #if UNITY_EDITOR
+        public void QueuePreparation()
+        {
+            if (_prepareQueued || _applying)
+                return;
+            _prepareQueued = true;
+            UnityEditor.EditorApplication.delayCall += PrepareQueued;
+        }
+
+        private void PrepareQueued()
+        {
+            _prepareQueued = false;
+            if (this == null || !isActiveAndEnabled || Application.isPlaying)
+                return;
+            if (UnityEditor.EditorApplication.isCompiling || UnityEditor.EditorApplication.isUpdating)
+            {
+                QueuePreparation();
+                return;
+            }
+            ApplyNow();
+        }
+
+#if UDONSHARP
         private void EditorUpdate()
         {
-            if (this == null || Application.isPlaying)
+            if (this == null || Application.isPlaying || UnityEditor.EditorUtility.IsPersistent(this))
                 return;
 
             if (!driveEncoderInEditor || encoder == null || !SetupApplier.GetEncoderAutoEncode(encoder))
@@ -122,31 +152,51 @@ namespace K13A.TSMP
             SetupApplier.BlitEncoderOutputInEditor(encoder);
         }
 #endif
+#endif
 
         [ContextMenu("Apply TSMP Setup")]
         public void ApplyNow()
         {
-            ClampValues();
-            RecalculateLayout();
-            AutoSizeByteTexture();
-            RefreshInstalledCodecs();
+#if UNITY_EDITOR
+            if (UnityEditor.EditorUtility.IsPersistent(this) || !gameObject.scene.IsValid())
+                return;
+            if (UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(gameObject) != null)
+                return;
+            if (UnityEditor.EditorApplication.isCompiling || UnityEditor.EditorApplication.isUpdating)
+            {
+                QueuePreparation();
+                return;
+            }
+#endif
+            if (_applying)
+                return;
+            _applying = true;
+            try
+            {
+                SetupInstantiation.Prepare(this);
+                ClampValues();
+                RecalculateLayout();
+                AutoSizeByteTexture();
+                RefreshInstalledCodecs();
 
-            if (resizeFrameRenderTextures)
-                ResizeFrameRenderTextures();
+                if (resizeFrameRenderTextures)
+                    ResizeFrameRenderTextures();
+                if (resizeByteRenderTextures)
+                    ResizeByteRenderTextures();
 
-            if (resizeByteRenderTextures)
-                ResizeByteRenderTextures();
+                EnsureCodecInstances();
 
-            EnsureCodecInstances();
-
-            if (configureEncoder)
-                ApplyEncoder();
-
-            if (configureDecoder)
-                ApplyDecoder();
-
-            if (configureMaterials)
-                ApplyMaterials();
+                if (configureEncoder)
+                    ApplyEncoder();
+                if (configureDecoder)
+                    ApplyDecoder();
+                if (configureMaterials)
+                    ApplyMaterials();
+            }
+            finally
+            {
+                _applying = false;
+            }
         }
 
         private void ClampValues()
@@ -313,7 +363,8 @@ namespace K13A.TSMP
 
             Transform parent = codecInstanceRoot != null ? codecInstanceRoot : transform;
 
-            if (codecInstances != null && codecInstances.Length == codecPrefabs.Length)
+            if (codecInstances != null && codecInstances.Length == codecPrefabs.Length &&
+                codecInstanceSources != null && codecInstanceSources.Length == codecPrefabs.Length)
             {
                 bool valid = true;
                 for (int i = 0; i < codecInstances.Length; i++)
@@ -322,9 +373,9 @@ namespace K13A.TSMP
                         valid = false;
                     else if (codecPrefabs[i] != null && codecInstances[i] == null)
                         valid = false;
-                    else if (codecPrefabs[i] != null && codecInstances[i] != null && !codecInstances[i].name.StartsWith(codecPrefabs[i].name))
-                        valid = false;
                     else if (codecInstances[i] != null && codecInstances[i].transform.parent != parent)
+                        valid = false;
+                    else if (codecInstanceSources[i] != codecPrefabs[i])
                         valid = false;
                 }
 
@@ -332,8 +383,12 @@ namespace K13A.TSMP
                     return;
             }
 
-            CleanupCodecInstances(parent);
+            TSMPCodec[] previousInstances = codecInstances;
+            TSMPCodec[] previousSources = codecInstanceSources;
+            bool[] reused = new bool[previousInstances != null ? previousInstances.Length : 0];
+            RecordObject(this, "Update TSMP codec instances");
             codecInstances = new TSMPCodec[codecPrefabs.Length];
+            codecInstanceSources = (TSMPCodec[])codecPrefabs.Clone();
 
             for (int i = 0; i < codecPrefabs.Length; i++)
             {
@@ -341,19 +396,50 @@ namespace K13A.TSMP
                 if (prefab == null)
                     continue;
 
-#if UNITY_EDITOR
-                TSMPCodec instance = !Application.isPlaying
-                    ? (UnityEditor.PrefabUtility.InstantiatePrefab(prefab.gameObject, parent) as GameObject)?.GetComponent<TSMPCodec>()
-                    : Instantiate(prefab, parent);
-#else
-                TSMPCodec instance = Instantiate(prefab, parent);
-#endif
+                TSMPCodec instance = null;
+                for (int j = 0; j < reused.Length; j++)
+                {
+                    if (reused[j] || previousInstances[j] == null)
+                        continue;
+
+                    bool sourceMatches = previousSources != null && j < previousSources.Length
+                        ? previousSources[j] == prefab
+                        : j == i && previousInstances[j].name == prefab.name + " (Runtime)";
+                    if (!sourceMatches)
+                        continue;
+
+                    instance = previousInstances[j];
+                    reused[j] = true;
+                    break;
+                }
+
+                if (instance == null)
+                {
+                    instance = SetupInstantiation.InstantiateCodec(prefab, parent, this);
+                    if (instance != null)
+                        instance.name = prefab.name + " (Runtime)";
+                }
                 if (instance == null)
                     continue;
 
-                instance.name = prefab.name + " (Runtime)";
+                if (instance.transform.parent != parent)
+                {
+#if UNITY_EDITOR
+                    if (!Application.isPlaying)
+                        UnityEditor.Undo.SetTransformParent(instance.transform, parent, "Move TSMP codec instance");
+                    else
+#endif
+                        instance.transform.SetParent(parent, false);
+                }
                 codecInstances[i] = instance;
             }
+
+            for (int i = 0; i < reused.Length; i++)
+            {
+                if (!reused[i] && previousInstances[i] != null)
+                    DestroyCodecInstance(previousInstances[i].gameObject);
+            }
+            MarkDirty(this);
         }
 
         private void CleanupCodecInstances(Transform parent)
@@ -385,6 +471,7 @@ namespace K13A.TSMP
             }
 
             codecInstances = null;
+            codecInstanceSources = null;
         }
 
         private void DestroyCodecInstance(GameObject instance)
@@ -395,20 +482,6 @@ namespace K13A.TSMP
             if (Application.isPlaying)
                 Destroy(instance);
 #if UNITY_EDITOR
-            else if (_deferEditorCodecCleanup)
-            {
-                GameObject pendingDestroy = instance;
-                UnityEditor.EditorApplication.delayCall += () =>
-                {
-                    if (pendingDestroy == null)
-                        return;
-
-                    if (Application.isPlaying)
-                        Destroy(pendingDestroy);
-                    else
-                        UnityEditor.Undo.DestroyObjectImmediate(pendingDestroy);
-                };
-            }
             else
             {
                 UnityEditor.Undo.DestroyObjectImmediate(instance);

@@ -19,7 +19,7 @@ title: TSMPEncoder API
 | `selectedCodec` | Payload bytes를 pixel로 변환하는 codec component. 기본 codec은 Luma4입니다. |
 | `useBlockSymbolTexture` | 선택 codec이 지원하면 block texture path를 사용합니다. |
 | `networkBehaviours` | `[TransSync]` data와 TSMP RPC message를 만들 수 있는 bound behaviours. |
-| `transRpcRepeatFrames` | Queued RPC를 추가 frame에 반복 노출하는 횟수. 손실이 있는 capture path에서는 늘립니다. |
+| `transRpcRepeatFrames` | 대기 중인 TransRPC 하나를 담아 출력에 성공할 총 프레임 수입니다. 최초 전송을 포함한 1-16회이며, 인코딩 실패는 횟수를 소모하지 않습니다. |
 | `streamId` | Frame header에 기록되는 logical stream ID. |
 | `layoutId` | Frame header에 기록되는 logical layout ID. |
 
@@ -84,6 +84,8 @@ public void QueueTransRpc(int networkId, uint rpcHash, string methodName)
 Network ID와 method hash로 TSMP RPC를 queue합니다. `TSMPNetworkBehaviour.SendTransRPC()`가 내부적으로 사용하는 encoder-side entry point입니다.
 
 Queue된 RPC는 `transRpcRepeatFrames`에 따라 다음 frame들에도 기록되어 짧은 frame drop을 견딜 수 있습니다.
+
+이는 반복 전송이며 수신 확인을 통한 전달 보장은 아닙니다. 해당 이벤트를 담은 프레임이 모두 유실되면 RPC도 유실됩니다. Decoder는 Stream ID, Network ID, 메서드 해시, 이벤트 ID를 기준으로 최근 32개의 서로 다른 이벤트를 기억해 중복 실행을 막습니다. 하나의 Decoder에서 여러 송신자를 받는다면 각각 다른 `streamId`를 사용하세요. 송신자를 재시작한 뒤 같은 Stream ID와 이벤트 ID를 재사용하면 이전 캐시와 충돌할 수 있습니다.
 
 ## Raw variable writer API
 
