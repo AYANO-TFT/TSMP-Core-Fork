@@ -1,8 +1,6 @@
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Net.Sockets;
-using System.Threading;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -53,20 +51,7 @@ namespace K13A.TSMP
         public string lastFfmpegOutput;
         [TextArea(3, 8)] public string ffmpegOutputTail;
 
-        private Process _process;
-        private Thread _writerThread;
-        private AutoResetEvent _frameEvent;
-        private readonly object _frameLock = new object();
-        private byte[] _readbackBuffer;
-        private byte[] _pendingFrame;
-        private byte[] _writerFrame;
-        private byte[] _lastFrame;
-        private byte[] _flipBuffer;
-        private int _pendingLength;
-        private int _lastFrameLength;
-        private bool _hasPendingFrame;
-        private bool _hasLastFrame;
-        private bool _stopWriter;
+        private FfmpegPublishSession _session;
         private double _nextFrameTime;
         private int _activeWidth;
         private int _activeHeight;
@@ -75,7 +60,6 @@ namespace K13A.TSMP
 
         private void OnEnable()
         {
-            _frameEvent = new AutoResetEvent(false);
             _nextFrameTime = 0.0;
 
             if (autoStart && (Application.isPlaying || publishInEditMode))
@@ -85,12 +69,11 @@ namespace K13A.TSMP
         private void OnDisable()
         {
             StopPublishing();
+        }
 
-            if (_frameEvent != null)
-            {
-                _frameEvent.Dispose();
-                _frameEvent = null;
-            }
+        private void OnDestroy()
+        {
+            StopPublishing();
         }
 
         private void OnValidate()
@@ -106,14 +89,23 @@ namespace K13A.TSMP
 
         private void Update()
         {
-            if (!isPublishing)
+            FfmpegPublishSession session = _session;
+            if (session == null)
                 return;
+
+            CopyDiagnostics(session);
+            if (session.GetStatus().Stopped)
+            {
+                StopPublishing();
+                return;
+            }
+            session.RepeatLastFrame = repeatLastFrameWhenIdle;
 
             if (!Application.isPlaying && !publishInEditMode)
                 return;
 
             double now = Application.isPlaying ? Time.timeAsDouble : Time.realtimeSinceStartupAsDouble;
-            double interval = 1.0 / Mathf.Max(1, frameRate);
+            double interval = 1.0 / session.FrameRate;
             if (now < _nextFrameTime)
                 return;
 
@@ -124,15 +116,20 @@ namespace K13A.TSMP
         [ContextMenu("Start Publishing")]
         public void StartPublishing()
         {
+            if (_session != null)
+            {
+                if (!_session.GetStatus().Stopped)
+                    return;
+                StopPublishing();
+            }
+
             lastError = string.Empty;
+            isPublishing = false;
+            readbackInFlight = false;
 
-            if (isPublishing)
+            if (!ValidateSetup() || !ResolveActiveDimensions())
                 return;
 
-            if (!ValidateSetup())
-                return;
-
-            ResolveActiveDimensions();
             ResetCounters();
 
             if (checkRtmpTcpBeforeStart && !CheckRtmpTcpEndpoint())
@@ -152,92 +149,71 @@ namespace K13A.TSMP
                     CreateNoWindow = true
                 };
 
-                _process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-                _process.ErrorDataReceived += OnFfmpegOutput;
-                _process.OutputDataReceived += OnFfmpegOutput;
-
-                if (!_process.Start())
-                {
-                    lastError = "Failed to start FFmpeg process.";
-                    CleanupProcess();
-                    return;
-                }
-
-                _process.BeginErrorReadLine();
-                _process.BeginOutputReadLine();
+                _session = new FfmpegPublishSession(_activeWidth, _activeHeight, Mathf.Clamp(frameRate, 1, 120), repeatLastFrameWhenIdle);
+                _session.Start(startInfo);
                 ApplyRunInBackgroundOverride();
-
-                _stopWriter = false;
-                _hasPendingFrame = false;
-                _hasLastFrame = false;
-                _writerThread = new Thread(WriterLoop)
-                {
-                    IsBackground = true,
-                    Name = "TSMP FFmpeg RTMP Writer"
-                };
-                _writerThread.Start();
 
                 isPublishing = true;
                 _nextFrameTime = 0.0;
             }
             catch (Exception ex)
             {
-                lastError = ex.Message;
-                CleanupProcess();
-                if (logFfmpegOutput) Debug.LogError("[TSMP] " + lastError);
+                SetError("Failed to start FFmpeg: " + ex.Message);
+                StopPublishing();
             }
         }
 
         [ContextMenu("Stop Publishing")]
         public void StopPublishing()
         {
+            FfmpegPublishSession session = _session;
+            _session = null;
             readbackInFlight = false;
             isPublishing = false;
-
-            lock (_frameLock)
+            try
             {
-                _stopWriter = true;
-                _hasPendingFrame = false;
+                if (session != null)
+                {
+                    session.Stop();
+                    CopyDiagnostics(session);
+                }
             }
-
-            if (_frameEvent != null)
-                _frameEvent.Set();
-
-            if (_writerThread != null)
+            finally
             {
-                if (!_writerThread.Join(1000))
-                    _writerThread.Interrupt();
-                _writerThread = null;
+                RestoreRunInBackgroundOverride();
             }
-
-            CleanupProcess();
-            RestoreRunInBackgroundOverride();
         }
 
         private bool ValidateSetup()
         {
+            if (!isActiveAndEnabled)
+            {
+                SetError("Enable the publisher component and its GameObject before starting.");
+                return false;
+            }
+
             if (sourceTexture == null)
             {
-                lastError = "Source texture is not assigned.";
+                SetError("Source texture is not assigned.");
                 return false;
             }
 
             if (string.IsNullOrWhiteSpace(ffmpegPath))
             {
-                lastError = "FFmpeg path is empty.";
+                SetError("FFmpeg path is empty.");
                 return false;
             }
 
             if (string.IsNullOrWhiteSpace(GetEffectiveRtmpUrl()))
             {
-                lastError = "RTMP URL is empty.";
+                SetError("RTMP URL is empty.");
                 return false;
             }
 
             return true;
         }
 
-        private void ResolveActiveDimensions()
+        private bool ResolveActiveDimensions()
         {
             if (useSourceDimensions && sourceTexture != null)
             {
@@ -249,6 +225,31 @@ namespace K13A.TSMP
                 _activeWidth = width;
                 _activeHeight = height;
             }
+
+            if (sourceTexture.dimension != TextureDimension.Tex2D || _activeWidth <= 0 || _activeHeight <= 0 ||
+                (long)_activeWidth * _activeHeight > int.MaxValue / 4)
+            {
+                SetError("FFmpeg requires a 2D source with valid RGBA32 dimensions.");
+                return false;
+            }
+            if (sourceTexture.width != _activeWidth || sourceTexture.height != _activeHeight)
+            {
+                SetError("Source dimensions " + sourceTexture.width + "x" + sourceTexture.height +
+                    " do not match FFmpeg dimensions " + _activeWidth + "x" + _activeHeight +
+                    ". Enable Use Source Dimensions or use matching dimensions; TSMP pixels are not resized.");
+                return false;
+            }
+            if (yuv420p && ((_activeWidth & 1) != 0 || (_activeHeight & 1) != 0))
+            {
+                SetError("YUV420p requires even width and height. Use even source dimensions or disable YUV420p.");
+                return false;
+            }
+            if (!SystemInfo.supportsAsyncGPUReadback)
+            {
+                SetError("This graphics device does not support AsyncGPUReadback.");
+                return false;
+            }
+            return true;
         }
 
         private void ResetCounters()
@@ -264,138 +265,78 @@ namespace K13A.TSMP
 
         private void RequestFrame()
         {
-            if (readbackInFlight || sourceTexture == null)
+            FfmpegPublishSession session = _session;
+            if (session == null || session.ReadbackInFlight)
                 return;
 
-            if (_process == null || _process.HasExited)
+            if (session.GetStatus().Stopped)
             {
-                lastError = "FFmpeg process is not running.";
+                CopyDiagnostics(session);
                 StopPublishing();
                 return;
             }
 
+            if (sourceTexture == null || sourceTexture.dimension != TextureDimension.Tex2D ||
+                sourceTexture.width != session.Width || sourceTexture.height != session.Height)
+            {
+                SetError("Source texture was removed or its dimensions changed. Restart publishing with matching dimensions.");
+                StopPublishing();
+                return;
+            }
+
+            session.ReadbackInFlight = true;
             readbackInFlight = true;
-            AsyncGPUReadback.Request(sourceTexture, 0, TextureFormat.RGBA32, OnFrameReadbackComplete);
+            bool flip = flipVertical;
+            try
+            {
+                AsyncGPUReadback.Request(sourceTexture, 0, TextureFormat.RGBA32,
+                    request => OnFrameReadbackComplete(session, flip, request));
+            }
+            catch (Exception exception)
+            {
+                SetError("AsyncGPUReadback request failed: " + exception.Message);
+                StopPublishing();
+            }
         }
 
-        private void OnFrameReadbackComplete(AsyncGPUReadbackRequest request)
+        private void OnFrameReadbackComplete(FfmpegPublishSession session, bool flip, AsyncGPUReadbackRequest request)
         {
-            readbackInFlight = false;
-
-            if (!isPublishing)
+            if (!ReferenceEquals(_session, session))
                 return;
 
+            session.ReadbackInFlight = false;
+            readbackInFlight = false;
             if (request.hasError)
             {
-                lastError = "AsyncGPUReadback failed.";
+                SetError("AsyncGPUReadback failed.");
                 return;
             }
 
-            NativeArray<byte> data = request.GetData<byte>();
-            int byteLength = data.Length;
-            EnsureFrameBuffers(byteLength);
-            data.CopyTo(_readbackBuffer);
-
-            byte[] source = _readbackBuffer;
-            if (flipVertical)
+            try
             {
-                FlipFrameRows(_readbackBuffer, _flipBuffer, _activeWidth, _activeHeight, 4);
-                source = _flipBuffer;
-            }
-
-            SubmitFrame(source, byteLength);
-        }
-
-        private void EnsureFrameBuffers(int byteLength)
-        {
-            if (_readbackBuffer == null || _readbackBuffer.Length != byteLength)
-                _readbackBuffer = new byte[byteLength];
-
-            if (_pendingFrame == null || _pendingFrame.Length != byteLength)
-                _pendingFrame = new byte[byteLength];
-
-            if (_writerFrame == null || _writerFrame.Length != byteLength)
-                _writerFrame = new byte[byteLength];
-
-            if (_lastFrame == null || _lastFrame.Length != byteLength)
-                _lastFrame = new byte[byteLength];
-
-            if (flipVertical && (_flipBuffer == null || _flipBuffer.Length != byteLength))
-                _flipBuffer = new byte[byteLength];
-        }
-
-        private void SubmitFrame(byte[] frame, int byteLength)
-        {
-            lock (_frameLock)
-            {
-                if (_hasPendingFrame)
-                    framesDropped++;
-
-                Buffer.BlockCopy(frame, 0, _pendingFrame, 0, byteLength);
-                _pendingLength = byteLength;
-                _hasPendingFrame = true;
-                framesSubmitted++;
-            }
-
-            if (_frameEvent != null)
-                _frameEvent.Set();
-        }
-
-        private void WriterLoop()
-        {
-            int waitMs = Mathf.Max(1, Mathf.RoundToInt(1000f / Mathf.Max(1, frameRate)));
-
-            while (!_stopWriter)
-            {
-                if (_frameEvent != null)
-                    _frameEvent.WaitOne(waitMs);
-
-                bool hasFrameToWrite = false;
-                int length;
-
-                lock (_frameLock)
+                NativeArray<byte> data = request.GetData<byte>();
+                if (request.width != session.Width || request.height != session.Height ||
+                    data.Length != session.ReadbackBuffer.Length)
                 {
-                    if (_stopWriter)
-                        return;
-
-                    if (!_hasPendingFrame)
-                    {
-                        if (!repeatLastFrameWhenIdle || !_hasLastFrame)
-                            continue;
-
-                        length = _lastFrameLength;
-                        Buffer.BlockCopy(_lastFrame, 0, _writerFrame, 0, length);
-                        hasFrameToWrite = true;
-                    }
-                    else
-                    {
-                        length = _pendingLength;
-                        Buffer.BlockCopy(_pendingFrame, 0, _writerFrame, 0, length);
-                        Buffer.BlockCopy(_pendingFrame, 0, _lastFrame, 0, length);
-                        _lastFrameLength = length;
-                        _hasLastFrame = true;
-                        _hasPendingFrame = false;
-                        hasFrameToWrite = true;
-                    }
-                }
-
-                if (!hasFrameToWrite)
-                    continue;
-
-                try
-                {
-                    if (_process == null || _process.HasExited)
-                        return;
-
-                    Stream stream = _process.StandardInput.BaseStream;
-                    stream.Write(_writerFrame, 0, length);
-                    framesWritten++;
-                }
-                catch (Exception ex)
-                {
-                    lastError = ex.Message;
+                    SetError("GPU readback dimensions do not match the active FFmpeg session. The frame was discarded.");
+                    StopPublishing();
                     return;
                 }
+
+                data.CopyTo(session.ReadbackBuffer);
+                byte[] source = session.ReadbackBuffer;
+                if (flip)
+                {
+                    FlipFrameRows(source, session.FlipBuffer, session.Width, session.Height, 4);
+                    source = session.FlipBuffer;
+                }
+                session.Submit(source);
+                CopyDiagnostics(session);
+            }
+            catch (Exception exception)
+            {
+                SetError("GPU frame submission failed: " + exception.Message);
+                StopPublishing();
             }
         }
 
@@ -420,7 +361,7 @@ namespace K13A.TSMP
 
         private string BuildFfmpegArguments()
         {
-            int gop = Mathf.Max(1, frameRate);
+            int gop = Mathf.Clamp(frameRate, 1, 120);
             int bufferKbps = Mathf.Max(64, videoBitrateKbps / 2);
             string pixelFormat = yuv420p ? "yuv420p" : "yuv444p";
             string extra = string.IsNullOrWhiteSpace(extraArguments) ? string.Empty : " " + extraArguments.Trim();
@@ -428,7 +369,7 @@ namespace K13A.TSMP
             return "-hide_banner -loglevel warning " +
                 "-f rawvideo -pix_fmt rgba " +
                 "-s " + _activeWidth + "x" + _activeHeight + " " +
-                "-r " + frameRate + " " +
+                "-r " + gop + " " +
                 "-i pipe:0 " +
                 "-an " +
                 "-c:v libx264 " +
@@ -453,7 +394,7 @@ namespace K13A.TSMP
             string effectiveUrl = GetEffectiveRtmpUrl();
             if (!Uri.TryCreate(effectiveUrl, UriKind.Absolute, out Uri uri))
             {
-                lastError = "RTMP URL is invalid.";
+                SetError("RTMP URL is invalid.");
                 return false;
             }
 
@@ -463,10 +404,12 @@ namespace K13A.TSMP
                 using (var client = new TcpClient())
                 {
                     IAsyncResult result = client.BeginConnect(uri.Host, port, null, null);
-                    bool connected = result.AsyncWaitHandle.WaitOne(tcpConnectTimeoutMs);
+                    bool connected;
+                    using (var waitHandle = result.AsyncWaitHandle)
+                        connected = waitHandle.WaitOne(Mathf.Clamp(tcpConnectTimeoutMs, 100, 10000));
                     if (!connected)
                     {
-                        lastError = "RTMP TCP connect timed out: " + uri.Host + ":" + port;
+                        SetError("RTMP TCP connect timed out: " + uri.Host + ":" + port);
                         return false;
                     }
 
@@ -476,7 +419,7 @@ namespace K13A.TSMP
             }
             catch (Exception ex)
             {
-                lastError = "RTMP TCP connect failed: " + uri.Host + ":" + port + " (" + ex.Message + ")";
+                SetError("RTMP TCP connect failed: " + uri.Host + ":" + port + " (" + ex.Message + ")");
                 return false;
             }
         }
@@ -498,61 +441,27 @@ namespace K13A.TSMP
             return server.TrimEnd('/') + "/" + key.TrimStart('/');
         }
 
-        private void OnFfmpegOutput(object sender, DataReceivedEventArgs args)
+        private void CopyDiagnostics(FfmpegPublishSession session)
         {
-            if (string.IsNullOrEmpty(args.Data))
-                return;
-
-            lastFfmpegOutput = args.Data;
-            if (string.IsNullOrEmpty(ffmpegOutputTail))
-                ffmpegOutputTail = args.Data;
-            else
-                ffmpegOutputTail += "\n" + args.Data;
-
-            const int maxTailChars = 4096;
-            if (ffmpegOutputTail.Length > maxTailChars)
-                ffmpegOutputTail = ffmpegOutputTail.Substring(ffmpegOutputTail.Length - maxTailChars);
-
-            if (logFfmpegOutput)
-                Debug.Log("[TSMP] " + args.Data);
+            FfmpegPublishSession.Status status = session.GetStatus();
+            framesSubmitted = status.Submitted;
+            framesWritten = status.Written;
+            framesDropped = status.Dropped;
+            lastFfmpegExitCode = status.ExitCode;
+            if (!string.IsNullOrEmpty(status.Error))
+                SetError(status.Error);
+            if (logFfmpegOutput && !string.IsNullOrEmpty(status.Output) && status.Output != lastFfmpegOutput)
+                Debug.Log("[TSMP] " + status.Output);
+            lastFfmpegOutput = status.Output ?? string.Empty;
+            ffmpegOutputTail = status.OutputTail ?? string.Empty;
         }
 
-        private void CleanupProcess()
+        private void SetError(string error)
         {
-            if (_process == null)
+            if (lastError == error)
                 return;
-
-            try
-            {
-                _process.ErrorDataReceived -= OnFfmpegOutput;
-                _process.OutputDataReceived -= OnFfmpegOutput;
-
-                if (!_process.HasExited)
-                {
-                    try
-                    {
-                        _process.StandardInput.Close();
-                    }
-                    catch
-                    {
-                    }
-
-                    if (!_process.WaitForExit(1000))
-                        _process.Kill();
-                }
-
-                if (_process.HasExited)
-                    lastFfmpegExitCode = _process.ExitCode;
-            }
-            catch (Exception ex)
-            {
-                lastError = ex.Message;
-            }
-            finally
-            {
-                _process.Dispose();
-                _process = null;
-            }
+            lastError = error;
+            Debug.LogWarning("[TSMP FFmpeg] " + error, this);
         }
 
         private static void FlipFrameRows(byte[] source, byte[] destination, int width, int height, int bytesPerPixel)

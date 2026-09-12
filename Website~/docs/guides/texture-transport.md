@@ -69,6 +69,18 @@ When using OBS:
 - Keep the TSMP region fully visible.
 - Verify the receiver input texture is the OBS output, not the original encoder render texture.
 
+## FFmpeg publishing from Unity
+
+`TSMPFfmpegRtmpPublisher` can send a Unity texture to an RTMP server using an externally installed FFmpeg executable. This is a desktop Unity component, not an Udon component that runs inside VRChat.
+
+Assign `Source Texture`, set `FFmpeg Path` and the RTMP destination, then call `StartPublishing()` or enable `Auto Start`. Enable `Publish In Edit Mode` only when you also want editor-time capture. `StopPublishing()` stops the session; disabling or destroying the component also stops it.
+
+Keep `Use Source Dimensions` enabled to use the texture's actual size. With it disabled, `Width` and `Height` must exactly match the source. A mismatch is rejected with a warning; the publisher never resizes TSMP pixels. YUV420p requires even width and height.
+
+Dimensions and frame rate are fixed when a session starts. Stop and restart after changing those settings or the source resolution. Removing or resizing the source stops publishing before incompatible bytes reach FFmpeg. A previous session's pending GPU request is discarded after restart.
+
+`Flip Vertical` reverses complete rows without changing their size. `Repeat Last Frame When Idle` repeats the most recent frame when no new capture is ready. Process failures appear in `Last Error` and warning logs; enable `Log Ffmpeg Output` for additional process output. H.264 compression and color conversion can still corrupt TSMP data, so verify the decoded result through your actual transport.
+
 ## First transport test
 
 Before synchronizing a complex avatar:
