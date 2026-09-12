@@ -1,12 +1,25 @@
 # Changelog
 
-## Unreleased
+## 0.3.0-beta.1
+
+### Added
+
+- Add per-field TransSync send scheduling in native Unity and Udon: descending Priority, content-based SendOnChange and MinSendInterval measured from successful output.
+- Add configurable unchanged-value refresh (one second by default), equal-priority rotation and capacity deferral with diagnostics. Reserve queued RPC payload before automatic variables and retain unsent state for retry. The wire format is unchanged.
+
+### Timeline
 
 - Apply the first received Timeline position after preparing playback, independently of the drift threshold. Prepare paused graphs before evaluating and avoid rebuilding stopped graphs for repeated packets.
 - Implement Timeline Continuous receive correction, including shortest-path correction across loop boundaries. Clear pending corrections when reception is disabled, the component is disabled, or the Director changes.
 - Reject malformed Timeline packets, unknown states and invalid times before changing playback. Clear outgoing Timeline data when its source is unavailable.
 - Make Timeline Play and Resume work after Stop without restarting an already playing Director. Add Seek(float) with playback-state preservation and local duration bounds.
 - Add native Timeline regression tests, real Udon VM receive tests and animated Timeline texture loopback coverage in the Windows Mono Player validation.
+
+### Streaming
+
+- Reject FFmpeg source/output dimension mismatches before process startup, and stop publishing if the source size changes. Validate every RGBA32 readback before row flipping or writing; do not resize TSMP pixels implicitly.
+- Isolate FFmpeg processes, buffers, output diagnostics and GPU callbacks per publishing session so stopped sessions cannot submit into a restarted publisher.
+- Replace writer interruption with cooperative shutdown and process termination for blocked pipes. Dispose session resources after the writer finishes, detect unexpected process exits and restore background execution on failure or shutdown.
 
 ## 0.2.0
 
