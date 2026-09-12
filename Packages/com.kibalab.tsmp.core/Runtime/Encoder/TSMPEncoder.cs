@@ -64,6 +64,8 @@ namespace K13A.TSMP
         public bool clearAfterEncode = true;
         public bool useBlockSymbolTexture = true;
         public int transRpcRepeatFrames = 4;
+        [Min(0f), Tooltip("Resend unchanged TransSync fields after this many seconds. Zero sends only changes. Per-field minimum intervals still apply.")]
+        public float transSyncRefreshInterval = 1f;
         public TSMPCodec selectedCodec;
 #if UDONSHARP || COMPILER_UDONSHARP
         [HideInInspector] public UdonBehaviour selectedCodecUdonTarget;
@@ -84,6 +86,10 @@ namespace K13A.TSMP
         [HideInInspector] public byte[] bindingValueTypes;
         [HideInInspector] public string[] bindingFieldNames;
         [HideInInspector] public int[] bindingDirections;
+        [HideInInspector] public int[] bindingPriorities;
+        [HideInInspector] public bool[] bindingSendOnChange;
+        [HideInInspector] public float[] bindingMinSendIntervals;
+        [HideInInspector] public int deferredVariableCount;
 
         [HideInInspector] public int encodedObjectCount;
         [HideInInspector] public int queuedRpcCount;
@@ -133,6 +139,9 @@ namespace K13A.TSMP
         private readonly List<TSMPNetworkBehaviour> _networkBehaviours = new List<TSMPNetworkBehaviour>(64);
         private readonly List<EncoderNativeFrameBuilder.QueuedRpc> _queuedRpcs = new List<EncoderNativeFrameBuilder.QueuedRpc>(16);
         private readonly Dictionary<System.Type, TransSyncMetadata.Cache> _bindingCache = new Dictionary<System.Type, TransSyncMetadata.Cache>();
+        private readonly EncoderNativeSendState _sendState = new EncoderNativeSendState();
+        private double _sendTime;
+        private uint _sendStreamId;
         private int _nextTransRpcEventId = 1;
         private Texture2D _stagingTexture;
         private byte[] _payload;
@@ -145,6 +154,7 @@ namespace K13A.TSMP
 
         private void OnEnable()
         {
+            _sendState.Reset();
             EnsureResources();
             ResetTSMPLogBudget(debugErrorLogBudget);
             _nextEncodeTime = 0.0;
@@ -227,6 +237,7 @@ namespace K13A.TSMP
             queuedRpcCount = _queuedRpcs.Count;
             if (_networkBehaviours.Count == 0 && queuedRpcCount == 0)
             {
+                _sendState.Reset();
                 SetLastError("No TSMP data to encode.");
                 return;
             }
@@ -249,6 +260,15 @@ namespace K13A.TSMP
                 return;
             }
 
+            autoVariableCount = _sendState.WrittenCount;
+            deferredVariableCount = _sendState.DeferredCount;
+            ReportDeferredVariables();
+            if (messageCount == 0)
+            {
+                payloadBytes = 0;
+                return;
+            }
+
             if (payloadBytes > usablePayloadBytes)
             {
                 SetLastError($"Payload does not fit. payload={payloadBytes}, usable={usablePayloadBytes}.");
@@ -266,6 +286,7 @@ namespace K13A.TSMP
             }
 
             Graphics.Blit(_stagingTexture, output);
+            _sendState.Commit(_payload, GetSendTime());
             frameIndex++;
             if (rpcMessageCount > 0)
                 EncoderNativeFrameBuilder.AdvanceQueuedRpcs(_queuedRpcs);
@@ -356,6 +377,12 @@ namespace K13A.TSMP
 
         private bool BuildNetworkPayload()
         {
+            if (_sendStreamId != streamId)
+            {
+                _sendState.Reset();
+                _sendStreamId = streamId;
+            }
+            _sendTime = GetSendTime();
             string error;
             bool result = EncoderNativeFrameBuilder.BuildNetworkPayload(
                 _networkBehaviours,
@@ -367,12 +394,15 @@ namespace K13A.TSMP
                 ref _currentMessageStartOffset,
                 ref _currentVariableCount,
                 frameIndex,
-                maxPayloadBytes,
+                Mathf.Min(maxPayloadBytes, usablePayloadBytes),
                 out messageCount,
                 out variableMessageCount,
                 out rpcMessageCount,
                 out payloadBytes,
-                out error);
+                out error,
+                _sendState,
+                _sendTime,
+                transSyncRefreshInterval);
 
             lastError = error;
             return result;
@@ -535,6 +565,29 @@ namespace K13A.TSMP
         private int _basePixelsActiveWidthBlocks;
         private int _basePixelsActiveHeightBlocks;
         private bool _basePixelsUsingBlockTexture;
+        private int[] _sendOrder;
+        private UdonBehaviour[] _sendTargets;
+        private ushort[] _sendNetworkIds;
+        private uint[] _sendHashes;
+        private int[] _sendTypes;
+        private string[] _sendFieldNames;
+        private int[] _sendPriorities;
+        private bool[] _sendOnChange;
+        private float[] _sendIntervals;
+        private byte[][] _sendPrevious;
+        private bool[] _sendCompleted;
+        private double[] _sendLastTimes;
+        private int[] _sendPendingOffsets;
+        private int[] _sendPendingLengths;
+        private byte[] _sendScratch;
+        private int _sendRotation;
+        private double _sendTime;
+        private uint _sendStreamId;
+
+        private void OnEnable()
+        {
+            _sendOrder = null;
+        }
 
         private void Start()
         {
@@ -751,8 +804,16 @@ namespace K13A.TSMP
         {
             lastEncodeStage = 1;
             lastError = string.Empty;
+            _sendTime = GetSendTime();
+            deferredVariableCount = 0;
             _codecQueryValid = false;
             EnsureResources();
+
+            if (output == null)
+            {
+                AbortEncode("Output RenderTexture is not assigned.");
+                return;
+            }
 
             if (_currentMessageStartOffset >= 0)
             {
@@ -768,6 +829,12 @@ namespace K13A.TSMP
             if (!_frameOpen)
                 return;
 
+            if (!WritePendingRpcCalls())
+            {
+                AbortEncode(lastError);
+                return;
+            }
+
             if (autoBuildVariablesFromBindings)
             {
                 lastEncodeStage = 2;
@@ -778,15 +845,12 @@ namespace K13A.TSMP
                 }
             }
 
-            if (!WritePendingRpcCalls())
-            {
-                AbortEncode(lastError);
-                return;
-            }
-
+            ReportDeferredVariables();
             if (_messageCount <= 0)
             {
-                AbortEncode("No TSMP data to encode.");
+                ClearFrame();
+                if (bindingCount == 0)
+                    SetLastError("No TSMP data to encode.");
                 return;
             }
 
@@ -817,6 +881,7 @@ namespace K13A.TSMP
 
             lastEncodeStage = 5;
             BlitEncodedTexture();
+            CommitBoundVariables();
 
             lastEncodeStage = 6;
             frameIndex++;
@@ -920,46 +985,144 @@ namespace K13A.TSMP
         {
             autoVariableCount = 0;
             bindingCount = 0;
-
             int count = EncoderUdonBindingRuntime.GetWritableBindingCount(bindingTargets, bindingUdonTargets, bindingNetworkIds, bindingVariableHashes, bindingValueTypes, bindingFieldNames);
             if (count <= 0)
+            {
+                _sendOrder = null;
                 return true;
+            }
 
             bindingCount = count;
             EnsureBindingTargetCache(count);
+            EnsureSendState(count);
             EnsureBeforeEncodeTargetCache(count);
             _beforeEncodeTargetCount = 0;
             BeginBoundVariableWrite();
+            int limit = Mathf.Min(usablePayloadBytes, _payloadBytes.Length);
+            for (int i = 0; i < count; i++)
+                _sendPendingLengths[i] = 0;
 
+            for (int groupStart = 0; groupStart < count;)
+            {
+                int groupEnd = groupStart + 1;
+                int priority = _sendPriorities[_sendOrder[groupStart]];
+                while (groupEnd < count && _sendPriorities[_sendOrder[groupEnd]] == priority)
+                    groupEnd++;
+                int groupCount = groupEnd - groupStart;
+                for (int step = 0; step < groupCount; step++)
+                {
+                    int index = _sendOrder[groupStart + (step + _sendRotation % groupCount) % groupCount];
+                    UdonBehaviour target = _cachedBindingUdonTargets[index];
+                    if (!EncoderUdonBindingRuntime.CanWriteBinding(bindingFieldNames, bindingDirections, target, index))
+                    {
+                        _sendCompleted[index] = false;
+                        continue;
+                    }
+                    if (!TransSyncSendScheduler.IsDue(_sendCompleted[index], _sendLastTimes[index], _sendTime, _sendIntervals[index]))
+                        continue;
+                    SendBeforeEncodeOnce(target);
+                    object value = GetProgramVariable(target, bindingFieldNames[index]);
+                    int length = NetworkValueEntryWriter.WriteVariableValue(_sendScratch, 0, bindingVariableHashes[index], _sendTypes[index], value);
+                    if (length < 0)
+                        return Fail("Failed to serialize TransSync field '" + bindingFieldNames[index] + "'.");
+                    if (!TransSyncSendScheduler.ShouldSend(_sendCompleted[index], _sendLastTimes[index], _sendTime,
+                        _sendOnChange[index], transSyncRefreshInterval, _sendPrevious[index], _sendScratch, length))
+                        continue;
+                    int networkId = bindingNetworkIds[index];
+                    bool newMessage = !_boundVariableMessageOpen || _boundVariableOpenNetworkId != networkId;
+                    int overhead = newMessage ? NetworkFrameProtocol.MessageHeaderBytes + NetworkFrameProtocol.VariableStateBodyHeaderBytes : 0;
+                    if (length + overhead > limit - _payloadOffset)
+                    {
+                        deferredVariableCount++;
+                        continue;
+                    }
+                    if (!EnsureBoundVariableMessage(networkId))
+                        return false;
+                    _sendPendingOffsets[index] = _payloadOffset;
+                    _sendPendingLengths[index] = length;
+                    System.Array.Copy(_sendScratch, 0, _payloadBytes, _payloadOffset, length);
+                    _payloadOffset += length;
+                    _currentVariableCount++;
+                    autoVariableCount++;
+                }
+                groupStart = groupEnd;
+            }
+            return EndBoundVariableWrite();
+        }
+
+        private void EnsureSendState(int count)
+        {
+            bool rebuild = _sendOrder == null;
+            if (!rebuild)
+                rebuild = _sendOrder.Length != count || _sendStreamId != streamId;
+            if (!rebuild)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    UdonBehaviour target = _cachedBindingUdonTargets[i];
+                    int valueType = bindingValueTypes[i];
+                    if ((Object)_sendTargets[i] != (Object)target || _sendNetworkIds[i] != bindingNetworkIds[i]
+                        || _sendHashes[i] != bindingVariableHashes[i] || _sendTypes[i] != valueType
+                        || _sendFieldNames[i] != bindingFieldNames[i]
+                        || _sendPriorities[i] != TransSyncSendScheduler.GetPriority(bindingPriorities, i)
+                        || _sendOnChange[i] != TransSyncSendScheduler.GetSendOnChange(bindingSendOnChange, i)
+                        || _sendIntervals[i] != TransSyncSendScheduler.GetInterval(bindingMinSendIntervals, i))
+                    {
+                        rebuild = true;
+                        break;
+                    }
+                }
+            }
+            if (!rebuild)
+                return;
+
+            _sendStreamId = streamId;
+            _sendTargets = new UdonBehaviour[count];
+            _sendNetworkIds = new ushort[count];
+            _sendHashes = new uint[count];
+            _sendTypes = new int[count];
+            _sendFieldNames = new string[count];
+            _sendPriorities = new int[count];
+            _sendOnChange = new bool[count];
+            _sendIntervals = new float[count];
+            _sendPrevious = new byte[count][];
+            _sendCompleted = new bool[count];
+            _sendLastTimes = new double[count];
+            _sendPendingOffsets = new int[count];
+            _sendPendingLengths = new int[count];
+            if (_sendScratch == null)
+                _sendScratch = new byte[TransSyncSendScheduler.ScratchBytes];
+            _sendRotation = 0;
             for (int i = 0; i < count; i++)
             {
-                UdonBehaviour target = _cachedBindingUdonTargets[i];
-                if (!EncoderUdonBindingRuntime.CanWriteBinding(bindingFieldNames, bindingDirections, target, i))
-                    continue;
-
-                SendBeforeEncodeOnce(target);
-
-                if (!EnsureBoundVariableMessage(bindingNetworkIds[i]))
-                    return false;
-
-                object value = GetProgramVariable(target, bindingFieldNames[i]);
-                if (!WriteVariableValue(bindingVariableHashes[i], bindingValueTypes[i], value))
-                {
-                    int payloadCapacity = 0;
-                    if (_payloadBytes != null)
-                        payloadCapacity = _payloadBytes.Length;
-                    lastError = "Failed to write TransSync field '" + BindingTable.GetFieldName(bindingFieldNames, i) + "'. networkId=" + bindingNetworkIds[i] + " valueType=" + bindingValueTypes[i] + " offset=" + _payloadOffset + " capacity=" + payloadCapacity + ".";
-                    CancelCurrentMessage();
-                    return false;
-                }
-
-                autoVariableCount++;
+                _sendTargets[i] = _cachedBindingUdonTargets[i];
+                _sendNetworkIds[i] = bindingNetworkIds[i];
+                _sendHashes[i] = bindingVariableHashes[i];
+                _sendTypes[i] = bindingValueTypes[i];
+                _sendFieldNames[i] = bindingFieldNames[i];
+                _sendPriorities[i] = TransSyncSendScheduler.GetPriority(bindingPriorities, i);
+                _sendOnChange[i] = TransSyncSendScheduler.GetSendOnChange(bindingSendOnChange, i);
+                _sendIntervals[i] = TransSyncSendScheduler.GetInterval(bindingMinSendIntervals, i);
             }
+            _sendOrder = TransSyncSendScheduler.BuildOrder(count, _sendPriorities);
+        }
 
-            if (!EndBoundVariableWrite())
-                return false;
-
-            return true;
+        private void CommitBoundVariables()
+        {
+            if (!autoBuildVariablesFromBindings || _sendOrder == null)
+                return;
+            double now = GetSendTime();
+            for (int i = 0; i < _sendOrder.Length; i++)
+            {
+                int length = _sendPendingLengths[i];
+                if (length <= 0)
+                    continue;
+                _sendPrevious[i] = TransSyncSendScheduler.Snapshot(_payloadBytes, _sendPendingOffsets[i], length, _sendPrevious[i]);
+                _sendCompleted[i] = true;
+                _sendLastTimes[i] = now;
+                _sendPendingLengths[i] = 0;
+            }
+            _sendRotation = _sendRotation >= 2147483646 ? 0 : _sendRotation + 1;
         }
 
         private void BeginBoundVariableWrite()
@@ -1340,7 +1503,25 @@ namespace K13A.TSMP
             frameIndex = 0u;
 #if UDONSHARP || COMPILER_UDONSHARP
             ClearFrame();
+            _sendOrder = null;
+#else
+            _sendState.Reset();
 #endif
+        }
+
+        private double GetSendTime()
+        {
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+            if (!Application.isPlaying)
+                return UnityEditor.EditorApplication.timeSinceStartup;
+#endif
+            return Time.realtimeSinceStartupAsDouble;
+        }
+
+        private void ReportDeferredVariables()
+        {
+            if (deferredVariableCount > 0)
+                LogTSMPWarning(LogPrefix, "Payload capacity deferred " + deferredVariableCount + " TransSync field(s). Increase output capacity or reduce field size/send frequency.", debugLog, 1f);
         }
 
         private void SetLastError(string error)

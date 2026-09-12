@@ -20,6 +20,7 @@ title: TSMPEncoder API
 | `useBlockSymbolTexture` | 선택 codec이 지원하면 block texture path를 사용합니다. |
 | `networkBehaviours` | `[TransSync]` data와 TSMP RPC message를 만들 수 있는 bound behaviours. |
 | `transRpcRepeatFrames` | 대기 중인 TransRPC 하나를 담아 출력에 성공할 총 프레임 수입니다. 최초 전송을 포함한 1-16회이며, 인코딩 실패는 횟수를 소모하지 않습니다. |
+| `transSyncRefreshInterval` | 변경 없는 자동 TransSync 필드를 재전송할 간격(초, 기본 1)입니다. 0이면 재전송을 끄며 필드별 최소 전송 간격은 계속 적용됩니다. |
 | `streamId` | Frame header에 기록되는 logical stream ID. |
 | `layoutId` | Frame header에 기록되는 logical layout ID. |
 
@@ -33,6 +34,7 @@ title: TSMPEncoder API
 | `QueuedRpcCount` / `queuedRpcCount` | Encode 대기 중인 RPC message 수. |
 | `PayloadBytes` / `payloadBytes` | Last payload에 기록된 byte 수. |
 | `usablePayloadBytes` | Header와 codec layout을 고려한 payload capacity. |
+| `deferredVariableCount` | 최근 인코딩 시도에서 용량 부족으로 미룬 전송 대상 필드 수입니다. 해당 필드는 이후 다시 시도합니다. |
 | `messageCount` | Last network frame의 variable message와 RPC message 합계. |
 | `variableMessageCount` | Variable state message 수. |
 | `rpcMessageCount` | RPC message 수. |
@@ -55,6 +57,8 @@ public void EncodeNow()
 - Editor-time preview tool.
 
 Variable data와 queued RPC가 모두 없으면 frame을 쓰지 않고 반환합니다.
+
+필드가 변경되지 않았거나 최소 전송 간격을 기다리는 동안에는 프레임을 생성하지 않을 수 있습니다. 오류가 아니며 프레임 번호도 증가하지 않습니다. `ResetFrameIndex()`는 송신 기준값도 초기화하여 다음 시도에서 최초 상태를 다시 보냅니다.
 
 ## `ResetFrameIndex()`
 

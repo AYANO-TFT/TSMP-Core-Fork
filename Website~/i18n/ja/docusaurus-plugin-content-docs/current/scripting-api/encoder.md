@@ -20,6 +20,7 @@ title: TSMPEncoder API
 | `useBlockSymbolTexture` | 選択したコーデックがサポートしている場合は、コーデック ブロック テクスチャ パスを使用します。 |
 | `networkBehaviours` | `[TransSync]` データおよび TSMP RPC メッセージに寄与する可能性のあるバインドされた動作。 |
 | `transRpcRepeatFrames` | キュー内の TransRPC を含むフレームの出力に成功する総回数です。初回送信を含めて 1-16 回で、エンコードに失敗した場合は回数を消費しません。 |
+| `transSyncRefreshInterval` | 変化のない自動 TransSync フィールドを再送する秒数（既定 1）。0 は再送を無効にし、フィールドごとの最小間隔は引き続き適用します。 |
 | `streamId` | フレームヘッダーに書き込まれる論理ストリーム識別子。 |
 | `layoutId` | フレームヘッダーに書き込まれる論理レイアウト識別子。 |
 
@@ -33,6 +34,7 @@ title: TSMPEncoder API
 | `QueuedRpcCount` / `queuedRpcCount` | エンコードを待機している RPC メッセージの数。 |
 | `PayloadBytes` / `payloadBytes` | 最後のペイロードに書き込まれたバイト数。 |
 | `usablePayloadBytes` | フレームヘッダーとコーデックレイアウト後のペイロード容量が考慮されます。 |
+| `deferredVariableCount` | 直近の試行で容量不足により見送った送信対象フィールド数です。後の試行で再送します。 |
 | `messageCount` | 最後のネットワーク フレーム内の可変メッセージと RPC メッセージ。 |
 | `variableMessageCount` | 変数状態メッセージの数。 |
 | `rpcMessageCount` | RPC メッセージの数。 |
@@ -55,6 +57,8 @@ public void EncodeNow()
 - 編集時プレビュー ツール。
 
 `EncodeNow()` 可変データもキューイングされた RPC データもない場合はフレームを書き込まずにリターンします。
+
+フィールドが変化していない場合や最小間隔の待機中は、新しいフレームを生成しないことがあります。エラーではなく、フレーム番号も増えません。`ResetFrameIndex()` は送信スナップショットも初期化し、次の試行で初期状態を再送します。
 
 ## `ResetFrameIndex()`
 

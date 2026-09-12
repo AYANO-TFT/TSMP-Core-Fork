@@ -526,6 +526,9 @@ namespace K13A.TSMP.Editor
             var valueTypes = new List<byte>();
             var fieldNames = new List<string>();
             var directions = new List<int>();
+            var priorities = new List<int>();
+            var sendOnChange = new List<bool>();
+            var minSendIntervals = new List<float>();
             var collisions = new Dictionary<BindingKey, BindingOwner>();
             TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
 
@@ -575,6 +578,9 @@ namespace K13A.TSMP.Editor
                     valueTypes.Add((byte)valueType);
                     fieldNames.Add(field.Name);
                     directions.Add((int)sync.Direction);
+                    priorities.Add(sync.Priority);
+                    sendOnChange.Add(sync.SendOnChange);
+                    minSendIntervals.Add(TransSyncSendScheduler.NormalizeInterval(sync.MinSendInterval));
                 }
             }
 
@@ -588,6 +594,9 @@ namespace K13A.TSMP.Editor
             SetFieldValue(encoder, FieldBindingValueTypes, valueTypes.ToArray());
             SetFieldValue(encoder, FieldBindingFieldNames, fieldNames.ToArray());
             SetFieldValue(encoder, FieldBindingDirections, directions.ToArray());
+            SetFieldValue(encoder, FieldBindingPriorities, priorities.ToArray());
+            SetFieldValue(encoder, nameof(TSMPEncoder.bindingSendOnChange), sendOnChange.ToArray());
+            SetFieldValue(encoder, nameof(TSMPEncoder.bindingMinSendIntervals), minSendIntervals.ToArray());
             EditorUtility.SetDirty(encoder);
             bindingCount = targets.Count;
             return true;

@@ -283,6 +283,7 @@ public static class RpcDeliveryValidation
                 Check(sender.Encoder.rpcMessageCount == 0 && sender.Encoder.variableMessageCount == 1, "Expected variable-only frame");
                 Check(sender.Queue.Count == 1 && sender.Queue[0].RepeatsRemaining == 1, "Unsent late RPC consumed");
                 sender.Codec.beforeWrite = null;
+                source.transform.localPosition = Vector3.one;
                 sender.Encode();
                 Check(sender.Encoder.rpcMessageCount == 1 && sender.Encoder.variableMessageCount == 1 && sender.Queue.Count == 0,
                     "Mixed variable/RPC frame did not commit queued event");

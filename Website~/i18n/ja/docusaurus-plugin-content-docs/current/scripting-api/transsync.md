@@ -21,32 +21,29 @@ public int syncedValue;
 | --- | --- | --- | --- |
 | `Key` | `string` | `null` | 変数ハッシュの計算に使う安定した識別子です。省略した場合はフィールド名が使われます。送信側と受信側を一致させるには、同じ key、network ID、value type を使う必要があります。 |
 | `Direction` | `NetworkSyncDirection` | `SendReceive` | `Apply Setup` がこのフィールドを encoder binding table、decoder binding table、またはその両方に入れるかを決めます。入力用フィールドと表示用フィールドを分けるときに使います。 |
-| `Priority` | `int` | `0` | 生成された receiver binding table に保存される ordering hint です。現在の runtime は、この値で variable write の順序変更や throttle を行いません。 |
-| `SendOnChange` | `bool` | `true` | 変更ベース送信のための metadata です。Attribute としては受け付けられますが、現在の encoder は encode 時に bound field を sample します。Runtime の bandwidth limiter としては期待しないでください。 |
-| `MinSendInterval` | `float` | `0` | レート制限送信のための metadata です。Attribute としては受け付けられますが、現在の encoder は field ごとの interval を強制しません。独自の pacing が必要な場合は component logic または packed `byte[]` flag を使います。 |
+| `Priority` | `int` | `0` | 同じエンコーダーの自動 TransSync フィールド全体で、数値が大きいものを優先します。容量に収まらないフィールドは切り詰めず、後の送信に回します。 |
+| `SendOnChange` | `bool` | `true` | 初回と、最後に出力に成功した内容から変化した値を送信します。変化のない値の再送はエンコーダーの設定に従います。`false` は最小間隔ごとに送信します。 |
+| `MinSendInterval` | `float` | `0` | このフィールドの出力成功間に設ける最小秒数です。timeScale に依存しない実時間を使います。`0` は間隔制限なしで、負数や非有限値も `0` として扱います。 |
 | `EnabledBy` | `string` | `null` | 同じ component にある `bool` field または property の名前です。`Apply Setup` が binding を作るとき、その member が false の場合、この field は generated binding table から除外されます。 |
 
 `transform.packed`、`animator.bytes`、`counter.value` などの明確で安定したキーを使用します。実行時に変更されるキーは使用しないでください。
 
 ### `Key`
 
-`Key` は wire 上の field identity です。異なるフィールド名でも、同じ variable として同期できます。
+ハッシュはコンポーネントの完全修飾 C# 型名と key から計算します。同じコンポーネント型では異なるフィールド名に同じ key を使えますが、異なる型は key だけを揃えても同じハッシュにはなりません。
 
 ```csharp
-public class ChatInput : TSMPNetworkBehaviour
+public class ChatChannel : TSMPNetworkBehaviour
 {
     [TransSync("chat.text", Direction = NetworkSyncDirection.SendOnly)]
     public string outgoingText;
-}
 
-public class ChatOutput : TSMPNetworkBehaviour
-{
     [TransSync("chat.text", Direction = NetworkSyncDirection.ReceiveOnly)]
     public string incomingText;
 }
 ```
 
-両方の field が `chat.text` を使うため、TSMP は同じ variable hash を割り当てます。World を公開した後は key を安定させてください。Key を変更または rename した場合は、`Apply Setup` を再実行し、sender と receiver の両方が更新されていることを確認します。
+両側で同じコンポーネント型と一致する Network ID を使ってください。Key を維持し、変更後はバインディングを再生成してください。
 
 ### `Direction`
 
@@ -62,13 +59,31 @@ public class ChatOutput : TSMPNetworkBehaviour
 
 ### `Priority`, `SendOnChange`, `MinSendInterval`
 
-これらは送信ポリシーの意図を表す metadata に近く、現在の runtime では field ごとの scheduler として動作しません。
+通常の Unity と Udon の両方で、自動変数送信に適用されます。受信補間、手動 Writer 呼び出し、RPC のポリシーは変更しません。
 
-- `Priority` は receiver binding に保存され、tooling または将来の scheduler で利用できます。
-- `SendOnChange` は、現在の encoder が field を sample することを止めません。
-- `MinSendInterval` は、現在その field の送信間隔を throttle しません。
+```csharp
+[TransSync("status", Priority = 10, SendOnChange = true, MinSendInterval = 0.1f)]
+public string status;
 
-現在の実装で bandwidth を制御したい場合は、`TSMPBeforeEncode()` で自分で値を作り、変更がないときは同じ値、空 packet、または flag を含む packed `byte[]` を書きます。高頻度データでは、多数の scalar field より 1 つの packed field の方が安く、制御もしやすいです。
+[TransSync("meter", SendOnChange = false, MinSendInterval = 0.05f)]
+public float meter;
+```
+
+- `status` は初期値をすぐに送り、その後は変化した値を毎秒最大 10 回送信します。待機中に複数回変化した場合、中間値ではなく最新値を送ります。
+- `meter` は変化がなくても毎秒最大 20 回送ります。エンコーダーのフレームレートや容量によって、実際の頻度はさらに低くなることがあります。
+- 配列要素を含むシリアライズ後のバイト列を比較します。同じ `byte[]` の内容変更も検出し、内容が同じ新しい配列は変化とみなしません。浮動小数点は許容誤差ではなくエンコード精度で比較します。
+- 優先順位はコンポーネントをまたいで適用します。同順位では出力成功後に順序を巡回します。高優先度のデータが常に容量を埋める場合、低優先度の送信は遅れ続けることがあります。
+- 待機中の RPC を自動変数より先に書き込みます。収まらなかったフィールドは **Deferred Variables** に計上し、後の試行で最新値を再送します。フィールド単位の分割や切り詰めは行いません。
+- 比較用スナップショットと最小間隔の基準時刻は、出力成功後に更新します。シリアライズ失敗、コーデック出力失敗、容量不足は送信済みとしません。
+- 送信対象のフィールドも RPC もない場合、新しいフレームを書かずに現在の出力テクスチャを維持します。データなしのエラーにはなりません。
+
+#### 再送と映像の欠落
+
+エンコーダーの **Trans Sync Refresh Interval** (`transSyncRefreshInterval`) は既定で **1 秒**です。値が変わらなくても再送し、最後の更新を失った受信機や途中参加した受信機が復旧できる機会を設けます。フィールドの `MinSendInterval` は引き続き適用されます。最小間隔が 2 秒なら、再送設定が 1 秒でも 2 秒より早くは送りません。
+
+再送間隔を `0` にすると、変化した場合だけ送ります。この場合、欠落や途中参加後は値が再び変化するまで復旧しないことがあります。再送は受信確認や到達保証ではありません。
+
+従来の毎エンコード送信を維持したいフィールドには `SendOnChange = false, MinSendInterval = 0` を指定してください。中間状態をまとめてはならないイベントには RPC を使います。
 
 ### `EnabledBy`
 
@@ -115,7 +130,7 @@ public Vector3 velocity;
 
 ## バインディング再生成
 
-`Key`、`Direction`、value type、`EnabledBy` は generated binding に影響します。これらを変更した後は、`TSMPSetup` で `Apply Setup` を実行してください。アップロード済みの VRChat world では、TSMP は runtime reflection ではなく generated table を使います。
+`Key`、`Direction`、value type、`EnabledBy`、`Priority`、`SendOnChange`、`MinSendInterval` は generated binding に影響します。これらを変更した後は、`TSMPSetup` で `Apply Setup` を実行してください。アップロード済みの VRChat world では、TSMP は runtime reflection ではなく generated table を使います。
 
 ## ペイロードに関するアドバイス
 

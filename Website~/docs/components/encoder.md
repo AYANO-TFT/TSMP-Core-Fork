@@ -8,6 +8,8 @@ Use `TSMPEncoder` on the sender side. It writes TSMP data into an output render 
 
 Most users configure it through `TSMPSetup` instead of editing every field directly.
 
+Automatic fields honor [TransSync send scheduling](../scripting-api/transsync.md#priority-sendonchange-and-minsendinterval). Unchanged values normally refresh once per second. A stationary scene can therefore stop incrementing the frame index between refreshes; this is expected.
+
 ## What you need
 
 - An output `RenderTexture`.
@@ -42,7 +44,7 @@ The encoder builds one payload per frame. Payload contains:
 - Variable state messages from `[TransSync]` fields.
 - RPC messages queued by `SendTransRPC`.
 
-If the payload is too large, the encoder logs `Payload buffer is full` and cannot include everything. Reduce synchronized data first, then increase texture capacity if needed.
+When automatic variables exceed capacity, higher-priority fields are included first and the rest are deferred to later attempts. **Deferred Variables** and a rate-limited warning show this condition. A field larger than a whole payload cannot be delivered until you reduce its size or increase output capacity. Invalid values and oversized RPC/manual messages can still fail an attempt.
 
 High-bandwidth sources include:
 

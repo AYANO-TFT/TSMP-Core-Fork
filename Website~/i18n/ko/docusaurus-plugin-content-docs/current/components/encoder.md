@@ -8,6 +8,8 @@ title: TSMPEncoder
 
 대부분의 사용자는 모든 필드를 직접 수정하기보다 `TSMPSetup`을 통해 설정합니다.
 
+자동 변수는 [TransSync 송신 스케줄링](../scripting-api/transsync.md)을 따릅니다. 변경 없는 값은 기본적으로 1초마다 다시 전송하므로, 정지한 씬에서 재전송 사이에 프레임 번호가 멈추는 것은 정상입니다.
+
 ## 필요한 것
 
 - 출력 `RenderTexture`.
@@ -42,7 +44,7 @@ Encoder는 프레임마다 하나의 payload를 만듭니다. Payload에는 다�
 - `[TransSync]` field에서 나온 variable state messages.
 - `SendTransRPC`로 queue된 RPC messages.
 
-Payload가 너무 크면 encoder가 `Payload buffer is full`을 기록하고 모든 데이터를 포함할 수 없습니다. 먼저 동기화 데이터를 줄이고, 필요할 때 texture capacity를 늘리세요.
+자동 변수의 총량이 용량을 넘으면 우선순위가 높은 필드부터 기록하고 나머지는 이후로 미룹니다. **Deferred Variables**와 빈도 제한된 경고로 확인할 수 있습니다. 필드 하나가 전체 페이로드보다 크면 필드 크기를 줄이거나 출력 용량을 늘려야 전송할 수 있습니다. 잘못된 값이나 너무 큰 RPC·수동 메시지는 여전히 인코딩 실패를 일으킬 수 있습니다.
 
 대역폭이 큰 데이터:
 

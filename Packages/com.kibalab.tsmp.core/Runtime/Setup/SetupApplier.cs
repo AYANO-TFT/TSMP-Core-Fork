@@ -162,6 +162,9 @@ namespace K13A.TSMP
             SetField(encoder, FieldBindingValueTypes, snapshot.ValueTypes);
             SetField(encoder, FieldBindingFieldNames, snapshot.FieldNames);
             SetField(encoder, FieldBindingDirections, snapshot.Directions);
+            SetField(encoder, nameof(TSMPEncoder.bindingPriorities), snapshot.Priorities);
+            SetField(encoder, nameof(TSMPEncoder.bindingSendOnChange), snapshot.SendOnChange);
+            SetField(encoder, nameof(TSMPEncoder.bindingMinSendIntervals), snapshot.MinSendIntervals);
 #endif
         }
 

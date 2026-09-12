@@ -163,6 +163,8 @@ namespace K13A.TSMP
         public string[] FieldNames;
         public int[] Directions;
         public int[] Priorities;
+        public bool[] SendOnChange;
+        public float[] MinSendIntervals;
     }
 
     public static class TransSyncBindingSnapshotBuilder
@@ -183,13 +185,15 @@ namespace K13A.TSMP
             List<string> fieldNames = new List<string>();
             List<int> directions = new List<int>();
             List<int> priorities = new List<int>();
+            List<bool> sendOnChange = new List<bool>();
+            List<float> minSendIntervals = new List<float>();
 
             for (int i = 0; i < behaviours.Length; i++)
                 AddBehaviour(behaviours[i], avatarPoseSyncs, receive, targets,
 #if UDONSHARP || COMPILER_UDONSHARP
                     udonTargets,
 #endif
-                    networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
+                    networkIds, variableHashes, valueTypes, fieldNames, directions, priorities, sendOnChange, minSendIntervals);
 
             TransSyncBindingSnapshot snapshot = new TransSyncBindingSnapshot();
             snapshot.Targets = targets.ToArray();
@@ -202,6 +206,8 @@ namespace K13A.TSMP
             snapshot.FieldNames = fieldNames.ToArray();
             snapshot.Directions = directions.ToArray();
             snapshot.Priorities = priorities.ToArray();
+            snapshot.SendOnChange = sendOnChange.ToArray();
+            snapshot.MinSendIntervals = minSendIntervals.ToArray();
             return snapshot;
         }
 
@@ -218,7 +224,9 @@ namespace K13A.TSMP
             List<byte> valueTypes,
             List<string> fieldNames,
             List<int> directions,
-            List<int> priorities)
+            List<int> priorities,
+            List<bool> sendOnChange,
+            List<float> minSendIntervals)
         {
             if (behaviour == null)
                 return;
@@ -254,6 +262,8 @@ namespace K13A.TSMP
                 fieldNames.Add(field.FieldInfo.Name);
                 directions.Add((int)field.Sync.Direction);
                 priorities.Add(field.Sync.Priority);
+                sendOnChange.Add(field.Sync.SendOnChange);
+                minSendIntervals.Add(TransSyncSendScheduler.NormalizeInterval(field.Sync.MinSendInterval));
             }
 
             if (receive && targets.Count == targetStartCount)
@@ -261,7 +271,7 @@ namespace K13A.TSMP
 #if UDONSHARP || COMPILER_UDONSHARP
                     udonTargets,
 #endif
-                    networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
+                    networkIds, variableHashes, valueTypes, fieldNames, directions, priorities, sendOnChange, minSendIntervals);
         }
 
         private static void AddRpcOnlyTarget(
@@ -276,7 +286,9 @@ namespace K13A.TSMP
             List<byte> valueTypes,
             List<string> fieldNames,
             List<int> directions,
-            List<int> priorities)
+            List<int> priorities,
+            List<bool> sendOnChange,
+            List<float> minSendIntervals)
         {
             targets.Add(behaviour);
 #if UDONSHARP || COMPILER_UDONSHARP
@@ -288,6 +300,8 @@ namespace K13A.TSMP
             fieldNames.Add(string.Empty);
             directions.Add((int)NetworkSyncDirection.ReceiveOnly);
             priorities.Add(0);
+            sendOnChange.Add(false);
+            minSendIntervals.Add(0f);
         }
 
         private static int CompareNetworkBehaviours(TSMPNetworkBehaviour left, TSMPNetworkBehaviour right)

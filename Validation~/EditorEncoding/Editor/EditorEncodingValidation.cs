@@ -46,6 +46,7 @@ public static class EditorEncodingValidation
             encoder.autoEncode = true;
             encoder.frameRate = 1;
             encoder.debugLog = false;
+            encoder.transSyncRefreshInterval = 0;
             setup.driveEncoderInEditor = true;
 
             SetDeadline(setup, encoder, 0);
@@ -74,7 +75,11 @@ public static class EditorEncodingValidation
             InvokeDrivers(setup, encoder);
             Require(encoder.frameIndex == before, "Auto Encode disabled prevents automatic encoding");
             encoder.EncodeNow();
+            Require(encoder.frameIndex == before, "Unchanged state does not produce an empty frame");
+            source.transform.position += Vector3.right;
+            encoder.EncodeNow();
             Require(encoder.frameIndex == before + 1, "Manual Encode Now works with automatic encoding disabled");
+            source.transform.position += Vector3.right;
             setup.EncodeEncoderNow();
             Require(encoder.frameIndex == before + 2, "Setup manual encoding produces exactly one frame");
             encoder.autoEncode = true;
@@ -92,6 +97,7 @@ public static class EditorEncodingValidation
             setup.driveEncoderInEditor = false;
             setup.enabled = false;
             before = encoder.frameIndex;
+            source.transform.position += Vector3.right;
             SetDeadline(setup, encoder, 0);
             InvokeDrivers(setup, encoder);
             Require(encoder.frameIndex == before + 1, "Native encoder remains independent of Setup driving");
@@ -104,6 +110,7 @@ public static class EditorEncodingValidation
             owner.enabled = false;
             owner.enabled = true;
             Require(Drivers(setup, encoder).Length == 1, "Repeated enable cycles do not duplicate callbacks");
+            source.transform.position += Vector3.right;
             SetDeadline(setup, encoder, 0);
             before = encoder.frameIndex;
             InvokeDrivers(setup, encoder);
@@ -111,6 +118,7 @@ public static class EditorEncodingValidation
 
 #if !UDONSHARP
             Object.DestroyImmediate(setup);
+            source.transform.position += Vector3.right;
             SetDeadline(null, encoder, 0);
             before = encoder.frameIndex;
             InvokeDrivers(null, encoder);
