@@ -85,6 +85,16 @@ Use `TSMPNetworkTimelineSync` for `PlayableDirector` or Timeline playback state.
 
 Use it when a receiver should follow play/pause and timeline time. Keep the director setup consistent between sender and receiver.
 
+Assign a `PlayableDirector` with a Timeline asset on both sides. If the field is empty, the component looks for a Director on its own GameObject. Use matching Timeline content, duration, track bindings, wrap mode and update mode; these settings and assets are not transmitted.
+
+| Receive Interpolation | Behaviour |
+| --- | --- |
+| `None` | Ignores incoming packets and cancels pending corrections. Does not stop local playback. |
+| `Discrete` | Applies playback-state changes immediately and seeks when drift exceeds `Time Apply Threshold`, in seconds. |
+| `Continuous` | Corrects playing-time drift between packets using `Continuous Interpolation Rate`. Looping timelines use the shortest time offset across the boundary. |
+
+The first packet and every playback-state change apply the received position exactly, regardless of the threshold. Paused positions also apply immediately. Repeated Stop packets do not recreate the Director graph. A Director in Manual update mode remains manual: TSMP corrects received positions but does not supply a playback clock. Continuous correction does not remove video-stream latency or synchronize individual Timeline signals.
+
 In ordinary Unity, the component reads the Director's actual playback state. Seeking while paused does not start playback, and sampling twice at the same time does not pause it.
 
 In VRChat, control the sender through `TSMPNetworkTimelineSync.Play()`, `Pause()`, `Resume()` and `Stop()`, rather than calling these methods on the Director directly. Udon does not expose the Director's playback-state getter or PlayableGraph. The component therefore tracks these commands, using `playOnAwake` as the initial state. Direct external controls and automatic end-of-timeline state changes cannot be observed reliably; send the appropriate `Stop()` or `Pause()` command when your sequence ends. Timeline time is still read from the Director.

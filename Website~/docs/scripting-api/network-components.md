@@ -36,9 +36,13 @@ TSMP includes several `TSMPNetworkBehaviour` components that cover common VRChat
 | Method | Effect |
 | --- | --- |
 | `Play()` | Starts the assigned Director and records Playing. |
-| `Pause()` | Pauses the assigned Director and records Paused, including at time zero. |
-| `Resume()` | Resumes the assigned Director and records Playing. |
+| `Pause()` | Pauses a playing Director, including at time zero. Does not create a graph when already stopped. |
+| `Resume()` | Resumes paused playback, or starts a stopped Director. Like Play, does not restart an already playing Director. |
 | `Stop()` | Stops the assigned Director and records Stopped. |
+
+`Seek(float time)` evaluates the requested time without changing Playing or Paused state. From Stopped, it prepares a paused graph. Non-looping timelines clamp to their local duration; looping timelines wrap. Negative, NaN and infinite arguments are ignored. Call `Seek` from a script with its argument, not as a parameterless custom event. Explicit control calls cancel pending receive corrections; the next valid received packet can take control again.
+
+The `timeline.packed` field keeps the v1 format: version byte, state byte (`0` Stopped, `1` Paused, `2` Playing), Float32 seconds and Float32 duration, both little-endian. It is exactly 10 bytes. Invalid lengths, versions, states, non-finite/negative times or durations, and times beyond the transmitted duration are rejected before playback changes. Warnings are limited to once per second and 16 per enable cycle. Missing or disabled sources clear the captured payload and `encodedTimelineBytes` rather than retransmitting an old sample. In native Unity, a missing Timeline asset also clears capture.
 
 These calls control local playback; the Encoder transmits the resulting state on its next capture. Native Unity reads `director.state` and graph validity, including changes made by other scripts. Udon tracks the commands instead: route playback commands through this component and issue an explicit end-of-sequence command. Udon cannot reliably observe external Director commands or automatic completion. Replacing the Director resets tracked state from its `playOnAwake` setting.
 

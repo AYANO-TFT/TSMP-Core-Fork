@@ -7,6 +7,8 @@ using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Playables;
+using UnityEngine.Timeline;
 
 public static class UnitySupportValidation
 {
@@ -96,6 +98,9 @@ public static class UnitySupportValidation
         test.sentValues.networkId = 103;
         test.receivedValues = new GameObject("Received Variables").AddComponent<LoopbackProbe>();
         test.receivedValues.networkId = 203;
+        test.sentTimeline = CreateTimeline("Sent Timeline", 104);
+        test.receivedTimeline = CreateTimeline("Received Timeline", 204);
+        test.receivedTimelineTarget = test.receivedTimeline.transform.GetChild(0).GetChild(0);
 
         controller.SetActive(true);
         setup.ApplyNow();
@@ -124,6 +129,42 @@ public static class UnitySupportValidation
         if (existing != null) return existing;
         AssetDatabase.CreateAsset(texture, path);
         return texture;
+    }
+
+    private static TSMPNetworkTimelineSync CreateTimeline(string name, ushort id)
+    {
+        const string path = "Assets/Validation/Generated/TimelineTrack.playable";
+        var asset = AssetDatabase.LoadAssetAtPath<TimelineAsset>(path);
+        if (asset == null)
+        {
+            asset = ScriptableObject.CreateInstance<TimelineAsset>();
+            asset.durationMode = TimelineAsset.DurationMode.FixedLength;
+            asset.fixedDuration = 10;
+            AssetDatabase.CreateAsset(asset, path);
+            var track = asset.CreateTrack<AnimationTrack>(null, "Position");
+            track.trackOffset = TrackOffset.ApplySceneOffsets;
+            var clip = track.CreateClip<AnimationPlayableAsset>();
+            var animation = new AnimationClip { name = "Timeline motion" };
+            animation.SetCurve("Motion", typeof(Transform), "localPosition.x", AnimationCurve.Linear(0, 0, 10, 10));
+            AssetDatabase.AddObjectToAsset(animation, asset);
+            ((AnimationPlayableAsset)clip.asset).clip = animation;
+            clip.duration = 10;
+        }
+        var owner = new GameObject(name);
+        var target = new GameObject("Animated Target");
+        target.transform.SetParent(owner.transform, false);
+        var motion = new GameObject("Motion");
+        motion.transform.SetParent(target.transform, false);
+        var animator = target.AddComponent<Animator>();
+        var director = owner.AddComponent<PlayableDirector>();
+        director.playOnAwake = false;
+        director.timeUpdateMode = DirectorUpdateMode.Manual;
+        director.playableAsset = asset;
+        foreach (var track in asset.GetOutputTracks()) director.SetGenericBinding(track, animator);
+        var sync = owner.AddComponent<TSMPNetworkTimelineSync>();
+        sync.director = director;
+        sync.networkId = id;
+        return sync;
     }
 
     private static TSMPNetworkTransformSync CreateTransform(string name, ushort id)

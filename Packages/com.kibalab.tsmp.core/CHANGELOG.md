@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Apply the first received Timeline position after preparing playback, independently of the drift threshold. Prepare paused graphs before evaluating and avoid rebuilding stopped graphs for repeated packets.
+- Implement Timeline Continuous receive correction, including shortest-path correction across loop boundaries. Clear pending corrections when reception is disabled, the component is disabled, or the Director changes.
+- Reject malformed Timeline packets, unknown states and invalid times before changing playback. Clear outgoing Timeline data when its source is unavailable.
+- Make Timeline Play and Resume work after Stop without restarting an already playing Director. Add Seek(float) with playback-state preservation and local duration bounds.
+- Add native Timeline regression tests, real Udon VM receive tests and animated Timeline texture loopback coverage in the Windows Mono Player validation.
+
 ## 0.2.0
 
 - Promote 0.2.0 out of beta with the SDK-optional Unity support and shared Controller workflow introduced in 0.2.0-beta.1.

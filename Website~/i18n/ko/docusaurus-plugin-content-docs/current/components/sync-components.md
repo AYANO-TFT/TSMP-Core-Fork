@@ -81,9 +81,19 @@ Receiver도 선택한 blend shape list를 whitelist로 사용합니다. 수신�
 
 ## Timeline sync
 
-`TSMPNetworkTimelineSync`는 `PlayableDirector` 또는 Timeline playback state에 사용합니다.
+`TSMPNetworkTimelineSync`는 `PlayableDirector`의 Timeline 재생 상태와 시간을 동기화합니다.
 
 Receiver가 play/pause와 timeline time을 따라야 할 때 사용합니다. Sender와 receiver의 director setup이 일관되어야 합니다.
+
+양쪽에 Timeline 에셋이 설정된 `PlayableDirector`를 지정하세요. 필드가 비어 있으면 같은 GameObject에서 Director를 찾습니다. Timeline 내용, 길이, 트랙 바인딩, Wrap Mode, Update Mode는 전송하지 않으므로 양쪽을 동일하게 구성해야 합니다.
+
+| Receive Interpolation | 동작 |
+| --- | --- |
+| `None` | 수신 패킷을 무시하고 진행 중인 보정을 취소합니다. 로컬 재생 자체를 멈추지는 않습니다. |
+| `Discrete` | 재생 상태를 즉시 적용하고, 시간 차이가 `Time Apply Threshold`(초)를 넘으면 위치를 맞춥니다. |
+| `Continuous` | 패킷 사이에도 `Continuous Interpolation Rate`에 따라 재생 시간 차이를 부드럽게 보정합니다. 루프 경계에서는 더 짧은 방향으로 보정합니다. |
+
+첫 패킷과 재생 상태가 바뀌는 패킷은 임계값과 무관하게 정확한 위치를 적용합니다. 일시정지 위치도 즉시 적용하며, 반복된 Stop 패킷으로 Director 그래프를 다시 만들지 않습니다. Manual Update Mode에서는 수신 위치만 보정하고 재생 시간을 자동으로 진행하지 않습니다. Continuous는 영상 송출 지연을 제거하거나 Timeline Signal을 개별적으로 동기화하는 기능이 아닙니다.
 
 일반 Unity에서는 Director의 실제 재생 상태를 읽습니다. 일시 정지 중 시간을 변경해도 재생으로 판단하지 않으며, 같은 시간을 두 번 캡처해도 일시 정지로 판단하지 않습니다.
 

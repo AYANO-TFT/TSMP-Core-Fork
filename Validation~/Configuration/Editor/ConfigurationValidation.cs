@@ -148,6 +148,11 @@ public static class ConfigurationValidation
         IUdonVM vm = UdonEditorManager.Instance.ConstructUdonVM();
         vm.LoadProgram(program);
         var director = new GameObject("Timeline VM").AddComponent<PlayableDirector>();
+        var backing = new GameObject("Timeline VM Receiver").AddComponent<VRC.Udon.UdonBehaviour>();
+        var resolve = typeof(VRC.Udon.UdonBehaviour).GetMethod("ResolveUdonHeapReferences", Private);
+        Check((bool)resolve.Invoke(backing, new object[] { program.SymbolTable, program.Heap }), "Timeline VM heap references were not initialized");
+        vm.SetProgramCounter(program.EntryPoints.GetAddressFromSymbol("_onEnable"));
+        Check(vm.Interpret() == 0, "Timeline VM OnEnable failed");
         var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
         timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
         timeline.fixedDuration = 10;
@@ -166,6 +171,58 @@ public static class ConfigurationValidation
             Check(state == states[i], "Timeline VM state mismatch: " + commands[i]);
         }
         Results.Add("PASS Udon VM Timeline Play/Pause/Resume/Stop on a real PlayableDirector");
+        program.Heap.SetHeapVariable(program.SymbolTable.GetAddressFromSymbol("receiveInterpolation"), (int)ReceiveInterpolationMode.Discrete, typeof(int));
+        program.Heap.SetHeapVariable(program.SymbolTable.GetAddressFromSymbol("timeApplyThreshold"), 10f, typeof(float));
+        director.initialTime = 1;
+        ReceiveTimelineVm(vm, program, 2, .3f);
+        Check(director.state == PlayState.Playing && Math.Abs(director.time - .3) < .0001, "Udon initial seek was lost");
+        ReceiveTimelineVm(vm, program, 255, 4);
+        ReceiveTimelineVm(vm, program, 2, float.NaN);
+        Check(director.state == PlayState.Playing && Math.Abs(director.time - .3) < .0001, "Udon invalid packet changed playback");
+        ReceiveTimelineVm(vm, program, 1, 4);
+        Check(director.state == PlayState.Paused && director.time == 4, "Udon paused seek failed");
+        int stops = 0;
+        director.stopped += unused => stops++;
+        ReceiveTimelineVm(vm, program, 0, 0);
+        ReceiveTimelineVm(vm, program, 0, 0);
+        Check(stops == 1 && !director.playableGraph.IsValid(), "Udon repeated Stop rebuilt graphs");
+        int starts = 0;
+        director.played += unused => starts++;
+        ReceiveTimelineVm(vm, program, 1, 3);
+        Check(starts == 0 && director.state == PlayState.Paused && director.time == 3, "Udon initial paused seek started playback");
+        Results.Add("PASS Udon VM initial seek, paused seek, malformed packet rejection and idempotent Stop");
+
+        program.Heap.SetHeapVariable(program.SymbolTable.GetAddressFromSymbol("receiveInterpolation"), (int)ReceiveInterpolationMode.Continuous, typeof(int));
+        program.Heap.SetHeapVariable(program.SymbolTable.GetAddressFromSymbol("timeApplyThreshold"), 0f, typeof(float));
+        program.Heap.SetHeapVariable(program.SymbolTable.GetAddressFromSymbol("continuousInterpolationRate"), 1f, typeof(float));
+        ReceiveTimelineVm(vm, program, 2, 2);
+        ReceiveTimelineVm(vm, program, 2, 4);
+        Check(director.time == 2, "Udon Continuous snapped immediately");
+        vm.SetProgramCounter(program.EntryPoints.GetAddressFromSymbol("_update"));
+        Check(vm.Interpret() == 0, "Udon Continuous update failed");
+        Check(director.time > 2 && director.time < 4, "Udon Continuous did not smooth the time offset");
+        vm.SetProgramCounter(program.EntryPoints.GetAddressFromSymbol("TSMPBeforeEncode"));
+        Check(vm.Interpret() == 0, "Udon Timeline capture failed");
+        byte[] packet = (byte[])program.Heap.GetHeapVariable(program.SymbolTable.GetAddressFromSymbol("timelineBytes"));
+        Check(packet.Length == 10 && packet[0] == 1 && packet[1] == 2, "Udon capture changed the Timeline wire format");
+        Check(Math.Abs(Binary.ReadFloat32LE(packet, 2) - director.time) < .0001, "Udon capture lost the Director time");
+        director.Stop();
+        vm.SetProgramCounter(program.EntryPoints.GetAddressFromSymbol("Play"));
+        Check(vm.Interpret() == 0 && director.state == PlayState.Playing, "Explicit Udon Play did not recover after the Director ended outside the component");
+        director.Stop();
+        Results.Add("PASS Udon VM Continuous update and v1 capture");
+    }
+
+    private static void ReceiveTimelineVm(IUdonVM vm, IUdonProgram program, byte state, float time)
+    {
+        byte[] packet = new byte[10];
+        packet[0] = 1;
+        packet[1] = state;
+        Binary.WriteFloat32LE(packet, 2, time);
+        Binary.WriteFloat32LE(packet, 6, 10);
+        program.Heap.SetHeapVariable(program.SymbolTable.GetAddressFromSymbol("timelineBytes"), packet, typeof(byte[]));
+        vm.SetProgramCounter(program.EntryPoints.GetAddressFromSymbol("OnTSMPVariableReceived"));
+        Check(vm.Interpret() == 0, "Udon Timeline receive failed");
     }
 
     public static void RunTimelineVm()

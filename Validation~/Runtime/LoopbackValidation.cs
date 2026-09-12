@@ -17,6 +17,9 @@ public sealed class LoopbackValidation : MonoBehaviour
     public TSMPNetworkHumanoidPoseSync receivedPose;
     public LoopbackProbe sentValues;
     public LoopbackProbe receivedValues;
+    public TSMPNetworkTimelineSync sentTimeline;
+    public TSMPNetworkTimelineSync receivedTimeline;
+    public Transform receivedTimelineTarget;
     public AnimationClip motion;
     private bool failed;
     private bool expectInvalidHeader;
@@ -45,6 +48,11 @@ public sealed class LoopbackValidation : MonoBehaviour
             sentTransform.target.localRotation = Quaternion.Euler(5f, i * 17f, 10f);
             sentValues.number = 100 + i;
             sentValues.text = "Frame " + i + " \U0001f441\ufe0f\U0001f441\ufe0f";
+            sentTimeline.Seek(i + 1);
+            Check(Math.Abs(sentTimeline.transform.GetChild(0).GetChild(0).localPosition.x - (i + 1)) < .01,
+                "Source Timeline animation track evaluated");
+            if (i % 2 == 0) sentTimeline.Pause();
+            else sentTimeline.Resume();
             Transform arm = sentPose.animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
             motion.SampleAnimation(sentPose.animator.gameObject, (i + 1) * 0.1f);
             Transform hips = sentPose.animator.GetBoneTransform(HumanBodyBones.Hips);
@@ -61,6 +69,11 @@ public sealed class LoopbackValidation : MonoBehaviour
             Check(Vector3.Distance(sentTransform.target.localPosition, receivedTransform.target.localPosition) < 0.002f, "Transform position applied");
             Check(Quaternion.Angle(sentTransform.target.localRotation, receivedTransform.target.localRotation) < 0.5f, "Transform rotation applied");
             Check(receivedValues.number == sentValues.number && receivedValues.text == sentValues.text, "Component int/Unicode string round-trip");
+            Check(Math.Abs(receivedTimeline.director.time - sentTimeline.director.time) < .001,
+                "Timeline time applied through texture loopback");
+            Check(receivedTimeline.director.state == sentTimeline.director.state, "Timeline play/pause state applied");
+            Check(Math.Abs(receivedTimelineTarget.localPosition.x - (i + 1)) < .01,
+                "Received Timeline animation track evaluated: " + receivedTimelineTarget.localPosition.x);
             Check(Quaternion.Angle(arm.rotation, receivedPose.animator.GetBoneTransform(HumanBodyBones.LeftUpperArm).rotation) < 0.5f, "Humanoid arm rotation applied");
             Check(Vector3.Distance(hips.localPosition, receivedPose.animator.GetBoneTransform(HumanBodyBones.Hips).localPosition) < 0.002f, "Humanoid root position applied");
             framesChecked++;
@@ -104,8 +117,8 @@ public sealed class LoopbackValidation : MonoBehaviour
 
     private void ConfigureBindings()
     {
-        TSMPNetworkBehaviour[] sources = { sentTransform, sentPose, sentValues };
-        TSMPNetworkBehaviour[] destinations = { receivedTransform, receivedPose, receivedValues };
+        TSMPNetworkBehaviour[] sources = { sentTransform, sentPose, sentValues, sentTimeline };
+        TSMPNetworkBehaviour[] destinations = { receivedTransform, receivedPose, receivedValues, receivedTimeline };
         encoder.networkBehaviours = sources;
         encoder.bindingTargets = Array.Empty<Component>();
         var targets = new List<Component>();
