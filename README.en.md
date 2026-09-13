@@ -33,11 +33,14 @@
 
 ## What is TSMP?
 
-TSMP, the Trans Sync Media Protocol, is an open-source package for sending runtime data through texture streams in VRChat worlds. The Encoder turns scene data into pixels; a capture or streaming path carries the image, and the Decoder applies the received data to matching objects.
+TSMP, the Trans Sync Media Protocol, is a communication protocol for sending runtime data through texture streams. TSMP Core is an open-source network framework that provides the runtime, synchronization components, and setup tools for using this protocol in VRChat worlds.
+
+The Encoder turns scene data into pixels; a capture or streaming path carries the image, and the Decoder applies the received data to matching objects.
 
 | Feature | What it provides |
 | --- | --- |
 | **Texture transport** | TSMP Encoder / Decoder for encoding and decoding runtime data |
+| **Multi-instance communication** | Build a synchronization solution across separate VRChat instances using an external capture or streaming path |
 | **State and events** | `[TransSync]` field synchronization and `SendTransRPC(methodName, target)` RPC |
 | **Motion and playback** | Transform, Rigidbody, Humanoid and VRChat Avatar Pose, BlendShape, Animator, Timeline |
 | **Scene setup** | Automatic `TSMPSetup` configuration, codec discovery and selection, component and binding updates |

@@ -33,11 +33,14 @@
 
 ## TSMP는 무엇인가요?
 
-TSMP(Trans Sync Media Protocol)는 VRChat 월드의 런타임 데이터를 텍스처 스트림으로 전달하는 오픈소스 패키지입니다. Encoder가 씬의 데이터를 픽셀로 인코딩하고, 캡처·스트리밍 경로를 거친 영상을 Decoder가 읽어 수신 오브젝트에 적용합니다.
+TSMP(Trans Sync Media Protocol)는 런타임 데이터를 텍스처 스트림으로 전달하는 통신 프로토콜입니다. TSMP Core는 이 프로토콜을 VRChat 월드에서 활용할 수 있도록 런타임·동기화 컴포넌트·설정 도구를 제공하는 오픈소스 네트워크 프레임워크입니다.
+
+Encoder가 씬의 데이터를 픽셀로 인코딩하고, 캡처·스트리밍 경로를 거친 영상을 Decoder가 읽어 수신 오브젝트에 적용합니다.
 
 | 기능 | 지원 내용 |
 | --- | --- |
 | **텍스처 전송** | TSMP Encoder / Decoder로 런타임 데이터를 인코딩·디코딩 |
+| **멀티 인스턴스 통신** | 외부 캡처·스트리밍 경로와 결합해 서로 다른 VRChat 인스턴스 간 동기화 솔루션 구성 |
 | **상태와 이벤트** | `[TransSync]` 필드 동기화, `SendTransRPC(methodName, target)` RPC |
 | **움직임과 재생** | Transform, Rigidbody, Humanoid·VRChat Avatar Pose, BlendShape, Animator, Timeline |
 | **씬 구성** | `TSMPSetup` 자동 설정, 코덱 검색·선택, 컴포넌트와 바인딩 자동 갱신 |
