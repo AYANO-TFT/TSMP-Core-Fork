@@ -29,3 +29,27 @@ Evidence root: `F:/Unity/TSMP/Validation-Results/issue6-20260913`.
 - Matching `-result.txt` files contain case-by-case results.
 
 No packet format, receive interpolation algorithm, RPC retry budget, package version or release tag changes are involved.
+
+## Issue #8
+
+Transform sync now checks `syncRigidbody` before storing or applying received velocity/angular velocity. Its per-frame update discards pending velocity flags when the option is disabled, even if the receive mode has changed away from Continuous. Transform targets remain available. Re-enabling physics sync cannot replay the discarded velocity targets; a new packet is required. No mass, gravity or kinematic fields were added to the packet.
+
+The same runner now executes 22 behavior cases in native C# and client Udon bytecode. Eleven additional cases cover Discrete/Continuous, enabled/disabled Rigidbody sync, local/world coordinates under a transformed parent, disabling/re-enabling pending physics, missing Rigidbody, outgoing physics capture and local-only physics settings. All passed in both environments; all 27 Udon programs compiled.
+
+Evidence root: `F:/Unity/TSMP/Validation-Results/issue8-20260913`.
+- Before: `before-final/20260913-131915-ReceivePolicies.log` reproduces four opt-out velocity failures and two retained-target failures. An earlier fixture was corrected to position its Transform before creating the Rigidbody, avoiding edit-mode physics/Transform synchronization delays.
+- Native: `after/20260913-131851-ReceivePolicies.log`.
+- Udon: `udon/20260913-131948-ReceivePoliciesVm.log`.
+
+## Final GPU Loopback
+
+After all three fixes (#5, #6, #8), the existing full loopback fixture passed in SDK-free Play Mode and an actual Windows x64 Development Mono Player (stripping disabled). It encodes using real Luma4, uses D3D11 GPU readback, and applies Transform, humanoid, Timeline, integer/Unicode fields and RPC results. The fixture also rejects blank input without changing variables. This is regression coverage for the full transport; the 22 policy-specific cases above run separately in Editor C# and client Udon VM.
+
+Evidence root: `F:/Unity/TSMP/Validation-Results/issues5-6-8-20260913/loopback`.
+- Play: `20260913-132047-Play.log`.
+- Build: `20260913-132115-Build.log`; succeeded, zero errors, one Luma4 shader warning about potentially uninitialized `SampleBlockLuma`.
+- Player: `20260913-132216-Player.log`.
+- Executable: `F:/Unity/TSMP/Validation-NoSDK/Build/Mono/TSMPValidation.exe`.
+- BuildReport summary: adjacent `TSMPValidation.build-report.txt`.
+
+The separate FFmpeg Editor/Player suite and measurements are recorded in [Streaming validation](../Streaming/README.md#issue-5-output-pacing). Live VRChat/OBS/RTMP transport and IL2CPP were not tested. Validation-generated Udon program references are not committed.

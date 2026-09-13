@@ -41,6 +41,13 @@ public static class ReceivePolicyValidation
         }
         Test("A non-network component without receiveInterpolation still receives", Plain);
         Test("None does not suppress outgoing TransSync encoding", SendOnly);
+        foreach (var mode in new[] { ReceiveInterpolationMode.Discrete, ReceiveInterpolationMode.Continuous })
+        foreach (bool sync in new[] { false, true })
+        foreach (bool local in new[] { false, true })
+            Test("Rigidbody mode=" + mode + ", sync=" + sync + ", local=" + local, () => RigidbodyReception(mode, sync, local));
+        foreach (var mode in new[] { ReceiveInterpolationMode.Discrete, ReceiveInterpolationMode.Continuous })
+            Test("Disabling Rigidbody clears pending targets while " + mode, () => CancelRigidbodyTarget(mode));
+        Test("Missing Rigidbody still receives Transform data", MissingRigidbody);
     }
 
     private sealed class Endpoint : IDisposable
@@ -53,7 +60,8 @@ public static class ReceivePolicyValidation
         public Endpoint(Type type)
         {
 #if UDONSHARP
-            string path = type == typeof(TSMPEncoder) ? "Packages/com.kibalab.tsmp.core/Runtime/Encoder/TSMPEncoder.asset" : Root + type.Name + ".asset";
+            string path = type == typeof(TSMPEncoder) ? "Packages/com.kibalab.tsmp.core/Runtime/Encoder/TSMPEncoder.asset" :
+                type == typeof(TSMPNetworkTransformSync) ? "Packages/com.kibalab.tsmp.core/Runtime/Network/TSMPNetworkTransformSync.asset" : Root + type.Name + ".asset";
             var asset = AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(path);
             program = asset.SerializedProgramAsset.RetrieveProgram();
             Check(program != null && program.ByteCode.Length > 0, "Missing bytecode: " + path);
@@ -74,7 +82,7 @@ public static class ReceivePolicyValidation
         {
 #if UDONSHARP
             uint address = program.SymbolTable.GetAddressFromSymbol(name);
-            if (value is ReceiveInterpolationMode mode) value = (int)mode;
+            if (value != null && value.GetType().IsEnum) value = Convert.ToInt32(value);
             program.Heap.SetHeapVariable(address, value, program.Heap.GetHeapVariableType(address));
 #else
             Target.GetType().GetField(name, Fields).SetValue(Target, value);
@@ -240,6 +248,134 @@ public static class ReceivePolicyValidation
                 output.Release();
                 Object.DestroyImmediate(output);
             }
+        }
+    }
+
+    private static byte[] TransformPacket()
+    {
+        using (var sender = new Endpoint(typeof(TSMPNetworkTransformSync)))
+        {
+            sender.Target.transform.position = new Vector3(3, 4, 5);
+            sender.Target.transform.rotation = Quaternion.Euler(10, 20, 30);
+            sender.Target.transform.localScale = new Vector3(1.2f, 1.3f, 1.4f);
+            Rigidbody body = sender.Target.gameObject.AddComponent<Rigidbody>();
+            body.useGravity = false;
+            body.velocity = new Vector3(2, 3, 4);
+            body.angularVelocity = new Vector3(.2f, .3f, .4f);
+            sender.Set("target", body.transform);
+            sender.Set("targetRigidbody", body);
+            sender.Set("useLocalSpace", false);
+            sender.Set("syncRigidbody", true);
+            sender.Set("compressionMode", CompressionMode.Off);
+            sender.Call("TSMPBeforeEncode");
+            byte[] packet = (byte[])sender.Get<byte[]>("packedBytes").Clone();
+            Check(packet.Length == 66 && (packet[1] & 192) == 192, "Rigidbody capture fixture is incomplete");
+            Check(Binary.ReadVector3Float32LE(packet, 2) == new Vector3(3, 4, 5), "Capture fixture has not synchronized its Transform");
+            return packet;
+        }
+    }
+
+    private static Rigidbody CreateBody(Endpoint receiver)
+    {
+        Rigidbody body = receiver.Target.gameObject.AddComponent<Rigidbody>();
+        body.useGravity = false;
+        body.mass = 3;
+        body.velocity = new Vector3(7, 8, 9);
+        body.angularVelocity = new Vector3(1, 2, 3);
+        receiver.Set("target", body.transform);
+        receiver.Set("targetRigidbody", body);
+        receiver.Set("continuousInterpolationRate", 0f);
+        return body;
+    }
+
+    private static void TickTransform(Endpoint receiver)
+    {
+#if UDONSHARP
+        receiver.Call("_postLateUpdate");
+#else
+        receiver.Call("LateUpdate");
+#endif
+    }
+
+    private static void RigidbodyReception(ReceiveInterpolationMode mode, bool sync, bool local)
+    {
+        byte[] packet = TransformPacket();
+        using (var receiver = new Endpoint(typeof(TSMPNetworkTransformSync)))
+        {
+            var parent = new GameObject("Receiver parent");
+            try
+            {
+                parent.transform.position = new Vector3(10, 20, 30);
+                parent.transform.rotation = Quaternion.Euler(0, 30, 0);
+                parent.transform.localScale = Vector3.one * 2;
+                receiver.Target.transform.SetParent(parent.transform, false);
+                Rigidbody body = CreateBody(receiver);
+                receiver.Set("receiveInterpolation", mode);
+                receiver.Set("syncRigidbody", sync);
+                receiver.Set("useLocalSpace", local);
+                receiver.Set("packedBytes", packet);
+                receiver.Call("OnTSMPVariableReceived");
+                if (mode == ReceiveInterpolationMode.Continuous) TickTransform(receiver);
+                Vector3 expectedPosition = new Vector3(3, 4, 5);
+                Quaternion expectedRotation = Quaternion.Euler(10, 20, 30);
+                if (local)
+                {
+                    expectedPosition = parent.transform.TransformPoint(expectedPosition);
+                    expectedRotation = parent.transform.rotation * expectedRotation;
+                }
+                Vector3 actualPosition = sync ? body.position : body.transform.position;
+                Quaternion actualRotation = sync ? body.rotation : body.transform.rotation;
+                Check(Vector3.Distance(actualPosition, expectedPosition) < .001f, "Transform position stopped syncing");
+                Check(Quaternion.Angle(actualRotation, expectedRotation) < .05f, "Transform rotation stopped syncing");
+                Check(Vector3.Distance(body.transform.localScale, new Vector3(1.2f, 1.3f, 1.4f)) < .001f, "Transform scale stopped syncing");
+                Check(Vector3.Distance(body.velocity, sync ? new Vector3(2, 3, 4) : new Vector3(7, 8, 9)) < .001f, "Velocity ignored Sync Rigidbody");
+                Check(Vector3.Distance(body.angularVelocity, sync ? new Vector3(.2f, .3f, .4f) : new Vector3(1, 2, 3)) < .001f, "Angular velocity ignored Sync Rigidbody");
+                Check(!body.useGravity && !body.isKinematic && body.mass == 3, "Local-only physics settings changed");
+            }
+            finally
+            {
+                receiver.Target.transform.SetParent(null, true);
+                Object.DestroyImmediate(parent);
+            }
+        }
+    }
+
+    private static void CancelRigidbodyTarget(ReceiveInterpolationMode disabledMode)
+    {
+        byte[] packet = TransformPacket();
+        using (var receiver = new Endpoint(typeof(TSMPNetworkTransformSync)))
+        {
+            Rigidbody body = CreateBody(receiver);
+            receiver.Set("receiveInterpolation", ReceiveInterpolationMode.Continuous);
+            receiver.Set("packedBytes", packet);
+            receiver.Call("OnTSMPVariableReceived");
+            receiver.Set("syncRigidbody", false);
+            receiver.Set("receiveInterpolation", disabledMode);
+            TickTransform(receiver);
+            Check(!receiver.Get<bool>("_continuousHasRigidbodyVelocity") && !receiver.Get<bool>("_continuousHasRigidbodyAngularVelocity"), "Disabled physics targets were retained");
+            Check(body.velocity == new Vector3(7, 8, 9) && body.angularVelocity == new Vector3(1, 2, 3), "Disabled pending target changed physics");
+            receiver.Set("syncRigidbody", true);
+            receiver.Set("receiveInterpolation", ReceiveInterpolationMode.Continuous);
+            TickTransform(receiver);
+            Check(body.velocity == new Vector3(7, 8, 9) && body.angularVelocity == new Vector3(1, 2, 3), "Reenable replayed stale physics");
+            receiver.Call("OnTSMPVariableReceived");
+            TickTransform(receiver);
+            Check(Vector3.Distance(body.velocity, new Vector3(2, 3, 4)) < .001f, "New velocity did not resume");
+            Check(Vector3.Distance(body.angularVelocity, new Vector3(.2f, .3f, .4f)) < .001f, "New angular velocity did not resume");
+        }
+    }
+
+    private static void MissingRigidbody()
+    {
+        byte[] packet = TransformPacket();
+        using (var receiver = new Endpoint(typeof(TSMPNetworkTransformSync)))
+        {
+            receiver.Set("receiveInterpolation", ReceiveInterpolationMode.Continuous);
+            receiver.Set("continuousInterpolationRate", 0f);
+            receiver.Set("packedBytes", packet);
+            receiver.Call("OnTSMPVariableReceived");
+            TickTransform(receiver);
+            Check(Vector3.Distance(receiver.Target.transform.position, new Vector3(3, 4, 5)) < .001f, "Missing Rigidbody blocked Transform application");
         }
     }
 
