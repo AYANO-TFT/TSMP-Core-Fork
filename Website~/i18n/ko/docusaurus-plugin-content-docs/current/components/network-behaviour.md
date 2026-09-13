@@ -35,6 +35,8 @@ Manual ID는 고급 옵션으로 취급하세요. Inspector는 실수로 바꾸�
 
 `None`은 송신을 막지 않습니다. 해당 컴포넌트에서 들어오는 값을 무시한다는 뜻입니다.
 
+`None`에서는 수신한 TransSync 값이 필드나 이전에 수신한 배열의 내용을 덮어쓰지 않습니다. 디코더는 `lastVariableHash`도 변경하지 않으며 `OnTSMPVariableReceived`를 호출하지 않습니다. `Discrete` 또는 `Continuous`로 되돌리면 이후 수신값부터 다시 반영됩니다. 이 설정은 RPC 수신을 차단하지 않습니다.
+
 ## Active state
 
 TSMP는 component와 GameObject active state를 기본 on/off switch로 사용합니다.

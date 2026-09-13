@@ -35,6 +35,8 @@ Set receive interpolation per component:
 
 `None` does not stop the component from sending. It only tells the receiver side to ignore incoming values on that component.
 
+In `None` mode, incoming TransSync values do not overwrite fields or the contents of previously received arrays. The decoder also leaves `lastVariableHash` unchanged and does not call `OnTSMPVariableReceived`. Switching back to `Discrete` or `Continuous` allows subsequent values to be received again. This setting does not disable RPC reception.
+
 ## Active state
 
 TSMP uses component and GameObject active state as the main on/off switch.

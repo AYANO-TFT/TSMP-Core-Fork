@@ -35,6 +35,8 @@ title: TSMPNetworkBehaviour
 
 `None` はコンポーネントの送信を停止しません。これは、受信側にそのコンポーネントの受信値を無視するように指示するだけです。
 
+`None` では、受信した TransSync 値がフィールドや以前に受信した配列の内容を上書きしません。デコーダーは `lastVariableHash` も変更せず、`OnTSMPVariableReceived` を呼びません。`Discrete` または `Continuous` に戻すと、その後の受信値から再び反映されます。この設定は RPC の受信を無効にしません。
+
 ## アクティブ状態
 
 TSMP は、コンポーネントとゲームオブジェクトのアクティブ状態をメインのオン/オフ スイッチとして使用します。

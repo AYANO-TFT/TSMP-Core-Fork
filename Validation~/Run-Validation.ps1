@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)][string]$UnityEditor,
     [Parameter(Mandatory = $true)][string]$Project,
     [Parameter(Mandatory = $true)][string]$Results,
-    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm')][string]$Step
+    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm', 'ReceivePolicies', 'ReceivePoliciesVm')][string]$Step
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,7 +19,14 @@ $oldBuild = $env:TSMP_VALIDATION_BUILD
 try {
     $env:TSMP_VALIDATION_RESULT = $result
     $env:TSMP_VALIDATION_BUILD = $build
-    if ($Step -in @('TransSync', 'TransSyncVm')) {
+    if ($Step -in @('ReceivePolicies', 'ReceivePoliciesVm')) {
+        $destination = Join-Path $Project 'Assets/Validation/ReceivePolicies'
+        New-Item -ItemType Directory -Path $destination -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ReceivePolicies/Editor'),(Join-Path $PSScriptRoot 'ReceivePolicies/Runtime') -Destination $destination -Recurse -Force
+        $arrayEditor = Join-Path $Project 'Assets/Validation/ArrayCache/Editor'
+        New-Item -ItemType Directory -Path $arrayEditor -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ArrayCache/Editor/ArrayCacheCases.cs') -Destination $arrayEditor -Force
+    } elseif ($Step -in @('TransSync', 'TransSyncVm')) {
         $destination = Join-Path $Project 'Assets/Validation/TransSync'
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'TransSync/Editor'),(Join-Path $PSScriptRoot 'TransSync/Runtime') -Destination $destination -Recurse -Force
@@ -87,6 +94,8 @@ try {
         TimelineRegression = 'TimelineValidation.Run'
         TransSync = 'TransSyncSchedulingValidation.Run'
         TransSyncVm = 'TransSyncSchedulingValidation.RunVm'
+        ReceivePolicies = 'ReceivePolicyValidation.Run'
+        ReceivePoliciesVm = 'ReceivePolicyValidation.RunVm'
     }
     if ($Step -eq 'Player') {
         $arguments = "-screen-fullscreen 0 -screen-width 640 -screen-height 360 -logFile `"$log`""
@@ -94,7 +103,7 @@ try {
     } else {
         $arguments = "-projectPath `"$Project`" -logFile `"$log`""
         if ($Step -ne 'Inspect') { $arguments += ' -batchmode' }
-        if ($Step -in @('Import', 'Build', 'InitializeSdk', 'Udon', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'Configuration', 'TimelineRegression', 'TransSync')) { $arguments += ' -quit' }
+        if ($Step -in @('Import', 'Build', 'InitializeSdk', 'Udon', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'Configuration', 'TimelineRegression', 'TransSync', 'ReceivePolicies')) { $arguments += ' -quit' }
         if ($methods.ContainsKey($Step)) { $arguments += ' -executeMethod ' + $methods[$Step] }
         if ($Step -eq 'Build') { New-Item -ItemType Directory -Path (Split-Path -Parent $build) -Force | Out-Null }
         $process = Start-Process -FilePath $UnityEditor -ArgumentList $arguments -WindowStyle Hidden -PassThru
@@ -106,7 +115,7 @@ try {
     }
     $process.Refresh()
     if ($process.ExitCode -ne 0) { throw "Validation exited $($process.ExitCode); see $log" }
-    if ($Step -in @('Play', 'Player', 'Inspect', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm')) {
+    if ($Step -in @('Play', 'Player', 'Inspect', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm', 'ReceivePolicies', 'ReceivePoliciesVm')) {
         if (!(Test-Path -LiteralPath $result) -or (Get-Content -LiteralPath $result -First 1) -ne 'PASS') {
             throw "Validation did not produce PASS; see $log"
         }
