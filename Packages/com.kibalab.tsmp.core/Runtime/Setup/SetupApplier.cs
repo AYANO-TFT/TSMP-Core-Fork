@@ -165,6 +165,7 @@ namespace K13A.TSMP
             SetField(encoder, nameof(TSMPEncoder.bindingPriorities), snapshot.Priorities);
             SetField(encoder, nameof(TSMPEncoder.bindingSendOnChange), snapshot.SendOnChange);
             SetField(encoder, nameof(TSMPEncoder.bindingMinSendIntervals), snapshot.MinSendIntervals);
+            SetField(encoder, nameof(TSMPEncoder.bindingSentEvents), snapshot.SentEvents);
 #endif
         }
 

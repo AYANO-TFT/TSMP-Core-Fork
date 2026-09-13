@@ -52,7 +52,7 @@ namespace K13A.TSMP.Udon
 
         [HideInInspector]
 #if UDONSHARP || COMPILER_UDONSHARP
-        [TransSync("vrchat.avatar_pose")]
+        [TransSync("vrchat.avatar_pose", SentEvent = nameof(CommitAvatarPose))]
         [FieldChangeCallback(nameof(AvatarPoseBytes))]
 #else
         [TransSync("vrchat.avatar_pose", Direction = NetworkSyncDirection.ReceiveOnly)]
@@ -77,6 +77,12 @@ namespace K13A.TSMP.Udon
         private const int CompactHumanoidRecordBytes = 6;
         private const int MaxPlayers = 80;
         private const int MaxNameBytes = 64;
+
+#if UDONSHARP || COMPILER_UDONSHARP
+        private int _pendingPlayerCount;
+        private ushort _pendingSequence;
+        private bool _posePending;
+#endif
 
         public const int TrackingPointOrigin = 0;
         public const int TrackingPointHead = 1;
@@ -240,6 +246,7 @@ namespace K13A.TSMP.Udon
 
         public override void TSMPBeforeEncode()
         {
+            _posePending = false;
             if (!IsTSMPActive())
                 return;
 
@@ -295,6 +302,27 @@ namespace K13A.TSMP.Udon
             int cursor = WriteAvatarPoseEntries(validPlayers, totalRecordCount, compactHumanoid, sequence, out writtenPlayers, out writtenRecords, out writtenRoots, out skippedRoots);
 
             StoreAvatarPoseEncodeCounters(writtenPlayers, writtenRecords, writtenRoots, skippedRoots, suppressedRootOnly, skippedEntries, keepAliveEntries, cursor);
+            _pendingPlayerCount = validPlayers;
+            _pendingSequence = sequence;
+            _posePending = true;
+        }
+
+        public void CommitAvatarPose()
+        {
+            if (!_posePending)
+                return;
+
+            _posePending = false;
+            for (int i = 0; i < _pendingPlayerCount; i++)
+            {
+                int index = _validPlayerIndices[i];
+                if (!_playerEntryIncluded[index])
+                    continue;
+                int playerId = _playerIds[index];
+                if (_playerRootPoseIncluded[index])
+                    MarkRootPoseWritten(index, playerId, _playerRootPositions[index], _playerRootRotations[index], _pendingSequence);
+                MarkPlayerEntryWritten(index, playerId, _pendingSequence);
+            }
         }
 
         private int CollectValidPlayersForEncode(int playerCount, int clampedPlayerCount, int displayNameByteLimit)
@@ -399,7 +427,6 @@ namespace K13A.TSMP.Udon
                 if (writeRootPose)
                 {
                     cursor = VrchatAvatarPosePacket.WriteRootPose(avatarPoseBytes, cursor, rootPosition, rootRotation);
-                    MarkRootPoseWritten(playerIndex, playerId, rootPosition, rootRotation, sequence);
                     writtenRoots++;
                 }
                 else
@@ -427,7 +454,6 @@ namespace K13A.TSMP.Udon
 
                 writtenRecords += recordCount;
                 writtenPlayers++;
-                MarkPlayerEntryWritten(playerIndex, playerId, sequence);
             }
 
             return cursor;
@@ -1416,6 +1442,9 @@ namespace K13A.TSMP.Udon
 
         private void InvalidatePlayerMembershipCaches()
         {
+#if UDONSHARP || COMPILER_UDONSHARP
+            _posePending = false;
+#endif
             InvalidateRootPoseCache();
             InvalidatePlayerEntryCache();
         }

@@ -19,6 +19,7 @@ Field는 `TSMPSetup`이 discover할 수 있어야 합니다. `[TransSync]` field
 
 | Property | Type | 기본값 | 역할 |
 | --- | --- | --- | --- |
+| `SentEvent` | `string` | `null` | 해당 필드의 로컬 출력 성공 후 호출할 인자 없는 public 메서드 이름입니다. 수신 확인 응답은 아닙니다. |
 | `Key` | `string` | `null` | Variable hash를 계산하는 stable identifier입니다. 생략하면 field 이름을 사용합니다. Sender와 receiver field가 매칭되려면 같은 key, network ID, value type을 사용해야 합니다. |
 | `Direction` | `NetworkSyncDirection` | `SendReceive` | `Apply Setup`이 이 field를 encoder binding table, decoder binding table, 또는 둘 다에 넣을지 결정합니다. Source field와 receive/display field를 분리할 때 사용합니다. |
 | `Priority` | `int` | `0` | 같은 인코더의 모든 자동 TransSync 필드 중 숫자가 큰 필드를 먼저 전송합니다. 용량에 들어가지 않는 필드는 자르지 않고 다음 전송으로 미룹니다. |
@@ -84,6 +85,14 @@ public float meter;
 재전송 간격을 `0`으로 설정하면 변경된 값만 보냅니다. 이때는 유실이나 늦은 접속 후 값이 다시 변경될 때까지 수신 값이 복구되지 않을 수 있습니다. 재전송은 수신 확인이나 전달 보장을 의미하지 않습니다.
 
 필드의 예전 매 인코딩 전송 동작을 유지하려면 `SendOnChange = false, MinSendInterval = 0`을 지정하세요. 중간 상태가 합쳐지면 안 되는 이벤트는 RPC로 보내세요.
+
+### `SentEvent`
+
+`SentEvent`는 기본값이 `null`인 선택적 `string` 속성입니다. 같은 컴포넌트의 인자 없는 `public void` 메서드 이름을 지정하면, 해당 자동 TransSync 필드가 포함된 프레임의 출력에 성공했을 때만 호출됩니다. 용량 부족으로 미뤄진 필드, 변경되지 않아 생략된 필드, 출력 실패에는 호출되지 않습니다. 기본값에서는 이벤트 호출 비용이 없습니다.
+
+`[TransSync("delta.packed", SentEvent = nameof(CommitDelta))]`처럼 지정합니다. 콜백은 방금 캡처한 차분의 기준값을 확정하는 용도로 짧게 작성하세요. 여기서 `EncodeNow`를 호출하거나 바인딩을 재생성하지 마세요. 이 이벤트는 **로컬 텍스처 출력 성공**을 의미하며 수신 측 전달을 보장하지 않습니다. 수동 Writer 호출에는 적용되지 않습니다. 속성을 변경하면 다른 스케줄링 옵션과 마찬가지로 인코더 바인딩을 재생성해야 합니다.
+
+기본 VRChat 아바타 동기화 컴포넌트는 이 이벤트에서 루트 포즈와 플레이어 keepalive 기록을 확정합니다. 포즈를 캡처했더라도 프레임에 담지 못했다면 기록을 소비하지 않습니다.
 
 ### `EnabledBy`
 

@@ -89,7 +89,9 @@ namespace K13A.TSMP
         [HideInInspector] public int[] bindingPriorities;
         [HideInInspector] public bool[] bindingSendOnChange;
         [HideInInspector] public float[] bindingMinSendIntervals;
+        [HideInInspector] public string[] bindingSentEvents;
         [HideInInspector] public int deferredVariableCount;
+        private bool _isEncoding;
 
         [HideInInspector] public int encodedObjectCount;
         [HideInInspector] public int queuedRpcCount;
@@ -223,6 +225,15 @@ namespace K13A.TSMP
 
         [ContextMenu("Encode Now")]
         public void EncodeNow()
+        {
+            if (_isEncoding)
+                return;
+            _isEncoding = true;
+            try { EncodeFrame(); }
+            finally { _isEncoding = false; }
+        }
+
+        private void EncodeFrame()
         {
             lastError = string.Empty;
 
@@ -598,6 +609,7 @@ namespace K13A.TSMP
         private int[] _sendPriorities;
         private bool[] _sendOnChange;
         private float[] _sendIntervals;
+        private string[] _sendEvents;
         private byte[][] _sendPrevious;
         private bool[] _sendCompleted;
         private double[] _sendLastTimes;
@@ -825,6 +837,15 @@ namespace K13A.TSMP
         }
 
         public void EncodeNow()
+        {
+            if (_isEncoding)
+                return;
+            _isEncoding = true;
+            EncodeFrame();
+            _isEncoding = false;
+        }
+
+        private void EncodeFrame()
         {
             lastEncodeStage = 1;
             lastError = string.Empty;
@@ -1092,6 +1113,7 @@ namespace K13A.TSMP
                         || _sendFieldNames[i] != bindingFieldNames[i]
                         || _sendPriorities[i] != TransSyncSendScheduler.GetPriority(bindingPriorities, i)
                         || _sendOnChange[i] != TransSyncSendScheduler.GetSendOnChange(bindingSendOnChange, i)
+                        || _sendEvents[i] != GetSentEvent(i)
                         || _sendIntervals[i] != TransSyncSendScheduler.GetInterval(bindingMinSendIntervals, i))
                     {
                         rebuild = true;
@@ -1111,6 +1133,7 @@ namespace K13A.TSMP
             _sendPriorities = new int[count];
             _sendOnChange = new bool[count];
             _sendIntervals = new float[count];
+            _sendEvents = new string[count];
             _sendPrevious = new byte[count][];
             _sendCompleted = new bool[count];
             _sendLastTimes = new double[count];
@@ -1129,8 +1152,14 @@ namespace K13A.TSMP
                 _sendPriorities[i] = TransSyncSendScheduler.GetPriority(bindingPriorities, i);
                 _sendOnChange[i] = TransSyncSendScheduler.GetSendOnChange(bindingSendOnChange, i);
                 _sendIntervals[i] = TransSyncSendScheduler.GetInterval(bindingMinSendIntervals, i);
+                _sendEvents[i] = GetSentEvent(i);
             }
             _sendOrder = TransSyncSendScheduler.BuildOrder(count, _sendPriorities);
+        }
+
+        private string GetSentEvent(int index)
+        {
+            return bindingSentEvents != null && index < bindingSentEvents.Length ? bindingSentEvents[index] : string.Empty;
         }
 
         private void CommitBoundVariables()
@@ -1147,6 +1176,8 @@ namespace K13A.TSMP
                 _sendCompleted[i] = true;
                 _sendLastTimes[i] = now;
                 _sendPendingLengths[i] = 0;
+                if (!string.IsNullOrEmpty(_sendEvents[i]))
+                    SendCustomEvent(_sendTargets[i], _sendEvents[i]);
             }
             _sendRotation = _sendRotation >= 2147483646 ? 0 : _sendRotation + 1;
         }

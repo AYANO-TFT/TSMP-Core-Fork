@@ -63,6 +63,30 @@ Before: the loop boundary and two non-loop cases failed in C#. Client bytecode a
 
 After: all 46 cases passed in C# and Udon VM, with full client compilation. Evidence: `F:/Unity/TSMP/Validation-Results/issue11`, native `after/20260913-134640-ReceivePolicies.log`, Udon `udon-final/20260913-134841-ReceivePoliciesVm.log`. The first Udon run records the discovered integer overflow, not a successful result.
 
+## Issue #3
+
+`TransSyncAttribute.SentEvent` opts a field into a public parameterless completion callback. Snapshot generation and editor binding generation preserve the event name. The native send state and Udon encoder invoke it only for fields included in a successfully written frame, not for unchanged/deferred fields or failed outputs. Existing fields incur no extra event calls. `EncodeNow` rejects reentry while capturing, writing or notifying; native callback exceptions are logged without aborting the remaining commit bookkeeping.
+
+The avatar synchronizer stages the player membership, root inclusion and sequence of its current capture. `CommitAvatarPose` advances only included player entries and included roots, then consumes that staged capture once. Membership invalidation cancels pending capture state. The wire format, default Full mode, interpolation, sampling budgets and 30-frame intervals are unchanged. Local output success is not a delivery acknowledgement.
+
+2026-09-13 results:
+
+- 47 native C# cases passed, including codec failure, missing output, capacity deferral while another field succeeds, latest-value retry, unchanged suppression, callback reentry, snapshot generation and editor binding generation.
+- 48 client Udon VM cases passed, including those runtime cases and actual avatar/encoder programs connected through the field/event bridge. All validation-project Udon programs compiled for the client.
+- Avatar input uses real SDK `VRCPlayerApi` objects registered with `AddToList`, with deterministic tracking/bone delegates restored after the test. This is an executable client-bytecode test, not live VRChat motion tracking.
+- Default Full capture, unsent stationary roots, changed roots after failure and periodic keyframes pass. A seeded 17-player committed baseline exercises the real 16-player root sample budget: failed output consumes no keepalive records; successful retry commits all included entries but only 16 sampled roots.
+- Initial fixture attempts incorrectly assumed Luma4 would invoke a custom codec writer and that hidden avatar intervals could be overridden. The final fixture uses a test symbol mode to inject write failures and retains the actual 30-frame intervals. Intermediate failing logs are retained separately.
+
+Evidence: `F:/Unity/TSMP/Validation-Results/issue3`, native `native-final/20260913-141145-ReceivePolicies.log`, Udon `udon-complete/20260913-141016-ReceivePoliciesVm.log`. The updated API is documented in English, Korean and Japanese.
+
+Existing scenes receive the new hidden binding array through the normal script-reload/setup/build preparation workflow. No SDK-free-specific menu or setup path is added. Custom code assigning binding arrays directly must also provide `bindingSentEvents` for fields using this callback; omitted entries mean no callback. Unity/Udon generated program references are excluded from source commits.
+
+## Final Verification of #3, #9, #10, #11 and #12
+
+Windows x64 Development Mono Player (stripping disabled) was rebuilt after all runtime edits: zero build errors and one existing Luma4 `SampleBlockLuma` warning. The resulting executable passed the nine-frame Transform/Humanoid/Timeline/Unicode/RPC GPU loopback plus all eight block expansion pixel/CRC/payload cases. Evidence: `F:/Unity/TSMP/Validation-Results/issues3-9-10-11-12/final`, `20260913-141206-Build.log` and `20260913-141230-Player.log`. Executable: `F:/Unity/TSMP/Validation-NoSDK/Build/Mono/TSMPValidation.exe`.
+
+Live VRChat, OBS/RTMP transport, other graphics APIs and IL2CPP were not tested. No versions, tags or release workflows were changed.
+
 ## Final GPU Loopback
 
 After all three fixes (#5, #6, #8), the existing full loopback fixture passed in SDK-free Play Mode and an actual Windows x64 Development Mono Player (stripping disabled). It encodes using real Luma4, uses D3D11 GPU readback, and applies Transform, humanoid, Timeline, integer/Unicode fields and RPC results. The fixture also rejects blank input without changing variables. This is regression coverage for the full transport; the 22 policy-specific cases above run separately in Editor C# and client Udon VM.

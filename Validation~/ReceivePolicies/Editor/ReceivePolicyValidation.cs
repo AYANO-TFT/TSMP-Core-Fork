@@ -54,6 +54,10 @@ public static class ReceivePolicyValidation
             Test("Animator layer selection: " + selection, () => AnimatorPolicyCases.Selection(selection));
         foreach (string test in AnimatorPolicyCases.TimeCases)
             Test("Animator time: " + test, () => AnimatorPolicyCases.Time(test));
+        Test("Sent event follows successful output of its own field", SendCommitCases.Notifications);
+#if UDONSHARP
+        Test("Avatar root delta and keepalive commit only after output", SendCommitCases.Avatar);
+#endif
     }
 
     internal sealed class Endpoint : IDisposable
@@ -390,7 +394,7 @@ public static class ReceivePolicyValidation
     public static void RunVm()
     {
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-        foreach (string name in new[] { nameof(ReceivePolicyProbe), nameof(PlainReceiveProbe) })
+        foreach (string name in new[] { nameof(ReceivePolicyProbe), nameof(PlainReceiveProbe), nameof(SendCommitProbe), nameof(SendCommitCodec) })
         {
             if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(Root + name + ".asset") != null) continue;
             var asset = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();

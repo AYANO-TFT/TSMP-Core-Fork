@@ -159,6 +159,11 @@ namespace K13A.TSMP
                 entry.LastSent = now;
                 entry.Sent = true;
                 entry.PendingLength = 0;
+                if (!string.IsNullOrEmpty(entry.Field.Sync.SentEvent))
+                {
+                    try { ComponentReflection.InvokeMethod(entry.Target, entry.Field.Sync.SentEvent); }
+                    catch (System.Exception exception) { UnityEngine.Debug.LogException(exception, entry.Target); }
+                }
             }
             _rotation = _rotation >= int.MaxValue - 1 ? 0 : _rotation + 1;
         }

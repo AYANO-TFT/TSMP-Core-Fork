@@ -19,6 +19,7 @@ The field must be discoverable by `TSMPSetup`. After adding or removing a `[Tran
 
 | Property | Type | Default | What it does |
 | --- | --- | --- | --- |
+| `SentEvent` | `string` | `null` | Public parameterless method called after successful local output of this field. Not a receiver acknowledgement. |
 | `Key` | `string` | `null` | Stable identifier used to calculate the variable hash. If omitted, TSMP uses the field name. Sender and receiver fields must use the same key, network ID, and value type to match. |
 | `Direction` | `NetworkSyncDirection` | `SendReceive` | Controls whether the setup process puts this field in the encoder binding table, the decoder binding table, or both. Use this to separate source fields from receive/display fields. |
 | `Priority` | `int` | `0` | Higher numbers are considered first across all automatic TransSync fields in this encoder. Fields that do not fit are deferred, not truncated. |
@@ -84,6 +85,20 @@ The encoder's **Trans Sync Refresh Interval** (`transSyncRefreshInterval`) defau
 Set refresh to `0` for strict change-only sending. In that mode, a lost update or late join can leave a value unavailable until it changes again. Refresh is best-effort retransmission, not an acknowledgement or delivery guarantee.
 
 To retain the previous every-encode sending behavior for a field, use `SendOnChange = false, MinSendInterval = 0`. Use an RPC for events that must not be coalesced as state.
+
+### `SentEvent`
+
+`SentEvent` is an optional `string` property (default `null`). Set it to the name of a public, parameterless `void` method on the same component. The encoder calls it only after a frame containing this automatic TransSync field has been written successfully. Deferred fields, unchanged fields and failed outputs do not trigger it. The default adds no event calls.
+
+Use it to commit a captured delta baseline, not to capture the next sample. Keep the callback short; do not call `EncodeNow` or rebuild bindings inside it. It confirms local texture output, **not delivery to a receiver**. Manual Writer calls do not trigger this event. Changes to `SentEvent` require regenerated encoder bindings, just like the scheduling options.
+
+```csharp
+[TransSync("delta.packed", SentEvent = nameof(CommitDelta))]
+public byte[] packedBytes;
+
+```
+
+The built-in VRChat avatar synchronizer uses this event to commit root-pose and player keepalive records. Capturing a pose or failing to fit it into a frame no longer consumes that state.
 
 ### `EnabledBy`
 
