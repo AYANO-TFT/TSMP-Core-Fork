@@ -52,6 +52,8 @@ public static class ReceivePolicyValidation
             Test("BlendShape target invalidation: " + change, () => BlendShapePolicyCases.Run(change));
         foreach (string selection in AnimatorPolicyCases.SelectionCases)
             Test("Animator layer selection: " + selection, () => AnimatorPolicyCases.Selection(selection));
+        foreach (string test in AnimatorPolicyCases.TimeCases)
+            Test("Animator time: " + test, () => AnimatorPolicyCases.Time(test));
     }
 
     internal sealed class Endpoint : IDisposable

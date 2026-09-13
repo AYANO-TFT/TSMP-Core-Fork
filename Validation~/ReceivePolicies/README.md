@@ -55,6 +55,14 @@ Animator reception now treats `layerIndices` as a whitelist before changing laye
 
 Six real-Animator cases cover selected/excluded/empty/null/changed/invalid layers. Before the fix, excluded/empty/null/changed cases reproduced unwanted weight changes. After the fix all 38 receive-policy cases passed in native C# and client Udon VM, with full client compilation. Evidence: `F:/Unity/TSMP/Validation-Results/issue10`, native `after/20260913-134424-ReceivePolicies.log`, Udon `udon/20260913-134446-ReceivePoliciesVm.log`.
 
+## Issue #11
+
+Animator time correction compares the shortest phase distance for looping states and the full normalized-time distance for non-looping states. State changes still use Play/CrossFade independently of the time threshold. Eight real-Animator cases cover boundary crossing, larger loop drift, whole loop cycles, non-loop cycles and completed playback, sub-threshold drift and both transition APIs.
+
+Before: the loop boundary and two non-loop cases failed in C#. Client bytecode additionally exposed checked UInt32-to-Int32 conversion in `Binary.ReadInt32LE` for negative state hashes. Signed byte assembly now preserves the bit pattern without that conversion. The existing `Upper.Once` fixture deliberately retains a negative state hash.
+
+After: all 46 cases passed in C# and Udon VM, with full client compilation. Evidence: `F:/Unity/TSMP/Validation-Results/issue11`, native `after/20260913-134640-ReceivePolicies.log`, Udon `udon-final/20260913-134841-ReceivePoliciesVm.log`. The first Udon run records the discovered integer overflow, not a successful result.
+
 ## Final GPU Loopback
 
 After all three fixes (#5, #6, #8), the existing full loopback fixture passed in SDK-free Play Mode and an actual Windows x64 Development Mono Player (stripping disabled). It encodes using real Luma4, uses D3D11 GPU readback, and applies Transform, humanoid, Timeline, integer/Unicode fields and RPC results. The fixture also rejects blank input without changing variables. This is regression coverage for the full transport; the 22 policy-specific cases above run separately in Editor C# and client Udon VM.

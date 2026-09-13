@@ -10,6 +10,41 @@ using Object = UnityEngine.Object;
 public static class AnimatorPolicyCases
 {
     public static readonly string[] SelectionCases = { "selected", "excluded", "empty", "null", "changed", "invalid" };
+    public static readonly string[] TimeCases = { "loop boundary", "loop correction", "loop cycles", "once cycles", "once completed", "once threshold", "state change", "crossfade change" };
+
+    public static void Time(string test)
+    {
+        using (var fixture = new Fixture())
+        using (var sync = new Endpoint(typeof(TSMPNetworkAnimatorSync)))
+        {
+            bool once = test.StartsWith("once");
+            string state = once ? "Upper.Once" : "Upper.Loop";
+            float before = test == "once completed" ? 1.25f : test.StartsWith("loop") ? 0.99f : 0.25f;
+            float received = test == "loop boundary" ? 0.01f : test == "loop correction" ? 0.1f :
+                test == "loop cycles" ? 2.99f : test == "once threshold" ? 0.26f : before + 1f;
+            bool changeState = test.EndsWith("change");
+            fixture.Animator.Play(state, 1, before);
+            fixture.Animator.Update(0);
+            Check(fixture.Animator.GetCurrentAnimatorStateInfo(1).loop == !once, "Fixture loop flag incorrect");
+            sync.Set("animator", fixture.Animator);
+            sync.Set("layerIndices", new[] { 1 });
+            sync.Set("receiveInterpolation", ReceiveInterpolationMode.Discrete);
+            sync.Set("normalizedTimeApplyThreshold", 0.03f);
+            sync.Set("layerFadeDuration", test == "crossfade change" ? 0.1f : 0f);
+            sync.Set("animatorBytes", Packet(1, Animator.StringToHash(changeState ? "Upper.Other" : state), received, 0.3f));
+            sync.Call("OnTSMPVariableReceived");
+            fixture.Animator.Update(0);
+            if (test == "crossfade change")
+                Check(fixture.Animator.IsInTransition(1) && fixture.Animator.GetNextAnimatorStateInfo(1).fullPathHash == Animator.StringToHash("Upper.Other"), "State change did not crossfade");
+            else
+            {
+                var actual = fixture.Animator.GetCurrentAnimatorStateInfo(1);
+                bool keep = test == "loop boundary" || test == "loop cycles" || test == "once threshold";
+                Near(actual.normalizedTime, keep ? before : received, "Normalized time");
+                Check(actual.fullPathHash == Animator.StringToHash(changeState ? "Upper.Other" : state), "State change was skipped");
+            }
+        }
+    }
 
     public static void Selection(string selection)
     {

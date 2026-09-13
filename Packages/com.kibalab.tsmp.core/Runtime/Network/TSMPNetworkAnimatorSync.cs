@@ -230,7 +230,12 @@ namespace K13A.TSMP.Udon
                     animator.SetLayerWeight(layer, weight);
                     AnimatorStateInfo current = animator.GetCurrentAnimatorStateInfo(layer);
                     float currentTime = current.normalizedTime;
-                    float delta = Mathf.Abs((currentTime - Mathf.Floor(currentTime)) - (normalizedTime - Mathf.Floor(normalizedTime)));
+                    float delta = Mathf.Abs(currentTime - normalizedTime);
+                    if (current.loop)
+                    {
+                        delta = Mathf.Abs((currentTime - Mathf.Floor(currentTime)) - (normalizedTime - Mathf.Floor(normalizedTime)));
+                        delta = Mathf.Min(delta, 1f - delta);
+                    }
                     if (current.fullPathHash != stateHash || delta > normalizedTimeApplyThreshold)
                     {
                         if (layerFadeDuration > 0f)
