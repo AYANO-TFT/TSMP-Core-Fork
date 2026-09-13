@@ -71,23 +71,29 @@ public void ResetFrameIndex()
 ## `QueueRpc()` と `QueueRpcHash()`
 
 ```csharp
-public void QueueRpc(ushort networkId, string rpcName, params object[] arguments)
-public void QueueRpcHash(ushort networkId, uint rpcHash, params object[] arguments)
+public bool QueueRpc(ushort networkId, string rpcName, params object[] arguments)
+public bool QueueRpcHash(ushort networkId, uint rpcHash, params object[] arguments)
 ```
 
 下位レベルの RPC メッセージをキューに入れます。ほとんどのユーザー コンポーネントは動作ネットワーク ID をすでに知っているため、`TSMPNetworkBehaviour.SendTransRPC()` を優先する必要があります。
 
 引数にはプリミティブ TSMP 値型を使用する必要があります。高頻度のデータや複雑なデータの場合は、多くの RPC 引数を送信する代わりに、データを `[TransSync] byte[]` フィールドにパックします。
 
+この下位 API は UdonSharp のない通常の Unity で使用できます。戻り値の `true` はキューへの登録成功であり、配達成功ではありません。非対応型や null の引数、255 個を超える引数、プロトコル上限または設定済みフレーム容量を超えるメッセージは `false` を返します。理由は `lastError` で確認できます。
+
+登録後の引数変更やコーデック・出力容量の縮小によって送信不能になった RPC は、そのイベントだけを破棄し、診断を記録して後続 RPC と変数の送信を続けます。警告ログは Encoder のデバッグ設定に従います。出力やコーデックの未設定、フレーム自体を構成できない容量、コーデックの書き込み失敗では、有効なイベントの送信回数を消費しません。
+
 ## `QueueTransRpc()`
 
 ```csharp
-public void QueueTransRpc(int networkId, uint rpcHash, string methodName)
+public bool QueueTransRpc(int networkId, uint rpcHash, string methodName)
 ```
 
 ネットワーク ID とメソッド ハッシュによって TSMP RPC をキューに入れます。これは、`TSMPNetworkBehaviour.SendTransRPC()` によって使用されるエンコーダ側のエントリ ポイントです。
 
 キューは `transRpcRepeatFrames` に従って後続のフレームに書き込まれるため、単一のイベントはテクスチャ パスでの短いフレーム ドロップに耐えることができます。
+
+残り回数を減らすのは、そのイベントを含むフレームのローカル出力に成功した場合だけです。`TSMPBeforeEncode()` 中に登録した RPC は、回数を減らさず次のフレームまで保持します。設定回数を使い切れば、受信側に一度も届かなかった場合でも送信を終了します。通常の Unity では、`QueueTransRpc()` にも上記の登録時検証と送信不能イベントの処理を適用します。
 
 これは繰り返し送信であり、受信確認による配信保証ではありません。イベントを含むすべてのフレームが失われると、RPC も失われます。Decoder は Stream ID、Network ID、メソッドハッシュ、イベント ID を使って直近 32 件の異なるイベントを記憶し、重複実行を防ぎます。1 つの Decoder で複数の送信元を受信する場合は、それぞれ異なる `streamId` を使用してください。送信元を再起動して同じ Stream ID とイベント ID を再利用すると、以前のキャッシュと衝突する可能性があります。
 

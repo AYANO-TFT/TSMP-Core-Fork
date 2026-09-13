@@ -32,7 +32,8 @@ namespace K13A.TSMP
             out string error,
             EncoderNativeSendState sendState = null,
             double now = 0.0,
-            float refreshInterval = 1f)
+            float refreshInterval = 1f,
+            System.Action<string> onRpcRejected = null)
         {
             networkMessageCount = 0;
             variableMessageCount = 0;
@@ -45,15 +46,15 @@ namespace K13A.TSMP
             NetworkPayloadBuffer.Clear(payload);
 
             payloadOffset = NetworkFrameWriter.BeginNetworkFrame(payload, 0, frameIndex);
-            if (payloadOffset < 0)
+            if (payloadOffset < 0 || maxPayloadBytes < NetworkFrameProtocol.NetworkHeaderBytes)
             {
                 error = "Network frame buffer is too small.";
                 return false;
             }
 
             ushort sequence = unchecked((ushort)frameIndex);
-            if (!WriteRpcMessages(queuedRpcs, payload, ref payloadOffset, sequence, ref networkMessageCount, out rpcMessageCount, out error))
-                return false;
+            WriteRpcMessages(queuedRpcs, payload, maxPayloadBytes, ref payloadOffset, sequence,
+                ref networkMessageCount, out rpcMessageCount, onRpcRejected);
 
             if (!CaptureSources(behaviours, bindingCache, payload, sequence, ref payloadOffset,
                 ref currentMessageStartOffset, ref currentVariableCount, out int manualMessages, out error))
@@ -121,31 +122,45 @@ namespace K13A.TSMP
             return true;
         }
 
-        private static bool WriteRpcMessages(
+        public static bool ValidateRpc(QueuedRpc rpc, ref byte[] buffer, int capacity, out string error)
+        {
+            buffer = NetworkPayloadBuffer.EnsureCapacity(buffer, NetworkFrameProtocol.MaximumPayloadBytes);
+            int offset = NetworkFrameProtocol.NetworkHeaderBytes;
+            return WriteRpc(buffer, capacity, ref offset, rpc, 0, out error);
+        }
+
+        private static void WriteRpcMessages(
             List<QueuedRpc> queuedRpcs,
             byte[] payload,
+            int capacity,
             ref int payloadOffset,
             ushort sequence,
             ref int networkMessageCount,
             out int rpcMessageCount,
-            out string error)
+            System.Action<string> onRpcRejected)
         {
             rpcMessageCount = 0;
-            error = string.Empty;
 
             if (queuedRpcs == null)
-                return true;
+                return;
 
-            if (queuedRpcs.Count <= 0)
-                return true;
+            while (queuedRpcs.Count > 0)
+            {
+                QueuedRpc rpc = queuedRpcs[0];
+                if (WriteRpc(payload, capacity, ref payloadOffset, rpc, sequence, out string error))
+                {
+                    networkMessageCount++;
+                    rpcMessageCount++;
+                    return;
+                }
 
-            if (!WriteRpc(payload, ref payloadOffset, queuedRpcs[0], sequence, out error))
-                return false;
-
-            networkMessageCount++;
-            rpcMessageCount++;
-
-            return true;
+                queuedRpcs.RemoveAt(0);
+                string diagnostic = "RPC discarded: networkId=" + rpc.NetworkId + ", hash=" + rpc.RpcHash + ". " + error;
+                if (onRpcRejected != null)
+                    onRpcRejected(diagnostic);
+                else
+                    UnityEngine.Debug.LogWarning("[TSMP Encoder] " + diagnostic);
+            }
         }
 
         public static void AdvanceQueuedRpcs(List<QueuedRpc> queuedRpcs)
@@ -166,7 +181,7 @@ namespace K13A.TSMP
             queuedRpcs.RemoveAt(0);
         }
 
-        private static bool WriteRpc(byte[] payload, ref int payloadOffset, QueuedRpc rpc, ushort sequence, out string error)
+        private static bool WriteRpc(byte[] payload, int capacity, ref int payloadOffset, QueuedRpc rpc, ushort sequence, out string error)
         {
             int failedArgumentIndex;
             int writeError;
@@ -174,6 +189,12 @@ namespace K13A.TSMP
             if (nextOffset < 0)
             {
                 error = NetworkFrameWriter.GetRpcWriteError(failedArgumentIndex, writeError);
+                return false;
+            }
+
+            if (nextOffset > capacity)
+            {
+                error = "RPC does not fit. requiredPayloadBytes=" + nextOffset + ", capacity=" + capacity + ".";
                 return false;
             }
 

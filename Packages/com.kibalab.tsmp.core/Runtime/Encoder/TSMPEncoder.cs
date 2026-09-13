@@ -147,6 +147,7 @@ namespace K13A.TSMP
         private byte[] _payload;
         private byte[] _encodedPayload;
         private byte[] _header;
+        private byte[] _rpcValidationBuffer;
         private double _nextEncodeTime;
         private int _payloadOffset;
         private int _currentMessageStartOffset = -1;
@@ -318,17 +319,13 @@ namespace K13A.TSMP
 
         public bool QueueRpcHash(ushort networkId, uint rpcHash, params object[] arguments)
         {
-            if (_queuedRpcs.Count >= 32)
-                return false;
-
-            _queuedRpcs.Add(new EncoderNativeFrameBuilder.QueuedRpc
+            return QueueNativeRpc(new EncoderNativeFrameBuilder.QueuedRpc
             {
                 NetworkId = networkId,
                 RpcHash = rpcHash,
                 Arguments = arguments,
                 RepeatsRemaining = 1
             });
-            return true;
         }
 
         public bool QueueTransRpc(int networkId, uint rpcHash, string methodName)
@@ -342,17 +339,41 @@ namespace K13A.TSMP
                 return false;
             if (string.IsNullOrEmpty(methodName))
                 return false;
-            if (_queuedRpcs.Count >= 32)
-                return false;
-
             int repeats = Mathf.Clamp(transRpcRepeatFrames, 1, 16);
-            _queuedRpcs.Add(new EncoderNativeFrameBuilder.QueuedRpc
+            return QueueNativeRpc(new EncoderNativeFrameBuilder.QueuedRpc
             {
                 NetworkId = (ushort)networkId,
                 RpcHash = rpcHash,
                 Arguments = new object[] { methodName, eventId },
                 RepeatsRemaining = repeats
             });
+        }
+
+        private bool QueueNativeRpc(EncoderNativeFrameBuilder.QueuedRpc rpc)
+        {
+            if (_queuedRpcs.Count >= 32)
+            {
+                SetLastError("RPC queue is full.");
+                return false;
+            }
+
+            int capacity = NetworkFrameProtocol.MaximumPayloadBytes;
+            TSMPCodec codec = ResolveCodec();
+            if (output != null && codec != null)
+            {
+                int configuredCapacity = codec.GetPayloadCapacityBytes(output.width, output.height, blockSize);
+                if (configuredCapacity >= NetworkFrameProtocol.NetworkHeaderBytes)
+                    capacity = Mathf.Min(capacity, configuredCapacity);
+            }
+
+            if (!EncoderNativeFrameBuilder.ValidateRpc(rpc, ref _rpcValidationBuffer, capacity, out string error))
+            {
+                SetLastError("RPC rejected: networkId=" + rpc.NetworkId + ", hash=" + rpc.RpcHash + ". " + error);
+                return false;
+            }
+
+            _queuedRpcs.Add(rpc);
+            queuedRpcCount = _queuedRpcs.Count;
             return true;
         }
 
@@ -402,9 +423,12 @@ namespace K13A.TSMP
                 out error,
                 _sendState,
                 _sendTime,
-                transSyncRefreshInterval);
+                transSyncRefreshInterval,
+                SetLastError);
 
-            lastError = error;
+            queuedRpcCount = _queuedRpcs.Count;
+            if (!result)
+                lastError = error;
             return result;
         }
 
@@ -829,6 +853,7 @@ namespace K13A.TSMP
             if (!_frameOpen)
                 return;
 
+            bool wrotePendingRpc = _pendingRpcCount > 0;
             if (!WritePendingRpcCalls())
             {
                 AbortEncode(lastError);
@@ -885,7 +910,8 @@ namespace K13A.TSMP
 
             lastEncodeStage = 6;
             frameIndex++;
-            AdvancePendingRpcQueue();
+            if (wrotePendingRpc)
+                AdvancePendingRpcQueue();
 
             if (clearAfterEncode)
                 ClearFrame();

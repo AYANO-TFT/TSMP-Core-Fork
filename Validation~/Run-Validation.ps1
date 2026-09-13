@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)][string]$UnityEditor,
     [Parameter(Mandatory = $true)][string]$Project,
     [Parameter(Mandatory = $true)][string]$Results,
-    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm')][string]$Step
+    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm')][string]$Step
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,7 +31,7 @@ try {
         $destination = Join-Path $Project 'Assets/Validation/Configuration'
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Configuration/Editor'),(Join-Path $PSScriptRoot 'Configuration/Runtime') -Destination $destination -Recurse -Force
-    } elseif ($Step -eq 'RpcDelivery') {
+    } elseif ($Step -in @('RpcDelivery', 'RpcQueueVm')) {
         $destination = Join-Path $Project 'Assets/Validation/RpcDelivery'
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'RpcDelivery/Editor'),(Join-Path $PSScriptRoot 'RpcDelivery/Runtime') -Destination $destination -Recurse -Force
@@ -81,6 +81,7 @@ try {
         EditorEncoding = 'EditorEncodingValidation.Run'
         NetworkEdges = 'NetworkEdgeValidation.Run'
         RpcDelivery = 'RpcDeliveryValidation.Run'
+        RpcQueueVm = 'RpcQueueVmValidation.Run'
         Configuration = 'ConfigurationValidation.Run'
         TimelineVm = 'ConfigurationValidation.RunTimelineVm'
         TimelineRegression = 'TimelineValidation.Run'
@@ -105,7 +106,7 @@ try {
     }
     $process.Refresh()
     if ($process.ExitCode -ne 0) { throw "Validation exited $($process.ExitCode); see $log" }
-    if ($Step -in @('Play', 'Player', 'Inspect', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm')) {
+    if ($Step -in @('Play', 'Player', 'Inspect', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm')) {
         if (!(Test-Path -LiteralPath $result) -or (Get-Content -LiteralPath $result -First 1) -ne 'PASS') {
             throw "Validation did not produce PASS; see $log"
         }

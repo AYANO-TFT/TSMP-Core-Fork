@@ -71,23 +71,29 @@ Resets the frame counter used in the header and diagnostics. This is useful for 
 ## `QueueRpc()` and `QueueRpcHash()`
 
 ```csharp
-public void QueueRpc(ushort networkId, string rpcName, params object[] arguments)
-public void QueueRpcHash(ushort networkId, uint rpcHash, params object[] arguments)
+public bool QueueRpc(ushort networkId, string rpcName, params object[] arguments)
+public bool QueueRpcHash(ushort networkId, uint rpcHash, params object[] arguments)
 ```
 
 Queues a lower-level RPC message. Most user components should prefer `TSMPNetworkBehaviour.SendTransRPC()` because it already knows the behaviour network ID.
 
 Arguments should use primitive TSMP value types. For high-frequency or complex data, pack the data into a `[TransSync] byte[]` field instead of sending many RPC arguments.
 
+These lower-level methods are available in ordinary Unity without UdonSharp. `true` means the RPC was accepted into the queue, not delivered. Unsupported or null arguments, more than 255 arguments, and messages exceeding the protocol or configured frame capacity return `false`; check `lastError` for the reason.
+
+If changed arguments or a smaller codec/output capacity make a queued RPC unsendable, the encoder discards that event, records a diagnostic and continues with later RPCs and variables. Warning logs follow the encoder's debug settings. A missing output/codec, an unusable frame capacity, or a codec write failure does not consume an otherwise valid event.
+
 ## `QueueTransRpc()`
 
 ```csharp
-public void QueueTransRpc(int networkId, uint rpcHash, string methodName)
+public bool QueueTransRpc(int networkId, uint rpcHash, string methodName)
 ```
 
 Queues a TSMP RPC by network ID and method hash. This is the encoder-side entry point used by `TSMPNetworkBehaviour.SendTransRPC()`.
 
 The queue is written into subsequent frames according to `transRpcRepeatFrames`, so a single event can survive short frame drops in the texture path.
+
+The repeat budget decreases only after successful local output of a frame containing that queued event. An RPC queued during `TSMPBeforeEncode()` waits for the next frame with its full budget. Once the configured count is exhausted, transmission ends even if the receiver received none of those frames. Ordinary Unity applies the same enqueue validation and unsendable-event handling described above to `QueueTransRpc()`.
 
 This is repeated transmission, not an acknowledged delivery guarantee. An event can still be lost if every frame carrying it is dropped. The Decoder suppresses repeats using Stream ID, Network ID, method hash and event ID, retaining the most recent 32 distinct events. Independent senders sharing a Decoder should use distinct `streamId` values. Restarting a sender with the same Stream ID and reused event IDs can still collide with that cache.
 
