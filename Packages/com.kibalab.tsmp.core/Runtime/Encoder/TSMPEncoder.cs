@@ -1365,7 +1365,7 @@ namespace K13A.TSMP
 
         private void BlitEncodedTexture()
         {
-            EncoderUdonTextureRuntime.BlitEncodedTexture(outputTexture, output, _usingBlockTexture, blockExpandMaterial, _activeWidthBlocks, _activeHeightBlocks);
+            EncoderUdonTextureRuntime.BlitEncodedTexture(outputTexture, output, _usingBlockTexture, blockExpandMaterial, _activeWidthBlocks, _activeHeightBlocks, blockSize);
         }
 
         private int GetPayloadSymbolMode()

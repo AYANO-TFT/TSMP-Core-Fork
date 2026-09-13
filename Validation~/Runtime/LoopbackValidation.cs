@@ -36,6 +36,15 @@ public sealed class LoopbackValidation : MonoBehaviour
         decoder.applyEveryFrame = false;
         ConfigureBindings();
         Check(SystemInfo.supportsAsyncGPUReadback, "GPU readback supported: " + SystemInfo.graphicsDeviceName);
+        try
+        {
+            BlockExpansionCases.Run(setup.encoderBlockExpandMaterial);
+            Check(true, "Block expansion: eight full-pixel GPU and payload round-trips");
+        }
+        catch (Exception exception)
+        {
+            Check(false, exception.ToString());
+        }
         Check(sentPose.animator.isHuman && receivedPose.animator.isHuman, "Real humanoid Avatars loaded");
         sentPose.ResolveBones();
         receivedPose.ResolveBones();

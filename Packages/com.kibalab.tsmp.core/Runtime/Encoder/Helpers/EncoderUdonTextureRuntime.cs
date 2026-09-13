@@ -89,7 +89,8 @@ namespace K13A.TSMP
             bool usingBlockTexture,
             Material blockExpandMaterial,
             int activeWidthBlocks,
-            int activeHeightBlocks)
+            int activeHeightBlocks,
+            int blockSize)
         {
             if (output == null || outputTexture == null)
                 return;
@@ -98,6 +99,9 @@ namespace K13A.TSMP
             {
                 blockExpandMaterial.SetFloat(ShaderProperties.SourceBlockWidth, activeWidthBlocks);
                 blockExpandMaterial.SetFloat(ShaderProperties.SourceBlockHeight, activeHeightBlocks);
+                blockExpandMaterial.SetFloat(ShaderProperties.BlockSize, Mathf.Max(1, blockSize));
+                blockExpandMaterial.SetFloat(ShaderProperties.OutputWidth, output.width);
+                blockExpandMaterial.SetFloat(ShaderProperties.OutputHeight, output.height);
                 GraphicsBridge.Blit(outputTexture, output, blockExpandMaterial);
                 return;
             }
