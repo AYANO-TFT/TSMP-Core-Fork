@@ -67,9 +67,17 @@ Package는 Core에 의존해야 합니다.
 
 ```json
 "dependencies": {
-  "com.kibalab.tsmp.core": "0.0.3-beta.3"
+  "com.kibalab.tsmp.core": "0.3.0-beta.2"
 }
 ```
+
+이 예제는 현재 배포 후보인 Core **0.3.0-beta.2**를 기준으로 하며, 이미 공개된 버전이라는 뜻은 아닙니다. Core 0.2.0과 0.3.0-beta.1에는 준비 API가 없습니다. 호환 Core가 공개되고 배포 패키지 조합을 검증한 뒤 의존 코덱을 공개하세요.
+
+`vpmDependencies`에도 `"com.kibalab.tsmp.core": ">=0.3.0-beta.2"`를 지정합니다. UPM 패키지 의존성에는 범위나 Git URL이 아닌 버전 문자열을 사용합니다. 로컬/디스크 또는 Git 설치에서는 **프로젝트**에 호환 Core도 직접 지정해야 합니다. 이 manifest만으로 GitHub 위치를 찾지는 못합니다. VPM은 등록된 저장소에서 범위를 해결하며 베타 선택 시 시험판 표시를 켜야 합니다.
+
+준비 머티리얼 누락 시 대체 경로는 컴파일 이후에만 동작합니다. 이전 부모 클래스와 새 코덱의 컴파일 호환성을 제공하지는 않습니다. 새 API를 사용하지 않는 기존 코덱은 이전에 검증한 최소 버전을 유지할 수 있습니다.
+
+[Unity package manifest](https://docs.unity3d.com/2022.3/Documentation/Manual/upm-manifestPkg.html), [VPM 버전과 범위](https://vcc.docs.vrchat.com/vpm/packages/#versions-and-ranges)를 참고하세요.
 
 ## 1. Symbol model 선택
 

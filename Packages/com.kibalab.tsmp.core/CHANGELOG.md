@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.0-beta.2 (Unreleased)
+
+### Codec API
+
+- Add `TSMPCodec.PrepareDecode(Texture, Material)` before each header/payload byte pass, with codec-owned linear Float32 calibration LUT allocation, per-pass refresh and lifecycle cleanup. Existing custom codecs can retain the default no-op preparation path.
+- Provide `GetDecodeSampleSize`, `PrepareCalibrationLut` and the optional `calibrationMaterial` field for adaptive codec preparation without codec-specific branches in Core.
+- Preserve packet layout, codec IDs and legacy shader paths. New codec sources that use the preparation API require this Core version; missing preparation materials fall back to ordinary decoding but cannot compensate for an older Core API.
+- Document preparation ordering, shader variants, precision and material ownership in English, Korean and Japanese.
+
+### Fixes
+
+- Preserve RPC queue accounting under reentrant sends and reject events that cannot fit the configured payload. Retransmission remains a finite attempt budget, not guaranteed delivery.
+- Pace FFmpeg output independently of incoming updates while retaining the latest frame.
+- Ignore TransSync reception before value decoding when the target selects None, and clear pending Rigidbody velocities when physics reception is disabled.
+- Invalidate stale BlendShape interpolation targets after selection, renderer, mesh or receive-state changes, and apply Animator layers only when selected by the receiver.
+- Correct Animator drift handling for loop boundaries and non-looping states; read negative state hashes without Udon numeric conversion failures.
+- Preserve integer-sized pixel blocks during output expansion and clear right/bottom remainder pixels for dimensions not divisible by block size.
+- Commit avatar root delta and keepalive state only after successful output through the opt-in `TransSync.SentEvent` callback; guard encoder reentry during callbacks.
+
+Release candidates must be validated and Core published before the dependent codec releases. This heading does not indicate that the version is already available from VPM or GitHub Releases.
+
 ## 0.3.0-beta.1
 
 ### Added

@@ -67,9 +67,17 @@ The package should depend on Core:
 
 ```json
 "dependencies": {
-  "com.kibalab.tsmp.core": "0.0.3-beta.3"
+  "com.kibalab.tsmp.core": "0.3.0-beta.2"
 }
 ```
+
+This example targets Core **0.3.0-beta.2**, currently a release candidate, not an already published version. Core 0.2.0 and 0.3.0-beta.1 do not contain the preparation API. Publish a dependent codec only after the matching Core is available and the packaged combination has been tested.
+
+Use `"com.kibalab.tsmp.core": ">=0.3.0-beta.2"` in `vpmDependencies` too. UPM package dependencies use version strings, not ranges or Git URLs. For local/disk or Git installation, the **project** must explicitly supply a compatible Core too; this package manifest does not locate it on GitHub. VPM resolves the range from configured repositories; enable pre-release visibility when selecting betas.
+
+Missing preparation materials only fall back after compilation. They cannot make a new codec compile against an old base class. Codecs not using the new API may keep their previously tested minimum version.
+
+See [Unity package manifests](https://docs.unity3d.com/2022.3/Documentation/Manual/upm-manifestPkg.html) and [VPM versions and ranges](https://vcc.docs.vrchat.com/vpm/packages/#versions-and-ranges).
 
 ## 1. Choose the symbol model
 

@@ -67,9 +67,17 @@ com.example.tsmp.codec.mycodec/
 
 ```json
 "dependencies": {
-  "com.kibalab.tsmp.core": "0.0.3-beta.3"
+  "com.kibalab.tsmp.core": "0.3.0-beta.2"
 }
 ```
+
+この例は現在リリース候補の Core **0.3.0-beta.2** が対象であり、公開済みという意味ではありません。Core 0.2.0 と 0.3.0-beta.1 には準備 API がありません。対応 Core の公開と配布パッケージの組み合わせ検証が済んでから、依存コーデックを公開してください。
+
+`vpmDependencies` にも `"com.kibalab.tsmp.core": ">=0.3.0-beta.2"` を指定します。UPM パッケージの依存関係は範囲や Git URL ではなくバージョン文字列です。ローカル/ディスクまたは Git インストールでは、**プロジェクト**に対応 Core も直接指定します。この manifest だけでは GitHub 上の場所を見つけません。VPM は登録されたリポジトリから範囲を解決します。ベータ選択時には試験版表示を有効にします。
+
+準備マテリアル不足時の fallback はコンパイル後の動作であり、旧基底クラスで新コーデックをコンパイルする互換機能ではありません。新 API を使わない既存コーデックは、以前に検証した最小バージョンを維持できます。
+
+[Unity package manifest](https://docs.unity3d.com/2022.3/Documentation/Manual/upm-manifestPkg.html)、[VPM のバージョンと範囲](https://vcc.docs.vrchat.com/vpm/packages/#versions-and-ranges)を参照してください。
 
 ## 1. シンボル モデルを選択します
 
