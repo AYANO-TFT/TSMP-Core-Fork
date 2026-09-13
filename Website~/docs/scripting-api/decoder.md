@@ -16,7 +16,8 @@ Use this page when wiring a custom receiver, reading diagnostics, or debugging w
 | `payloadByteTexture` | Render texture used by codec shaders when decoding payload bytes. |
 | `codecHandlers` | Codec components available to the decoder. The header `codecId` selects the handler. |
 | `applyEveryFrame` | Runs decode from the component update loop. Disable it when another script calls `DecodeNow()`. |
-| `skipDuplicateFrames` | Ignores a frame if its header frame index already ran. |
+| `skipDuplicateFrames` | Enables duplicate and older-frame filtering for the current stream. Inspector label: Filter Frames. |
+| `frameWindowSize` | Window Size in frames, default 256, minimum effective value 1. Used for the frame-zero restart exception; not a buffer allocation. |
 | `flipY` | Flips texture sampling for capture paths that invert the image. |
 | `useHeaderPayloadLayout` | Uses header payload metadata to size readback. Keep enabled for normal use. |
 | `payloadBytesOverride` | Manual payload byte count for test paths. |
@@ -62,13 +63,33 @@ The extra storage is `width * height * 16` bytes: about 3.52 MiB at 640x360, 31.
 
 Changing or destroying `sourceTexture` after capture affects the next operation, not the current image. Disabling the decoder cancels its pending operation; a callback received after re-enable is discarded before a new decode can start. Header, LUT preparation and payload use the same snapshot in both native and Udon paths. Custom codecs must treat the supplied image as read-only and must not retain it as a permanent frame copy. This does not address out-of-order frames or transactional variable/RPC application.
 
+## Frame window and ordering {#frame-window}
+
+With filtering enabled, compare the incoming index `N` with the last successfully applied index `P` of the current stream. The effective window is `W = max(1, frameWindowSize)`; changing it takes effect on the next header decision.
+
+1. With no previously applied frame, or a different `StreamId`, accept the candidate without an order comparison.
+2. If `N == P`, skip the duplicate.
+3. Calculate `D = (N - P) modulo 2^32`. If `0 < D < 2^31`, accept it as newer, including natural counter wrap.
+4. Otherwise, accept `N == 0` when `P >= W` as an inferred restart.
+5. Skip other candidates as older/ambiguous. Exactly half the UInt32 range is ambiguous unless the zero restart exception applies.
+
+Acceptance here allows payload decoding, not unconditional application. Only a successful network-frame application advances the remembered stream/index. A corrupt payload, cancelled operation or header/readback-only safety test does not establish a new baseline. Duplicate and older frames retain the existing `lastFrameValid=true` skip convention; they are counted separately by `skippedDuplicateFrameCount` and `skippedOutOfOrderFrameCount` and have a descriptive `lastError` status. They do not read or dispatch payload messages.
+
+For `W=256`: `100 -> 101 -> 100` skips the final 100; `255 -> 0` skips zero; `256 -> 0 -> 1` accepts the restart and continuation. `4294967295 -> 0` is a normal forward wrap regardless of the window. With `W=512`, `256 -> 0` is skipped. The window is a frame-count threshold, not a time interval, a sliding replay cache or a group of stored textures.
+
+This is deliberately a heuristic without a session ID. A delayed old zero can trigger a false restart; a restart that loses frame zero or occurs before one window has elapsed is not recognized by this exception. After an accepted reset, sufficiently high old frames can again appear newer. Changing streams accepts the candidate and replaces the baseline after successful application; no history of retired streams is retained. RPC event deduplication is unchanged and is not cleared by this heuristic. Disabling `skipDuplicateFrames` bypasses both ordering checks and the restart rule, useful for intentional recorded-video seeking but allowing old variable values to be applied.
+
+### Datagram compatibility
+
+The datagram and protocol version are **unchanged**. The header is still 56 bytes and the payload format is unchanged. `StreamId` occupies bytes `20..23` (UInt32 little-endian), `FrameIndex` bytes `24..27` (UInt32 little-endian), and `TimestampMs` bytes `28..31` (UInt32 little-endian, not used by this rule). Reserved bytes `44..49` remain zero. Header CRC32 remains at `52..55` over bytes `0..51`. Neither the window size nor a session ID is transmitted. See the [frame layout](../concepts/protocol.md) for the remaining fields. Existing senders require no change; the receiver's frame-admission policy changes.
+
 ## `ResetDecodeDiagnostics()`
 
 ```csharp
 public void ResetDecodeDiagnostics()
 ```
 
-Clears counters and last-error fields. Use it before a repeatable test or after changing scene wiring.
+Resets the error-log budget. It does not clear counters or the last-applied stream/frame used by the ordering rules.
 
 ## Diagnostics
 

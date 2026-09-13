@@ -106,7 +106,7 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
         if (!valid) throw new InvalidOperationException(message);
     }
 
-    static T Field<T>(TSMPDecoder decoder, string name) => (T)typeof(TSMPDecoder).GetField(name, Private).GetValue(decoder);
+    static T Field<T>(TSMPDecoder decoder, string name) => (T)typeof(TSMPDecoder).GetField(name, Private | BindingFlags.Public).GetValue(decoder);
 
     public static RenderTexture Target(int width, int height, RenderTextureFormat format = RenderTextureFormat.ARGB32,
         RenderTextureReadWrite readWrite = RenderTextureReadWrite.Linear)
@@ -262,6 +262,8 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
 
         var lifecycle = Lifecycle(decoder, codecs[0], a, b);
         while (lifecycle.MoveNext()) yield return lifecycle.Current;
+        var order = FrameOrder(decoder, codecs[0], a);
+        while (order.MoveNext()) yield return order.Current;
         Drop(a);
         Drop(b);
         var precision = Precision();
@@ -384,6 +386,96 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
         Check(NetworkFrameWriter.EndVariableState(bytes, message, data + 4, 1), "Message packet");
         Binary.WriteUInt16LE(bytes, NetworkFrameProtocol.NetworkMessageCountOffset, 1);
         return bytes;
+    }
+
+    public static uint[][] FrameOrderCases() => new[]
+    {
+        new uint[] { 100, 100, 256, 0, 0, 0, 1 },
+        new uint[] { 100, 101, 256, 1, 0, 0, 1 },
+        new uint[] { 101, 100, 256, 0, 0, 0, 1 },
+        new uint[] { 255, 0, 256, 0, 0, 0, 1 },
+        new uint[] { 256, 0, 256, 1, 0, 0, 1 },
+        new uint[] { 257, 0, 256, 1, 0, 0, 1 },
+        new uint[] { 256, 1, 256, 0, 0, 0, 1 },
+        new uint[] { 511, 0, 512, 0, 0, 0, 1 },
+        new uint[] { 512, 0, 512, 1, 0, 0, 1 },
+        new uint[] { 1, 0, 1, 1, 0, 0, 1 },
+        new uint[] { 0, 0, 1, 0, 0, 0, 1 },
+        new uint[] { 1, 0, 0, 1, 0, 0, 1 },
+        new uint[] { 0, 0, 0, 0, 0, 0, 1 },
+        new uint[] { uint.MaxValue, 0, 256, 1, 0, 0, 1 },
+        new uint[] { uint.MaxValue - 1, 1, 256, 1, 0, 0, 1 },
+        new uint[] { 0, uint.MaxValue, 256, 0, 0, 0, 1 },
+        new uint[] { 1, uint.MaxValue, 256, 0, 0, 0, 1 },
+        new uint[] { 0, 2147483647, 256, 1, 0, 0, 1 },
+        new uint[] { 0, 2147483648, 256, 0, 0, 0, 1 },
+        new uint[] { 2147483648, 0, 256, 1, 0, 0, 1 },
+        new uint[] { 2147483649, 1, 256, 0, 0, 0, 1 },
+        new uint[] { 100, 99, 256, 1, 1, 0, 1 },
+        new uint[] { 100, 100, 256, 1, 1, 0, 1 },
+        new uint[] { 255, 0, 256, 1, 0, 1, 1 },
+        new uint[] { 100, 100, 256, 1, 0, 1, 1 },
+        new uint[] { 100, 99, 256, 1, 0, 0, 0 },
+        new uint[] { uint.MaxValue, uint.MaxValue, 256, 0, 0, 0, 1 },
+        new uint[] { 0, 1, 256, 1, 0, 0, 1 },
+        new uint[] { 2147483646, 0, 2147483647, 0, 0, 0, 1 },
+        new uint[] { 2147483647, 0, 2147483647, 1, 0, 0, 1 }
+    };
+
+    IEnumerator FrameOrder(TSMPDecoder decoder, TSMPCodec codec, Texture2D texture)
+    {
+        var window = typeof(TSMPDecoder).GetField("frameWindowSize");
+        if (window == null) yield break;
+        Check((int)window.GetValue(decoder) == 256, "Default frame window");
+        var source = Target(640, 360);
+        decoder.sourceTexture = source;
+        decoder.decodeSafetyMode = 0;
+        foreach (var item in FrameOrderCases())
+        {
+            typeof(TSMPDecoder).GetField("_hasAppliedFrame", Private).SetValue(decoder, item[6] != 0);
+            typeof(TSMPDecoder).GetField("_lastAppliedStreamId", Private).SetValue(decoder, item[4]);
+            typeof(TSMPDecoder).GetField("_lastAppliedFrameIndex", Private).SetValue(decoder, item[0]);
+            window.SetValue(decoder, (int)item[2]);
+            decoder.skipDuplicateFrames = item[5] == 0;
+            receivedValue = -1;
+            int duplicates = decoder.skippedDuplicateFrameCount;
+            int older = Field<int>(decoder, "skippedOutOfOrderFrameCount");
+            Write(codec, texture, ValuePacket(42), item[1], 4);
+            Upload(texture, source, true);
+            decoder.DecodeNow();
+            var drain = Drain(decoder);
+            while (drain.MoveNext()) yield return drain.Current;
+            bool accept = item[3] != 0;
+            Check(decoder.lastHeaderValid && decoder.lastFrameValid, "Window header/readback");
+            Check(receivedValue == (accept ? 42 : -1), "Window application " + string.Join(",", item));
+            Check(Field<uint>(decoder, "_lastAppliedFrameIndex") == (accept ? item[1] : item[0]), "Window anchor");
+            Check(decoder.skippedDuplicateFrameCount == duplicates + (!accept && item[0] == item[1] ? 1 : 0), "Duplicate counter");
+            Check(Field<int>(decoder, "skippedOutOfOrderFrameCount") == older + (!accept && item[0] != item[1] ? 1 : 0), "Older counter");
+        }
+        window.SetValue(decoder, 256);
+        decoder.skipDuplicateFrames = true;
+        typeof(TSMPDecoder).GetField("_lastAppliedFrameIndex", Private).SetValue(decoder, 256u);
+        Write(codec, texture, new byte[] { 0 }, 0, 4);
+        Upload(texture, source, true);
+        decoder.DecodeNow();
+        var pending = Drain(decoder);
+        while (pending.MoveNext()) yield return pending.Current;
+        Check(!decoder.lastFrameValid && Field<uint>(decoder, "_lastAppliedFrameIndex") == 256u, "Invalid zero moved anchor");
+        foreach (uint index in new uint[] { 0, 1, 2, 1 })
+        {
+            receivedValue = -1;
+            Write(codec, texture, ValuePacket((int)index), index, 4);
+            Upload(texture, source, true);
+            decoder.DecodeNow();
+            pending = Drain(decoder);
+            while (pending.MoveNext()) yield return pending.Current;
+            Check(receivedValue == (Field<uint>(decoder, "_lastAppliedFrameIndex") == index ? (int)index : -1), "Post-restart order");
+        }
+        Check(Field<uint>(decoder, "_lastAppliedFrameIndex") == 2u, "Restart sequence anchor");
+        decoder.skipDuplicateFrames = false;
+        decoder.decodeSafetyMode = 2;
+        Drop(source);
+        results.Add("PASS 30 frame-window cases, duplicate/older counters, native variable application, invalid reset payload and 256 -> 0 -> 1 -> 2 -> 1 sequence");
     }
 
     IEnumerator Precision()

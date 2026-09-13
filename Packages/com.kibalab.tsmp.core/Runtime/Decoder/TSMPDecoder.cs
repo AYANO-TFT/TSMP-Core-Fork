@@ -56,6 +56,7 @@ namespace K13A.TSMP.Udon
 
         public bool applyEveryFrame = true;
         public bool skipDuplicateFrames = true;
+        [Min(1)] public int frameWindowSize = 256;
 
         [HideInInspector]
         public int sourceWidth = 640;
@@ -80,6 +81,7 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public uint lastStreamId;
         [HideInInspector] public uint lastFrameIndex;
         [HideInInspector] public int skippedDuplicateFrameCount;
+        [HideInInspector] public int skippedOutOfOrderFrameCount;
         [HideInInspector] public int lastSymbolMode;
         [HideInInspector] public int lastHeaderRow;
         [HideInInspector] public int lastHeaderSource;
@@ -306,13 +308,8 @@ namespace K13A.TSMP.Udon
                 if (!ReadHeader())
                     return;
 
-                if (IsDuplicateFrame())
-                {
-                    skippedDuplicateFrameCount++;
-                    lastFrameValid = true;
-                    lastError = "Duplicate frame skipped.";
+                if (ShouldSkipFrame())
                     return;
-                }
 
                 if (decodeSafetyMode == DecodeSafetyHeaderOnly)
                 {
@@ -561,9 +558,32 @@ namespace K13A.TSMP.Udon
             return true;
         }
 
-        private bool IsDuplicateFrame()
+        private bool ShouldSkipFrame()
         {
-            return skipDuplicateFrames && _hasAppliedFrame && lastStreamId == _lastAppliedStreamId && lastFrameIndex == _lastAppliedFrameIndex;
+            if (!skipDuplicateFrames || !_hasAppliedFrame || lastStreamId != _lastAppliedStreamId)
+                return false;
+
+            if (lastFrameIndex == _lastAppliedFrameIndex)
+            {
+                skippedDuplicateFrameCount++;
+                lastFrameValid = true;
+                lastError = "Duplicate frame skipped.";
+                return true;
+            }
+
+            long distance = (long)lastFrameIndex - (long)_lastAppliedFrameIndex;
+            if (distance < 0L)
+                distance += 4294967296L;
+            if (distance < 2147483648L)
+                return false;
+
+            if (lastFrameIndex == 0u && (long)_lastAppliedFrameIndex >= (long)Mathf.Max(1, frameWindowSize))
+                return false;
+
+            skippedOutOfOrderFrameCount++;
+            lastFrameValid = true;
+            lastError = "Out-of-order frame skipped.";
+            return true;
         }
 
         private int GetPayloadDataStartRow()

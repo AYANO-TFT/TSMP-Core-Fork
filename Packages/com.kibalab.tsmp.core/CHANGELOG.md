@@ -11,6 +11,7 @@
 
 ### Fixes
 
+- Filter duplicate and older frames within the current stream using wrap-aware UInt32 ordering. Decoder Window Size defaults to 256 frames and is user-configurable: frame zero is also accepted when the previous applied index is at least one window. Track skipped older frames separately.
 - Freeze decoder input in a reusable linear Float32 snapshot so header, calibration and payload passes use the same image. Discard pending readbacks after disable, release owned snapshots and preserve the existing wire format.
 - Preserve RPC queue accounting under reentrant sends and reject events that cannot fit the configured payload. Retransmission remains a finite attempt budget, not guaranteed delivery.
 - Pace FFmpeg output independently of incoming updates while retaining the latest frame.
@@ -19,6 +20,22 @@
 - Correct Animator drift handling for loop boundaries and non-looping states; read negative state hashes without Udon numeric conversion failures.
 - Preserve integer-sized pixel blocks during output expansion and clear right/bottom remainder pixels for dimensions not divisible by block size.
 - Commit avatar root delta and keepalive state only after successful output through the opt-in `TransSync.SentEvent` callback; guard encoder reentry during callbacks.
+
+### Datagram and receiver compatibility
+
+The datagram and protocol version are unchanged: a 56-byte header followed by the existing payload. Relevant header fields remain:
+
+| Byte range | Field | Encoding |
+| --- | --- | --- |
+| 20..23 | StreamId | UInt32 little-endian |
+| 24..27 | FrameIndex | UInt32 little-endian |
+| 28..31 | TimestampMs | UInt32 little-endian; not used for ordering |
+| 44..49 | Reserved | Six zero bytes |
+| 52..55 | Header CRC32 | UInt32 little-endian; computed over bytes 0..51 |
+
+Window Size is receiver-local; no window or session field is transmitted. Existing senders do not need changes. The existing `skipDuplicateFrames` option now controls both duplicate and older-frame filtering. With filtering disabled, neither order rule is enforced. Changing streams replaces the order baseline after successful application; no retired-stream history is kept.
+
+The zero/window exception is a restart heuristic, not a session identifier: a delayed old zero can trigger a false restart, a missing zero or restart before one window may be missed, and high old frame numbers may appear newer after a reset. RPC event deduplication is unchanged.
 
 Release candidates must be validated and Core published before the dependent codec releases. This heading does not indicate that the version is already available from VPM or GitHub Releases.
 

@@ -201,6 +201,31 @@ public static class UdonSnapshotValidation
                 Check(decoder.Get<bool>("lastFrameValid"), "VM restart failed");
             }
             Results.Add("PASS 8 VM cancellation cases: actual component/GameObject disable during header/payload, callbacks while disabled or after early re-enable, restart and snapshot cleanup");
+            decoder.Set("decodeSafetyMode", 0);
+            Check(decoder.Get<int>("frameWindowSize") == 256, "VM default frame window");
+            var empty = new byte[NetworkFrameProtocol.NetworkHeaderBytes];
+            NetworkFrameWriter.BeginNetworkFrame(empty, 0, 1);
+            foreach (var item in Data.FrameOrderCases())
+            {
+                decoder.Set("_hasAppliedFrame", item[6] != 0);
+                decoder.Set("_lastAppliedStreamId", item[4]);
+                decoder.Set("_lastAppliedFrameIndex", item[0]);
+                decoder.Set("frameWindowSize", (int)item[2]);
+                decoder.Set("skipDuplicateFrames", item[5] == 0);
+                int duplicates = decoder.Get<int>("skippedDuplicateFrameCount");
+                int older = decoder.Get<int>("skippedOutOfOrderFrameCount");
+                Data.Write(codecs[0], a, empty, item[1], 4);
+                Graphics.Blit(a, source);
+                decoder.Call("DecodeNow");
+                var drain = Drain(decoder);
+                while (drain.MoveNext()) yield return drain.Current;
+                bool accept = item[3] != 0;
+                Check(decoder.Get<bool>("lastFrameValid"), "VM window frame validity");
+                Check(decoder.Get<uint>("_lastAppliedFrameIndex") == (accept ? item[1] : item[0]), "VM window " + string.Join(",", item));
+                Check(decoder.Get<int>("skippedDuplicateFrameCount") == duplicates + (!accept && item[0] == item[1] ? 1 : 0), "VM duplicate counter");
+                Check(decoder.Get<int>("skippedOutOfOrderFrameCount") == older + (!accept && item[0] != item[1] ? 1 : 0), "VM older counter");
+            }
+            Results.Add("PASS 30 compiled Udon frame-window cases including UInt32 wrap, half-range, custom windows, stream switch and disabled filtering");
             decoder.Call("_onDisable");
             RenderTexture.active = null;
             source.Release();
