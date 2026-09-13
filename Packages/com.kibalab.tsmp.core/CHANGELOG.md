@@ -11,6 +11,7 @@
 
 ### Fixes
 
+- Remove Setup's redundant Editor output Blit. The encoder alone presents successful frames, including block expansion; failed or skipped encodes no longer trigger a second copy of stale texture data.
 - Reuse decoder payload capacity across shorter frames while bounding all network parsing and diagnostics to the current valid byte count. Reject zero/truncated NetworkFrame payloads before payload readback. Exact-length plugin arguments and independently owned received field arrays are unchanged.
 - Deactivate avatar pool slots above a reduced Max Players limit, clear retired assignments and retain their objects and rigs for reuse when the limit grows. Supplied pool objects are not destroyed; Pool Size includes retained inactive objects.
 - Filter duplicate and older frames within the current stream using wrap-aware UInt32 ordering. Decoder Window Size defaults to 256 frames and is user-configurable: frame zero is also accepted when the previous applied index is at least one window. Track skipped older frames separately.
