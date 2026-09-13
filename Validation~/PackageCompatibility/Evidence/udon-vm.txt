@@ -1,0 +1,7 @@
+PASS
+Unity=2022.3.22f1
+Full Udon client compile passed
+PASS Luma4: actual Udon VM PrepareDecode, Float32 allocation, prepass, shader byte parity, fallback and cleanup
+PASS RGB16: actual Udon VM PrepareDecode, Float32 allocation, prepass, shader byte parity, fallback and cleanup
+PASS RGB20: actual Udon VM PrepareDecode, Float32 allocation, prepass, shader byte parity, fallback and cleanup
+PASS Color256: actual Udon VM PrepareDecode, Float32 allocation, prepass, shader byte parity, fallback and cleanup

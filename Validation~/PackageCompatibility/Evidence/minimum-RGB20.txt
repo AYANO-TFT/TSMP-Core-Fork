@@ -1,0 +1,2 @@
+PASS
+Core 0.3.0-beta.2 + Luma4 + RGB20; no SDK; prefab/material/shader references; header and payload bytes; sampling and preparation fallback; Unity=2022.3.22f1
