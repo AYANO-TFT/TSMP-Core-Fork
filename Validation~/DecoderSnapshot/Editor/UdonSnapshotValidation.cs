@@ -125,8 +125,46 @@ public static class UdonSnapshotValidation
         Check(!decoder.Get<bool>("readbackInFlight"), "Actual VRC readback callback timeout");
     }
 
+    static void TestAvatarPool()
+    {
+        using (var sync = new Program("Packages/com.kibalab.tsmp.core/Runtime/Network/TSMPNetworkVrchatAvatarPoseSync.asset"))
+        {
+            var avatars = Enumerable.Range(0, 3).Select(i => new GameObject("Pool VM " + i)).ToArray();
+            try
+            {
+                sync.Set("avatarPool", avatars);
+                sync.Set("maxPlayers", 3);
+                sync.Set("avatarPoseBytes", new byte[] { 4, 2, 0, 0, 0, 0 });
+                sync.Call("OnTSMPVariableReceived");
+                for (int cycle = 0; cycle < 8; cycle++)
+                {
+                    sync.Set("_slotPlayerIds", new[] { 1, 2, 3 });
+                    sync.Set("_slotLastSeen", new[] { Time.time, Time.time, Time.time });
+                    sync.Set("_slotRetireGraceUntil", Time.time + 10);
+                    sync.Set("maxPlayers", 1);
+                    sync.Call("_postLateUpdate");
+                    Check(sync.Get<int>("activeAvatarCount") == 1 && sync.Get<int>("poolSize") == 3, "VM shrink counters");
+                    Check(!avatars[1].activeSelf && !avatars[2].activeSelf, "VM overflow deactivation");
+                    Check(sync.Get<GameObject[]>("avatarPool").SequenceEqual(avatars), "VM retained objects");
+                    sync.Set("maxPlayers", 3);
+                    sync.Call("OnTSMPVariableReceived");
+                    Check(sync.Get<int[]>("_slotPlayerIds").SequenceEqual(new[] { 1, -1, -1 }), "VM regrowth clears retired IDs");
+                    Check(sync.Get<float[]>("_slotLastSeen")[2] == 0, "VM regrowth clears timestamps");
+                    Check(sync.Get<int[]>("_recordIndexSlots").All(i => i == -1), "VM invalidates slot cache");
+                    sync.Set("avatarPoseBytes", new byte[] { 4, 2, 3, 0, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 3, 0, 0, 0, 0 });
+                    sync.Call("OnTSMPVariableReceived");
+                    Check(sync.Get<int>("activeAvatarCount") == 3 && sync.Get<GameObject[]>("avatarPool").SequenceEqual(avatars), "VM slot reuse");
+                    sync.Set("avatarPoseBytes", new byte[] { 4, 2, 0, 0, 0, 0 });
+                }
+                Results.Add("PASS avatar pool VM: eight shrink/regrow cycles, idle resize, inactive retained objects, IDs, timestamps, cache and slot reuse (pool-only fixtures without rigs)");
+            }
+            finally { foreach (var avatar in avatars) Object.DestroyImmediate(avatar); }
+        }
+    }
+
     static IEnumerator Validate()
     {
+        TestAvatarPool();
         Results.Add("Full client UdonSharp compile; actual decoder/codec bytecode, VRCGraphics and asynchronous VRC GPU readback callbacks in editor VM");
         Results.Add("Unity=" + Application.unityVersion + "; GPU=" + SystemInfo.graphicsDeviceName);
         var names = new[] { "Luma4", "RGB16", "RGB20", "Color256" };
