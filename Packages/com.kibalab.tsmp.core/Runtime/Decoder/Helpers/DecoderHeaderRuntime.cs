@@ -69,12 +69,8 @@ namespace K13A.TSMP
             else if (nextBlockSize > 0)
                 nextActiveWidthBlocks = sourceWidth / nextBlockSize;
 
-            if (payloadSize > 0)
-            {
-                nextPayloadDataBytes = payloadSize;
-                if (nextPayloadBytes == null || nextPayloadBytes.Length != nextPayloadDataBytes)
-                    nextPayloadBytes = new byte[nextPayloadDataBytes];
-            }
+            nextPayloadDataBytes = payloadSize;
+            nextPayloadBytes = DecoderReadbackRuntime.EnsureByteBuffer(nextPayloadBytes, nextPayloadDataBytes);
 
             nextPayloadStartBlock = codecPayloadStartRow * nextActiveWidthBlocks;
         }

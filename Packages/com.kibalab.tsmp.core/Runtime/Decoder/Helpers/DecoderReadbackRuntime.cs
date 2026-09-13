@@ -33,7 +33,7 @@ namespace K13A.TSMP
         {
             if (byteCount < 0)
                 byteCount = 0;
-            if (buffer == null || buffer.Length != byteCount)
+            if (buffer == null || buffer.Length < byteCount)
                 return new byte[byteCount];
 
             return buffer;

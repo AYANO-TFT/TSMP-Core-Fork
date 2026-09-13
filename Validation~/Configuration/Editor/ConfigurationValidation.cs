@@ -355,6 +355,7 @@ public static class ConfigurationValidation
         NetworkFrameWriter.EndNetworkFrame(bytes, 0, 1);
         Array.Resize(ref bytes, cursor);
         Set(decoder, "_payloadBytes", bytes);
+        Set(decoder, "_payloadDataBytes", bytes.Length);
         Check((bool)Call(decoder, "ApplyNetworkFrame"), decoder.lastError);
     }
 

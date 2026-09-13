@@ -204,9 +204,37 @@ public static class UdonSnapshotValidation
                 var drain = Drain(decoder);
                 while (drain.MoveNext()) yield return drain.Current;
                 Check(decoder.Get<bool>("lastFrameValid"), decoder.Get<string>("lastError"));
-                Check(decoder.Get<uint>("lastFrameIndex") == frame && bytes.SequenceEqual(decoder.Get<byte[]>("_payloadBytes")), "VM frame isolation " + codec.displayName);
+                Check(decoder.Get<uint>("lastFrameIndex") == frame && decoder.Get<int>("_payloadDataBytes") == bytes.Length && bytes.SequenceEqual(decoder.Get<byte[]>("_payloadBytes").Take(bytes.Length)), "VM frame isolation " + codec.displayName);
             }
             Results.Add("PASS " + frame + " decoder/codec VM changing-source cases, samples 1/4, payload/codec/length changes");
+            decoder.Set("decodeSafetyMode", 3);
+            decoder.Set("sampleSize", 1);
+            foreach (int length in new[] { 200, 0, 400, 0, 1, 400, 0 })
+            {
+                byte[] bytes = Data.NetworkPayload(length);
+                byte[] previous = decoder.Get<byte[]>("_payloadBytes");
+                Data.Write(codecs[0], a, bytes, ++frame, 1);
+                Graphics.Blit(a, source);
+                decoder.Call("DecodeNow");
+                var drain = Drain(decoder);
+                while (drain.MoveNext()) yield return drain.Current;
+                Check(decoder.Get<bool>("lastFrameValid"), "VM capacity frame: " + decoder.Get<string>("lastError"));
+                Check(decoder.Get<int>("lastNetworkMessageCount") == 1 && decoder.Get<int>("lastPayloadAvailableBytes") == bytes.Length, "VM parsing bounds");
+                Check(bytes.SequenceEqual(decoder.Get<byte[]>("_payloadBytes").Take(bytes.Length)), "VM payload bytes");
+                if (previous.Length >= bytes.Length) Check(ReferenceEquals(previous, decoder.Get<byte[]>("_payloadBytes")), "VM capacity replacement");
+            }
+            foreach (int length in new[] { 0, 7 })
+            {
+                Data.Write(codecs[0], a, new byte[length], ++frame, 1);
+                Graphics.Blit(a, source);
+                decoder.Call("DecodeNow");
+                var drain = Drain(decoder);
+                while (drain.MoveNext()) yield return drain.Current;
+                Check(!decoder.Get<bool>("lastFrameValid") && decoder.Get<int>("_decodeStage") == 1 && decoder.Get<string>("lastError") == "Payload is too small for NetworkFrame.", "VM invalid length must not reuse old payload");
+            }
+            Results.Add("PASS GPU VM payload capacity: seven growing/shrinking NetworkFrames, retained dirty tails, zero/truncated header payload rejection");
+            decoder.Set("decodeSafetyMode", 2);
+            Data.Write(codecs[0], a, Data.Payload(77), ++frame, 1);
             foreach (bool payload in new[] { false, true })
             foreach (bool objectDisable in new[] { false, true })
             foreach (bool earlyEnable in new[] { false, true })

@@ -146,7 +146,8 @@ public sealed class CalibrationDecoderValidation : MonoBehaviour
                     Check(decoder.lastHeaderValid && decoder.lastFrameValid, codec.displayName + ": " + decoder.lastError);
                     Check(decoder.lastFrameIndex == header.FrameIndex, "Stale header: expected=" + header.FrameIndex + " actual=" + decoder.lastFrameIndex);
                     var actual = (byte[])typeof(TSMPDecoder).GetField("_payloadBytes", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(decoder);
-                    Check(bytes.SequenceEqual(actual), "Payload mismatch " + codec.displayName);
+                    int validBytes = (int)typeof(TSMPDecoder).GetField("_payloadDataBytes", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(decoder);
+                    Check(validBytes == bytes.Length && bytes.SequenceEqual(actual.Take(validBytes)), "Payload mismatch " + codec.displayName);
                     bool useLut = codec is TSMPCodecColor256 ? variant == 2 : sample > 1 && (!(codec is TSMPCodecRGB16) || variant % 2 == 0);
                     useLut &= !disableLut;
                     Check(codec.selectedDecodeMaterial.IsKeywordEnabled("TSMP_CALIBRATION_LUT") == useLut, "Decoder LUT branch " + codec.displayName);

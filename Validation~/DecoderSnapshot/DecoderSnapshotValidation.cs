@@ -200,11 +200,24 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
 
     public static byte[] Payload(int seed, int length = 127) => Enumerable.Range(0, length).Select(i => (byte)(seed + i * 73)).ToArray();
 
+    public static byte[] NetworkPayload(int length)
+    {
+        var bytes = new byte[length + 128];
+        int cursor = NetworkFrameWriter.BeginNetworkFrame(bytes, 0, 1);
+        int start = cursor;
+        cursor = NetworkFrameWriter.BeginVariableState(bytes, cursor, 1, 0);
+        cursor = NetworkValueEntryWriter.WriteVariableValue(bytes, cursor, 100, NetworkFrameProtocol.ValueTypeRawBytes, Payload(33, length));
+        Check(cursor >= 0 && NetworkFrameWriter.EndVariableState(bytes, start, cursor, 1), "Build capacity test payload");
+        NetworkFrameWriter.EndNetworkFrame(bytes, 0, 1);
+        Array.Resize(ref bytes, cursor);
+        return bytes;
+    }
+
     static void Verify(TSMPDecoder decoder, byte[] expected, uint frame, string label)
     {
         Check(decoder.lastHeaderValid && decoder.lastFrameValid, label + ": " + decoder.lastError);
         Check(decoder.lastFrameIndex == frame, label + ": wrong header frame");
-        Check(expected.SequenceEqual(Field<byte[]>(decoder, "_payloadBytes")), label + ": header/payload generation mismatch");
+        Check(Field<int>(decoder, "_payloadDataBytes") == expected.Length && expected.SequenceEqual(Field<byte[]>(decoder, "_payloadBytes").Take(expected.Length)), label + ": header/payload generation mismatch");
     }
 
     IEnumerator Validate()
@@ -260,6 +273,8 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
         }
         results.Add("PASS " + cases + " changing-source cases: 4 codecs/all variants, sample 1/4, both orientations, same/different payload size and codec switch, ARGB32/Float inputs; allocation reuse");
 
+        var lengths = PayloadLengths(decoder, codecs[0], a);
+        while (lengths.MoveNext()) yield return lengths.Current;
         var lifecycle = Lifecycle(decoder, codecs[0], a, b);
         while (lifecycle.MoveNext()) yield return lifecycle.Current;
         var order = FrameOrder(decoder, codecs[0], a);
@@ -277,6 +292,40 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
         foreach (var codec in codecs) Drop(codec.gameObject);
         yield return null;
         foreach (var material in owned) Drop(material);
+    }
+
+    IEnumerator PayloadLengths(TSMPDecoder decoder, TSMPCodec codec, Texture2D texture)
+    {
+        var source = Target(640, 360);
+        decoder.sourceTexture = source;
+        decoder.flipY = true;
+        decoder.sampleSize = 1;
+        decoder.decodeSafetyMode = 3;
+        foreach (int length in new[] { 200, 0, 400, 0, 1, 400, 0 })
+        {
+            byte[] bytes = NetworkPayload(length);
+            byte[] previous = Field<byte[]>(decoder, "_payloadBytes");
+            Write(codec, texture, bytes, ++sequence, 1);
+            Upload(texture, source, true);
+            decoder.DecodeNow();
+            var drain = Drain(decoder);
+            while (drain.MoveNext()) yield return drain.Current;
+            Verify(decoder, bytes, sequence, "Payload capacity " + length);
+            Check(decoder.lastNetworkMessageCount == 1 && decoder.lastPayloadAvailableBytes == bytes.Length, "Actual network parsing bounds");
+            if (previous.Length >= bytes.Length) Check(ReferenceEquals(previous, Field<byte[]>(decoder, "_payloadBytes")), "GPU path reallocated sufficient capacity");
+        }
+        foreach (int length in new[] { 0, 7 })
+        {
+            Write(codec, texture, new byte[length], ++sequence, 1);
+            Upload(texture, source, true);
+            decoder.DecodeNow();
+            var drain = Drain(decoder);
+            while (drain.MoveNext()) yield return drain.Current;
+            Check(!decoder.lastFrameValid && decoder.lastError == "Payload is too small for NetworkFrame." && Field<int>(decoder, "_decodeStage") == 1, "Invalid length must not decode retained bytes");
+        }
+        decoder.decodeSafetyMode = 2;
+        results.Add("PASS GPU payload capacity: seven growing/shrinking valid NetworkFrames, dirty retained tails ignored, zero/truncated payload rejected before readback");
+        Drop(source);
     }
 
     IEnumerator Lifecycle(TSMPDecoder decoder, TSMPCodec codec, Texture2D a, Texture2D b)

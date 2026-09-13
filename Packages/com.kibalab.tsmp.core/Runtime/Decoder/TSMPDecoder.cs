@@ -555,6 +555,9 @@ namespace K13A.TSMP.Udon
 
             DecoderHeaderRuntime.ResolvePayloadLayout(useHeaderPayloadLayout, sourceWidth, headerBlockSize, headerActiveWidthBlocks, headerSampleSize, payloadSize, headerCodecHandler.payloadStartRow, blockSize, sampleSize, _activeWidthBlocks, _payloadDataBytes, _payloadBytes, out blockSize, out sampleSize, out _activeWidthBlocks, out _payloadDataBytes, out _payloadBytes, out _payloadStartBlock, out lastPayloadStartRow);
 
+            if (_payloadDataBytes < NetworkFrameProtocol.NetworkHeaderBytes)
+                return FailHeaderRead("Payload is too small for NetworkFrame.");
+
             return true;
         }
 
@@ -618,15 +621,18 @@ namespace K13A.TSMP.Udon
             lastRpcCallCount = 0;
             lastRpcMethodName = string.Empty;
             skippedDuplicateRpcCount = 0;
-            lastPayloadAvailableBytes = _payloadBytes != null ? _payloadBytes.Length : 0;
+            lastPayloadAvailableBytes = _payloadBytes != null ? Mathf.Clamp(_payloadDataBytes, 0, _payloadBytes.Length) : 0;
 
-            if (_payloadBytes == null || _payloadBytes.Length < NetworkFrameProtocol.NetworkHeaderBytes)
+            if (_payloadBytes == null || _payloadDataBytes < NetworkFrameProtocol.NetworkHeaderBytes)
             {
                 lastFrameValid = false;
                 lastError = "Payload is too small for NetworkFrame.";
                 LogDecodeError(lastError);
                 return false;
             }
+
+            if (_payloadDataBytes > _payloadBytes.Length)
+                return FailNetworkFrame("Payload length exceeds buffer capacity.");
 
             int cursor;
             int messageCount;
@@ -644,7 +650,7 @@ namespace K13A.TSMP.Udon
                 int bodyStart;
                 int bodyEnd;
                 int nextMessageOffset;
-                if (!NetworkFrameReader.TryReadMessageHeader(_payloadBytes, cursor, _payloadBytes.Length, out networkId, out messageType, out bodyStart, out bodyEnd, out nextMessageOffset))
+                if (!NetworkFrameReader.TryReadMessageHeader(_payloadBytes, cursor, _payloadDataBytes, out networkId, out messageType, out bodyStart, out bodyEnd, out nextMessageOffset))
                     return FailNetworkFrame("NetworkFrame message is malformed.");
 
                 if (NetworkFrameReader.IsVariableStateMessage(messageType))
@@ -661,7 +667,7 @@ namespace K13A.TSMP.Udon
                 cursor = nextMessageOffset;
             }
 
-            if (cursor != _payloadBytes.Length)
+            if (cursor != _payloadDataBytes)
                 return FailNetworkFrame("NetworkFrame has trailing bytes.");
 
             return true;
