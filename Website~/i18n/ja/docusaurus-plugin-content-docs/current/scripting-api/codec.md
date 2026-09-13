@@ -81,7 +81,7 @@ Udon Encoder はエンコードの試行ごとに一度問い合わせます。�
 
 ## ランタイムのデコード準備 {#runtime-decode-preparation}
 
-`PrepareDecode(Texture source, Material material)` は、decoder が入力サイズ、サンプル数、バイト数、レイアウトを設定した後、各 header/payload バイトパスの直前に呼ばれます。次のバイト Blit と同じ Texture 参照であり、ピクセルを固定したコピーではありません。ヘッダーとペイロードは別パスなので、同じ映像フレームを読む保証はありません。GPU の準備処理が必要な場合にオーバーライドし、最初に `base.PrepareDecode(source, material)` を呼んで前の LUT キーワードを解除してください。既存のコーデックはオーバーライド不要です。
+`PrepareDecode(Texture source, Material material)` は、decoder が入力サイズ、サンプル数、バイト数、レイアウトを設定した後、各 header/payload バイトパスの直前に呼ばれます。`TSMPDecoder` は自身の入力スナップショットをこのフックと次のバイト Blit に渡すため、ヘッダーと payload は同じキャプチャ画像を読みます。渡されたテクスチャを変更・解放しないでください。`TSMPDecoder` 以外から呼ぶ場合は入力を自分でキャプチャまたは固定してください。GPU の準備処理が必要な場合にオーバーライドし、最初に `base.PrepareDecode(source, material)` を呼んで前の LUT キーワードを解除してください。既存のコーデックはオーバーライド不要です。
 
 protected メソッド `GetDecodeSampleSize(material)` は、デコードシェーダーと同じ規則で自動サンプリングを解決し、ブロックサイズ以内に制限します。`PrepareCalibrationLut(source, material, width)` は `calibrationMaterial` で再利用可能な1行の linear `ARGBFloat` テクスチャを描画します。バイトマテリアルのプロパティを準備マテリアルにコピーし、結果を `_CalibrationLut` に設定して local `TSMP_CALIBRATION_LUT` キーワードを有効にします。Player ビルドにも両方の経路を含めるため、シェーダーで `#pragma multi_compile_local _ TSMP_CALIBRATION_LUT` を宣言してください。
 

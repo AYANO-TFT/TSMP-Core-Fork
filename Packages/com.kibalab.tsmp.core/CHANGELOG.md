@@ -11,6 +11,7 @@
 
 ### Fixes
 
+- Freeze decoder input in a reusable linear Float32 snapshot so header, calibration and payload passes use the same image. Discard pending readbacks after disable, release owned snapshots and preserve the existing wire format.
 - Preserve RPC queue accounting under reentrant sends and reject events that cannot fit the configured payload. Retransmission remains a finite attempt budget, not guaranteed delivery.
 - Pace FFmpeg output independently of incoming updates while retaining the latest frame.
 - Ignore TransSync reception before value decoding when the target selects None, and clear pending Rigidbody velocities when physics reception is disabled.

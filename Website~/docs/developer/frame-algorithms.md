@@ -115,10 +115,11 @@ CRC is calculated over header bytes `0..51`. The stored CRC is at bytes `52..55`
 
 ```text
 Update / decode tick
-  -> read header area from texture
+  -> capture input into the decoder-owned snapshot
+  -> read header area from the snapshot
   -> validate header and CRC
   -> choose codec by codecId
-  -> request payload bytes according to PayloadSize
+  -> request payload bytes from the same snapshot according to PayloadSize
   -> decode network frame header
   -> iterate messages
   -> apply variable values or dispatch RPC calls
@@ -138,7 +139,7 @@ ApplyDecodeOptions
        -> disable the previous LUT keyword
        -> optionally sample reference symbols into a float LUT
        -> bind the LUT and enable its byte-shader variant
-  -> byte Blit from the same source Texture reference
+  -> byte Blit from the same snapshot as preparation
   -> GPU readback of recovered bytes
 ```
 
@@ -148,7 +149,9 @@ Luma4 prepares 16 entries when the effective sample size exceeds one; single-sam
 
 The texture allocation is reused, not its values across frames: contents are redrawn for every enabled byte pass. Missing resources keep the original shader path. Each codec owns its generated LUT and releases it on disable/destruction; material ownership is handled separately.
 
-The source is a Texture reference, not an immutable snapshot. Keeping that reference and preparing immediately before a byte pass does not prevent a video producer from updating pixels between header and payload readbacks.
+Before the header pass, `TSMPDecoder` captures the source into a reusable, same-size, linear `ARGBFloat` RenderTexture. Every header, calibration and payload pass reads this snapshot until the operation finishes. A producer may update or replace the original input during readback without mixing image generations. The snapshot is resized between operations when necessary and released on disable/destruction. Disabling cancels the operation; its outstanding callback must drain before another decode can start. Capture failures reject the operation rather than falling back to a changing source.
+
+The copy adds one full-image GPU Blit per decode attempt and 16 bytes per pixel of snapshot storage; no extra CPU readback or wire-format field is added. Float32 avoids adding an 8-bit or half-float quantization step to sampled source values. See the [decoder API](../scripting-api/decoder.md#input-snapshot) for ownership and resource requirements. This does not make a producer's already-corrupted image valid or make variable/RPC application transactional.
 
 See the [implementation guide](./codec-implementation.md), [shader guide](./codec-shaders.md), and [preparation API](../scripting-api/codec.md#runtime-decode-preparation) for the hook, material setup, lifecycle and fallback contract.
 

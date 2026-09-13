@@ -42,16 +42,25 @@ CRC failure는 warning log로 표시됩니다. 손상된 capture frame이 잘못
 public void DecodeNow()
 ```
 
-즉시 한 frame을 decode합니다. `applyEveryFrame`이 꺼져 있어도 호출할 수 있습니다.
+현재 이미지를 캡처하고 비동기 디코딩을 시작합니다. `applyEveryFrame`이 꺼져 있어도 호출할 수 있지만 컴포넌트는 활성화되어 있어야 합니다. readback이 대기 중이면 새 작업을 시작하지 않습니다.
 
 실행 순서:
 
-1. Header pixels를 읽습니다.
-2. Magic, version, payload layout, CRC를 검증합니다.
-3. `codecId`로 codec handler를 선택합니다.
-4. Payload bytes를 decode합니다.
-5. Network messages를 parse합니다.
-6. Variables를 적용하고 RPC를 dispatch합니다.
+1. 현재 입력 이미지를 디코더의 스냅샷에 복사합니다.
+2. 스냅샷에서 헤더 픽셀을 읽습니다.
+3. Magic, version, payload layout, CRC를 검증합니다.
+4. `codecId`로 codec handler를 선택합니다.
+5. 같은 스냅샷에서 payload bytes를 디코딩합니다.
+6. Network messages를 파싱합니다.
+7. 변수를 적용하고 RPC를 호출합니다.
+
+## 입력 스냅샷 {#input-snapshot}
+
+Inspector에 추가 참조나 모드를 설정할 필요가 없습니다. 디코더가 입력과 같은 크기의 linear `ARGBFloat` RenderTexture를 소유하고, 작업 사이에 재사용하며 비활성화·제거 시 해제합니다. 원본을 샘플링한 값에 8비트·half-float 양자화 단계를 더하지 않기 위한 선택입니다. Float32 렌더 타깃 지원이 필요하며 포맷·할당에 실패하면 디코딩을 거부하고 기존 오류 로그 정책에 따라 `lastError`를 알립니다. 갱신 중인 원본을 대신 읽지는 않습니다.
+
+추가 메모리는 `width * height * 16`바이트입니다. 640x360에서 약 3.52 MiB, 1920x1080에서 31.64 MiB, 3840x2160에서 126.56 MiB입니다. 시작한 디코딩 작업마다 입력 전체를 한 번 복사하며, 이후 CRC·중복 검사에서 거부되는 시도에도 이 비용이 듭니다. CPU readback은 추가하지 않습니다. 실제 배포 장치에서 GPU 복사 비용을 측정하세요.
+
+캡처 이후 `sourceTexture`를 교체하거나 제거해도 현재 작업의 이미지는 바뀌지 않습니다. 변경은 다음 작업에 반영됩니다. 디코더를 비활성화하면 진행 중인 작업을 취소하며, 재활성화 뒤 도착한 이전 콜백도 폐기한 후 새 디코딩을 시작합니다. native와 Udon 모두 헤더·LUT 준비·payload에 같은 스냅샷을 사용합니다. 사용자 정의 코덱은 전달받은 이미지를 읽기 전용으로 다루고 영구적인 프레임 복사본처럼 보관하지 않아야 합니다. 프레임 역순이나 변수·RPC의 트랜잭션 적용을 해결하는 기능은 아닙니다.
 
 ## `ResetDecodeDiagnostics()`
 

@@ -42,16 +42,25 @@ CRC failures are logged as warnings. This helps identify capture corruption with
 public void DecodeNow()
 ```
 
-Decodes one frame immediately. It is safe to call with `applyEveryFrame` disabled.
+Starts decoding one captured frame asynchronously. It is safe to call with `applyEveryFrame` disabled, but the component must remain enabled. Calls while a readback is pending do not start another operation.
 
 The method performs this order:
 
-1. Read the header pixels.
-2. Validate magic, version, payload layout, and CRC.
-3. Select a codec handler by `codecId`.
-4. Decode payload bytes.
-5. Parse network messages.
-6. Apply variables and dispatch RPC calls.
+1. Copy the current input image into the decoder's snapshot.
+2. Read the header pixels from that snapshot.
+3. Validate magic, version, payload layout, and CRC.
+4. Select a codec handler by `codecId`.
+5. Decode payload bytes from the same snapshot.
+6. Parse network messages.
+7. Apply variables and dispatch RPC calls.
+
+## Input snapshot {#input-snapshot}
+
+No additional Inspector reference or mode is required. The decoder owns a same-size linear `ARGBFloat` RenderTexture, reuses it between operations, and releases it on disable/destruction. This preserves sampled input precision without an extra 8-bit or half-float quantization step. It requires Float32 render-target support; allocation/format failures reject the decode and report `lastError` through the decoder's error logging policy. There is no fallback to a changing source image.
+
+The extra storage is `width * height * 16` bytes: about 3.52 MiB at 640x360, 31.64 MiB at 1920x1080, or 126.56 MiB at 3840x2160. Each accepted decode attempt copies the full input once, including attempts later rejected by CRC or duplicate checks. There is no added CPU readback. Measure the GPU copy cost on the deployment hardware.
+
+Changing or destroying `sourceTexture` after capture affects the next operation, not the current image. Disabling the decoder cancels its pending operation; a callback received after re-enable is discarded before a new decode can start. Header, LUT preparation and payload use the same snapshot in both native and Udon paths. Custom codecs must treat the supplied image as read-only and must not retain it as a permanent frame copy. This does not address out-of-order frames or transactional variable/RPC application.
 
 ## `ResetDecodeDiagnostics()`
 

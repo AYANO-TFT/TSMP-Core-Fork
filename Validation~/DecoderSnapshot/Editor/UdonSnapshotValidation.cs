@@ -1,0 +1,215 @@
+#if UDONSHARP
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using K13A.TSMP;
+using UdonSharp;
+using UdonSharp.Compiler;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using VRC.Udon;
+using VRC.Udon.Common.Interfaces;
+using VRC.Udon.Editor;
+using Data = DecoderSnapshotValidation;
+using Object = UnityEngine.Object;
+
+public static class UdonSnapshotValidation
+{
+    const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+    static IEnumerator work;
+    static readonly List<string> Results = new List<string>();
+
+    public static void Run()
+    {
+        EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        bool failed = false;
+        Application.LogCallback listener = (text, stack, type) =>
+        {
+            if (type == LogType.Error || type == LogType.Exception) failed = true;
+        };
+        Application.logMessageReceived += listener;
+        try { UdonSharpCompilerV1.CompileSync(new UdonSharpCompileOptions { IsEditorBuild = false }); }
+        finally { Application.logMessageReceived -= listener; }
+        Check(!failed, "Full Udon client compilation");
+        AssetDatabase.SaveAssets();
+        SessionState.SetBool("TSMP.SnapshotVm", true);
+        Attach();
+        EditorApplication.EnterPlaymode();
+    }
+
+    [InitializeOnLoadMethod]
+    static void Attach()
+    {
+        EditorApplication.playModeStateChanged -= Entered;
+        EditorApplication.playModeStateChanged += Entered;
+    }
+
+    static void Entered(PlayModeStateChange state)
+    {
+        if (state != PlayModeStateChange.EnteredPlayMode || !SessionState.GetBool("TSMP.SnapshotVm", false)) return;
+        SessionState.SetBool("TSMP.SnapshotVm", false);
+        EditorApplication.delayCall += () =>
+        {
+            work = Validate();
+            EditorApplication.update += Tick;
+        };
+    }
+
+    static void Tick()
+    {
+        try { if (work.MoveNext()) return; }
+        catch (Exception error) { Finish(error); return; }
+        Finish(null);
+    }
+
+    static void Finish(Exception error)
+    {
+        EditorApplication.update -= Tick;
+        Results.Insert(0, error == null ? "PASS" : "FAIL");
+        if (error != null) Results.Add(error.ToString());
+        File.WriteAllLines(Environment.GetEnvironmentVariable("TSMP_SNAPSHOT_RESULTS"), Results);
+        EditorApplication.Exit(error == null ? 0 : 1);
+    }
+
+    static void Check(bool valid, string message)
+    {
+        if (!valid) throw new InvalidOperationException(message);
+    }
+
+    sealed class Program : IDisposable
+    {
+        public readonly IUdonProgram Code;
+        public readonly UdonBehaviour Backing;
+
+        public Program(string path, TSMPCodec codec = null)
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(path);
+            Code = asset.SerializedProgramAsset.RetrieveProgram();
+            var vm = UdonEditorManager.Instance.ConstructUdonVM();
+            vm.LoadProgram(Code);
+            Backing = new GameObject(asset.name + " VM").AddComponent<UdonBehaviour>();
+            Type type = typeof(UdonBehaviour);
+            Check((bool)type.GetMethod("ResolveUdonHeapReferences", Private).Invoke(Backing, new object[] { Code.SymbolTable, Code.Heap }), "Heap references");
+            type.GetField("_program", Private).SetValue(Backing, Code);
+            type.GetField("_udonVM", Private).SetValue(Backing, vm);
+            type.GetField("_udonManager", Private).SetValue(Backing, UdonManager.Instance);
+            type.GetField("_isReady", Private).SetValue(Backing, true);
+            type.GetField("_hasDoneStart", Private).SetValue(Backing, true);
+            var events = (Dictionary<string, List<uint>>)type.GetField("_eventTable", Private).GetValue(Backing);
+            foreach (string name in Code.EntryPoints.GetExportedSymbols())
+                events[name] = new List<uint> { Code.EntryPoints.GetAddressFromSymbol(name) };
+            if (codec != null)
+                foreach (var field in codec.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance))
+                    if (Code.SymbolTable.TryGetAddressFromSymbol(field.Name, out uint address))
+                        Code.Heap.SetHeapVariable(address, field.GetValue(codec), Code.Heap.GetHeapVariableType(address));
+        }
+
+        public void Set<T>(string name, T value) => Code.Heap.SetHeapVariable(Code.SymbolTable.GetAddressFromSymbol(name), value, typeof(T));
+        public T Get<T>(string name) => (T)Code.Heap.GetHeapVariable(Code.SymbolTable.GetAddressFromSymbol(name));
+        public void Call(string name)
+        {
+            Backing.SendCustomEvent(name);
+            Check(!(bool)typeof(UdonBehaviour).GetField("_hasError", Private).GetValue(Backing), "VM failure: " + name);
+        }
+        public void Dispose() => Object.DestroyImmediate(Backing.gameObject);
+    }
+
+    static IEnumerator Drain(Program decoder)
+    {
+        double deadline = EditorApplication.timeSinceStartup + 20;
+        while (decoder.Get<bool>("readbackInFlight") && EditorApplication.timeSinceStartup < deadline) yield return null;
+        Check(!decoder.Get<bool>("readbackInFlight"), "Actual VRC readback callback timeout");
+    }
+
+    static IEnumerator Validate()
+    {
+        Results.Add("Full client UdonSharp compile; actual decoder/codec bytecode, VRCGraphics and asynchronous VRC GPU readback callbacks in editor VM");
+        Results.Add("Unity=" + Application.unityVersion + "; GPU=" + SystemInfo.graphicsDeviceName);
+        var names = new[] { "Luma4", "RGB16", "RGB20", "Color256" };
+        var owned = new List<Material>();
+        var codecs = names.Select(name => Data.InstantiateCodec(AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Packages/com.kibalab.tsmp.codec." + name.ToLowerInvariant() + "/Runtime/Codec_" + name + ".prefab").GetComponent<TSMPCodec>(), owned)).ToArray();
+        var programs = names.Select((name, i) => new Program("Packages/com.kibalab.tsmp.codec." + name.ToLowerInvariant() +
+            "/Runtime/Scripts/TSMPCodec" + name + ".asset", codecs[i])).ToArray();
+        using (var decoder = new Program("Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.asset"))
+        {
+            var a = new Texture2D(640, 360, TextureFormat.RGBA32, false, true) { filterMode = FilterMode.Point };
+            var b = new Texture2D(640, 360, TextureFormat.RGBA32, false, true) { filterMode = FilterMode.Point };
+            var source = Data.Target(640, 360);
+            var output = Data.Target(512, 1);
+            decoder.Set<Texture>("sourceTexture", source);
+            decoder.Set("payloadByteTexture", output);
+            decoder.Set("codecHandlers", programs.Select(p => p.Backing).ToArray());
+            decoder.Set("applyEveryFrame", false);
+            decoder.Set("skipDuplicateFrames", false);
+            decoder.Set("decodeSafetyMode", 2);
+            decoder.Set("debugLog", false);
+            decoder.Call("_onEnable");
+            uint frame = 0;
+            foreach (var codec in codecs)
+            foreach (int sample in new[] { 1, 4 })
+            foreach (bool changeCodec in new[] { false, true })
+            {
+                byte[] bytes = Data.Payload((int)++frame);
+                Data.Write(codec, a, bytes, frame, sample);
+                Data.Write(changeCodec ? codecs[(Array.IndexOf(codecs, codec) + 1) % codecs.Length] : codec,
+                    b, Data.Payload(193, changeCodec ? 67 : bytes.Length), frame + 10000, sample);
+                Graphics.Blit(a, source);
+                decoder.Set("sampleSize", sample);
+                decoder.Call("DecodeNow");
+                Check(decoder.Get<bool>("readbackInFlight"), "VM header readback not started: " + decoder.Get<string>("lastError"));
+                Graphics.Blit(b, source);
+                var drain = Drain(decoder);
+                while (drain.MoveNext()) yield return drain.Current;
+                Check(decoder.Get<bool>("lastFrameValid"), decoder.Get<string>("lastError"));
+                Check(decoder.Get<uint>("lastFrameIndex") == frame && bytes.SequenceEqual(decoder.Get<byte[]>("_payloadBytes")), "VM frame isolation " + codec.displayName);
+            }
+            Results.Add("PASS " + frame + " decoder/codec VM changing-source cases, samples 1/4, payload/codec/length changes");
+            foreach (bool payload in new[] { false, true })
+            foreach (bool objectDisable in new[] { false, true })
+            foreach (bool earlyEnable in new[] { false, true })
+            {
+                Graphics.Blit(a, source);
+                decoder.Call("DecodeNow");
+                if (payload)
+                {
+                    while (decoder.Get<bool>("readbackInFlight") && decoder.Get<int>("_decodeStage") == 1) yield return null;
+                    Check(decoder.Get<bool>("readbackInFlight"), "VM payload cancellation window");
+                }
+                var snapshot = decoder.Get<RenderTexture>("_decodeSourceTexture");
+                if (objectDisable) decoder.Backing.gameObject.SetActive(false); else decoder.Backing.enabled = false;
+                Check(decoder.Get<bool>("_decodeSuspended"), "Actual backing disable event not delivered");
+                if (earlyEnable)
+                {
+                    if (objectDisable) decoder.Backing.gameObject.SetActive(true); else decoder.Backing.enabled = true;
+                }
+                decoder.Call("DecodeNow");
+                Check(decoder.Get<RenderTexture>("_decodeSourceTexture") == null, "VM reused snapshot while cancelled callback pending");
+                var drain = Drain(decoder);
+                while (drain.MoveNext()) yield return drain.Current;
+                Check(!decoder.Get<bool>("lastFrameValid"), "VM cancelled frame applied");
+                if (objectDisable) decoder.Backing.gameObject.SetActive(true); else decoder.Backing.enabled = true;
+                yield return null;
+                Check(snapshot == null, "VM snapshot leaked");
+                decoder.Call("DecodeNow");
+                drain = Drain(decoder);
+                while (drain.MoveNext()) yield return drain.Current;
+                Check(decoder.Get<bool>("lastFrameValid"), "VM restart failed");
+            }
+            Results.Add("PASS 8 VM cancellation cases: actual component/GameObject disable during header/payload, callbacks while disabled or after early re-enable, restart and snapshot cleanup");
+            decoder.Call("_onDisable");
+            RenderTexture.active = null;
+            source.Release();
+            output.Release();
+            foreach (Object item in new Object[] { a, b, source, output }) Object.DestroyImmediate(item);
+        }
+        foreach (var program in programs) { program.Call("_onDisable"); program.Dispose(); }
+        foreach (var codec in codecs) Object.DestroyImmediate(codec.gameObject);
+        foreach (var material in owned) Object.DestroyImmediate(material);
+    }
+}
+#endif

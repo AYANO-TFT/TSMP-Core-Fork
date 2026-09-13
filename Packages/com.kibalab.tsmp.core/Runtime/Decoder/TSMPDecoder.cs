@@ -112,7 +112,9 @@ namespace K13A.TSMP.Udon
         private const string LogPrefix = "[TSMP] ";
 
         private Color32[] _readbackPixels;
-        private Texture _decodeSourceTexture;
+        private RenderTexture _decodeSourceTexture;
+        private bool _decodeSuspended;
+        private bool _discardReadback;
         private byte[] _headerBytes;
         private byte[] _payloadBytes;
         private int _payloadDataBytes;
@@ -172,6 +174,28 @@ namespace K13A.TSMP.Udon
             DecodeNow();
         }
 
+        private void OnEnable()
+        {
+            _decodeSuspended = false;
+        }
+
+        private void OnDisable()
+        {
+            _decodeSuspended = true;
+            _discardReadback = readbackInFlight;
+            _decodeStage = 0;
+            lastFrameValid = false;
+            lastHeaderValid = false;
+            DecoderSnapshotRuntime.Release(_decodeSourceTexture);
+            _decodeSourceTexture = null;
+        }
+
+        private void OnDestroy()
+        {
+            DecoderSnapshotRuntime.Release(_decodeSourceTexture);
+            _decodeSourceTexture = null;
+        }
+
         public void ResetDecodeDiagnostics()
         {
             ResetTSMPLogBudget(debugErrorLogBudget);
@@ -181,7 +205,7 @@ namespace K13A.TSMP.Udon
         {
             lastError = string.Empty;
 
-            if (readbackInFlight)
+            if (readbackInFlight || _decodeSuspended)
                 return;
 
             if (!ValidateSetup())
@@ -191,7 +215,14 @@ namespace K13A.TSMP.Udon
             InitializeBuffers();
             _currentHeaderRow = 2;
             _decodeFlipY = flipY;
-            _decodeSourceTexture = sourceTexture;
+            _decodeSourceTexture = DecoderSnapshotRuntime.Capture(sourceTexture, _decodeSourceTexture, out lastError);
+            if (_decodeSourceTexture == null)
+            {
+                lastFrameValid = false;
+                lastHeaderValid = false;
+                LogDecodeError(lastError);
+                return;
+            }
 
             RequestHeaderCopy();
         }
@@ -199,7 +230,8 @@ namespace K13A.TSMP.Udon
 #if COMPILER_UDONSHARP
         public override void OnAsyncGpuReadbackComplete(VRCAsyncGPUReadbackRequest request)
         {
-            readbackInFlight = false;
+            if (!AcceptReadback())
+                return;
 
             if (request.hasError)
             {
@@ -222,7 +254,8 @@ namespace K13A.TSMP.Udon
 #else
         private void OnAsyncGpuReadbackComplete(AsyncGPUReadbackRequest request)
         {
-            readbackInFlight = false;
+            if (this == null || !AcceptReadback())
+                return;
 
             if (request.hasError)
             {
@@ -247,6 +280,21 @@ namespace K13A.TSMP.Udon
             CompleteReadbackStage();
         }
 #endif
+
+        private bool AcceptReadback()
+        {
+            if (!readbackInFlight)
+                return false;
+
+            readbackInFlight = false;
+            if (_discardReadback || _decodeSuspended)
+            {
+                _discardReadback = false;
+                return false;
+            }
+
+            return true;
+        }
 
         private void CompleteReadbackStage()
         {
@@ -406,7 +454,7 @@ namespace K13A.TSMP.Udon
             if (material == null)
                 return;
 
-            Texture decodeSource = _decodeSourceTexture != null ? _decodeSourceTexture : sourceTexture;
+            Texture decodeSource = _decodeSourceTexture;
             material.SetTexture(ShaderProperties.MainTex, decodeSource);
             material.SetFloat(ShaderProperties.BlockSize, blockSize);
             material.SetFloat(ShaderProperties.SampleSize, sampleSize);
