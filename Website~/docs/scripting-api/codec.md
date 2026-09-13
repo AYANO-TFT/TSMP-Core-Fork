@@ -78,3 +78,13 @@ The encoder uses this bridge so optional codec packages can be called without ha
 The Udon Encoder queries once per encoding attempt, so changing options on the same codec instance updates its capacity, payload row and header options together. Getters should be inexpensive and side-effect-free. A query result is reused within that attempt, not across subsequent encodes.
 
 `OnTSMPEncoderQuery()` also populates `encoderQueryValues`, a reused `int[10]`: codec ID, symbol mode, payload start row, capacity in bytes, option count, then five option bytes. The bridge reads this array in one call. Treat it as a read-only result that changes on the next query, not as persistent configuration. Existing individual result fields remain available; custom codecs continue to override the same getters and need no codec-specific invalidation API.
+
+## Runtime decode preparation
+
+`PrepareDecode(Texture source, Material material)` is called immediately before each header or payload byte pass, after the decoder has assigned the source dimensions, sample size, byte count and layout. It receives the same source snapshot that the byte pass will read. Override it for optional GPU preparation, and call `base.PrepareDecode(source, material)` first to clear the previous LUT keyword. Existing codecs need no override.
+
+The protected `GetDecodeSampleSize(material)` helper resolves automatic sampling and clamps it to the block size, matching the decode shader. `PrepareCalibrationLut(source, material, width)` renders the assigned `calibrationMaterial` into a reusable, one-row, linear `ARGBFloat` texture. It copies the byte material's properties to the preparation material, binds the result as `_CalibrationLut`, and enables the local `TSMP_CALIBRATION_LUT` keyword. Declare both shader variants with `#pragma multi_compile_local _ TSMP_CALIBRATION_LUT` so they survive Player builds.
+
+Assign the preparation material on the codec prefab. Its shader must write every LUT texel and must not read the LUT being written. Keep an ordinary decode variant for missing resources, unsupported Float32 allocation, empty output and modes where the extra pass is slower. Do not quantize calibration values to Half or 8-bit: this can change decoded bytes. The LUT is refreshed per pass, not reused across frames.
+
+The base class releases its LUT on disable and destruction. If a codec overrides either lifecycle method, call the base implementation. Direct callers of the preparation hook must set the same material properties as the decoder and perform the byte blit immediately afterwards.

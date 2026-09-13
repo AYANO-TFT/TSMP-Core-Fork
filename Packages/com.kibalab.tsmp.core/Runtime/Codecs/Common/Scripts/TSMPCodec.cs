@@ -47,6 +47,9 @@ namespace K13A.TSMP
         public int decodeStage;
         public bool payloadInterleaved;
         public Material selectedDecodeMaterial;
+        [HideInInspector] public Material calibrationMaterial;
+        private RenderTexture _calibrationLut;
+        private Material _calibrationDecodeMaterial;
         public int payloadStartRow = 5;
         public int payloadBlockCount;
         public int byteCount;
@@ -72,6 +75,103 @@ namespace K13A.TSMP
 
         public virtual void ApplyDecodeOptions()
         {
+        }
+
+        public virtual void PrepareDecode(Texture source, Material material)
+        {
+            if (_calibrationDecodeMaterial != material)
+                ClearCalibrationBinding();
+            if (material != null)
+                material.DisableKeyword("TSMP_CALIBRATION_LUT");
+        }
+
+        protected int GetDecodeSampleSize(Material material)
+        {
+            int blockSize = Mathf.Max(1, (int)material.GetFloat("_BlockSize"));
+            float sampleSize = material.GetFloat("_SampleSize");
+            int samples = sampleSize > 0.5f ? Mathf.FloorToInt(sampleSize) : blockSize >= 8 ? 4 : 3;
+            return Mathf.Clamp(samples, 1, Mathf.Min(blockSize, 8));
+        }
+
+        protected void PrepareCalibrationLut(Texture source, Material material, int width)
+        {
+            if (source == null || material == null || calibrationMaterial == null || width <= 0)
+                return;
+            if (material.GetFloat("_ByteCount") <= 0f)
+                return;
+#if !COMPILER_UDONSHARP
+            if (calibrationMaterial.shader == null || !calibrationMaterial.shader.isSupported)
+                return;
+            if (!SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBFloat))
+                return;
+#endif
+
+            if (_calibrationLut == null)
+            {
+                _calibrationLut = new RenderTexture(width, 1, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
+                _calibrationLut.filterMode = FilterMode.Point;
+                _calibrationLut.wrapMode = TextureWrapMode.Clamp;
+                _calibrationLut.useMipMap = false;
+            }
+            else if (_calibrationLut.width != width)
+            {
+                _calibrationLut.Release();
+                _calibrationLut.width = width;
+            }
+
+            if (_calibrationLut.format != RenderTextureFormat.ARGBFloat)
+                return;
+            if (!_calibrationLut.IsCreated() && !_calibrationLut.Create())
+                return;
+
+            calibrationMaterial.CopyPropertiesFromMaterial(material);
+#if !COMPILER_UDONSHARP
+            RenderTexture previousTarget = RenderTexture.active;
+#endif
+            GraphicsBridge.Blit(source, _calibrationLut, calibrationMaterial);
+#if !COMPILER_UDONSHARP
+            RenderTexture.active = previousTarget;
+#endif
+            material.SetTexture("_CalibrationLut", _calibrationLut);
+            material.EnableKeyword("TSMP_CALIBRATION_LUT");
+            _calibrationDecodeMaterial = material;
+        }
+
+        protected virtual void OnDisable()
+        {
+            ReleaseCalibrationLut();
+        }
+
+        protected virtual void OnDestroy()
+        {
+            ReleaseCalibrationLut();
+        }
+
+        private void ClearCalibrationBinding()
+        {
+            if (_calibrationDecodeMaterial != null && _calibrationDecodeMaterial.GetTexture("_CalibrationLut") == _calibrationLut)
+            {
+                _calibrationDecodeMaterial.DisableKeyword("TSMP_CALIBRATION_LUT");
+                _calibrationDecodeMaterial.SetTexture("_CalibrationLut", null);
+            }
+            _calibrationDecodeMaterial = null;
+        }
+
+        private void ReleaseCalibrationLut()
+        {
+            ClearCalibrationBinding();
+            if (_calibrationLut == null)
+                return;
+            _calibrationLut.Release();
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+            if (!Application.isPlaying)
+                DestroyImmediate(_calibrationLut);
+            else
+                Destroy(_calibrationLut);
+#else
+            Destroy(_calibrationLut);
+#endif
+            _calibrationLut = null;
         }
 
         public virtual int GetEncoderSymbolMode()
