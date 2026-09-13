@@ -2,6 +2,8 @@
   <img src=".github/assets/tsmp-banner.png" alt="TSMP Core — Trans Sync Media Protocol" width="100%">
 </p>
 
+<p align="center"><strong>VRChat의 상태와 움직임을 텍스처 스트림으로 전송합니다.</strong></p>
+
 <p align="center">
   <a href="https://github.com/kibalab/TSMP-Core/blob/main/LICENSE.md"><img src="https://img.shields.io/github/license/kibalab/TSMP-Core?style=flat-square&amp;label=license&amp;color=555&amp;labelColor=171717" alt="License"></a>
   <a href="https://github.com/kibalab/TSMP-Core/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/kibalab/TSMP-Core/release.yml?event=push&amp;label=release%20build&amp;style=flat-square&amp;labelColor=171717" alt="Release build"></a>
@@ -16,54 +18,84 @@
   <a href="https://kibalab.github.io/TSMP-Core/"><img src="https://img.shields.io/badge/docs-read-555?style=flat-square&amp;labelColor=171717" alt="Documentation"></a>
 </p>
 
-**한국어** | [English](README.en.md) | [日本語](README.md)
+<p align="center">
+  <a href="#설치">설치</a> &nbsp;·&nbsp;
+  <a href="https://kibalab.github.io/TSMP-Core/ko/">문서</a> &nbsp;·&nbsp;
+  <a href="https://github.com/kibalab/TSMP-Core/releases">릴리즈</a> &nbsp;·&nbsp;
+  <a href="https://github.com/kibalab/TSMP-Core/issues">문제 제보</a>
+</p>
 
-# TSMP Core
+<p align="center">
+  <strong>한국어</strong> &nbsp;·&nbsp; <a href="README.en.md">English</a> &nbsp;·&nbsp; <a href="README.md">日本語</a>
+</p>
 
-TSMP(Trans Sync Media Protocol)는 VRChat 월드에서 텍스처 스트림을 통해 네트워크 상태, RPC, 아바타 포즈, Animator, Timeline 같은 런타임 데이터를 전달하기 위한 오픈소스 패키지입니다.
+---
 
-Core 패키지는 TSMP를 씬에 배치하고 설정하는 기본 런타임입니다. 실제 픽셀 인코딩 방식은 코덱 패키지가 담당하며, 기본 사용에는 Luma4 코덱을 함께 설치하는 것을 권장합니다.
+## TSMP는 무엇인가요?
+
+TSMP(Trans Sync Media Protocol)는 VRChat 월드의 런타임 데이터를 텍스처 스트림으로 전달하는 오픈소스 패키지입니다. Encoder가 씬의 데이터를 픽셀로 인코딩하고, 캡처·스트리밍 경로를 거친 영상을 Decoder가 읽어 수신 오브젝트에 적용합니다.
+
+| 기능 | 지원 내용 |
+| --- | --- |
+| **텍스처 전송** | TSMP Encoder / Decoder로 런타임 데이터를 인코딩·디코딩 |
+| **상태와 이벤트** | `[TransSync]` 필드 동기화, `SendTransRPC(methodName, target)` RPC |
+| **움직임과 재생** | Transform, Rigidbody, Humanoid·VRChat Avatar Pose, BlendShape, Animator, Timeline |
+| **씬 구성** | `TSMPSetup` 자동 설정, 코덱 검색·선택, 컴포넌트와 바인딩 자동 갱신 |
+| **코덱 확장** | 커스텀 코덱용 공통 런타임, shader include, catalog asset |
 
 ## 설치
 
-VRChat Creator Companion에서 VPM 저장소를 추가합니다.
+**VRChat 환경:** Unity 2022.3 LTS · VRChat Worlds SDK 3.9.0 이상
 
-```text
-https://vpm.kiba.red/
-```
+1. VRChat Creator Companion에 아래 VPM 저장소를 추가합니다.
 
-그 다음 `TSMP Core`와 `TSMP Codec Luma4`를 설치합니다.
+   ```text
+   https://vpm.kiba.red/
+   ```
+
+2. **TSMP Core**와 **TSMP Codec Luma4**를 함께 설치하고 임포트가 끝날 때까지 기다립니다.
+
+Core는 씬 런타임과 설정을, 별도 코덱 패키지는 픽셀 인코딩을 담당합니다.
+
+<details>
+<summary><strong>VRCSDK 없는 일반 Unity에서 사용하기</strong></summary>
+
+- 일반 Unity 지원이 포함된 Core와 Luma4 리비전을 사용합니다.
+- Unity Package Manager의 **Add package from disk**에서 각 패키지의 `package.json`을 선택합니다.
+- 아래와 동일한 Controller 프리팹을 사용합니다. 컴포넌트와 바인딩은 자동 준비됩니다.
+- 검증된 구성은 Windows x64 · Mono · managed stripping 비활성화입니다. 리플렉션·stripping 제약과 IL2CPP 검증 범위는 [설치 가이드](https://kibalab.github.io/TSMP-Core/ko/docs/getting-started/installation)를 참고하세요.
+
+</details>
 
 ## 빠른 시작
 
-VRCSDK 없는 일반 Unity에서는 일반 Unity 지원이 포함된 Core와 Luma4를 UPM의 **Add package from disk**로 설치하세요. 두 환경 모두 아래의 같은 프리팹을 사용하며, 컴포넌트와 바인딩은 자동 준비됩니다. `Assets/TSMPGenerated` 리소스를 씬과 함께 관리하세요. Windows x64 Mono 구성을 검증했으며, 리플렉션과 stripping 제약은 설치 가이드를 참고하세요.
+1. [`TSMPController.prefab`](Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab)을 씬에 배치합니다.
+2. 동기화할 오브젝트에 필요한 `TSMPNetwork*` 컴포넌트를 추가합니다.
+3. `TSMPSetup`에서 `Refresh Codecs`를 누르고 코덱·입출력 설정을 확인합니다. 컴포넌트와 바인딩은 자동 갱신됩니다.
+4. Play Mode에 진입하거나 VRChat에서 테스트하여, 공유 Controller의 기본 로컬 루프백으로 인코딩·디코딩을 확인합니다.
+5. 외부 전송 시 Encoder의 출력 RenderTexture를 송출하고, 수신한 TSMP 영상을 Decoder의 입력 텍스처에 연결합니다.
 
-1. `Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab`을 씬에 배치합니다.
-2. 전송할 오브젝트에 필요한 `TSMPNetwork*` 컴포넌트를 추가합니다.
-3. `TSMPSetup`에서 `Refresh Codecs`를 누르고 사용할 코덱을 선택합니다.
-4. Setup에서 입출력과 코덱 설정을 확인합니다. 컴포넌트와 바인딩은 자동 갱신됩니다.
-5. Encoder의 출력 RenderTexture를 송출하고, Decoder의 입력 RenderTexture에 같은 TSMP 화면을 넣습니다.
+**생성 리소스:** `Assets/TSMPGenerated`를 씬과 함께 버전 관리하세요.
 
-## 포함 기능
+[전체 빠른 시작 가이드](https://kibalab.github.io/TSMP-Core/ko/docs/getting-started/quickstart) · [텍스처 전송 설정](https://kibalab.github.io/TSMP-Core/ko/docs/guides/texture-transport)
 
-- TSMP Encoder / Decoder
-- TSMPSetup 자동 구성 도구
-- `[TransSync]` 필드 기반 상태 동기화
-- `SendTransRPC(methodName, target)` 기반 TSMP RPC
-- Transform, Rigidbody, Humanoid Pose, VRChat Avatar Pose, Animator, Timeline, BlendShape 동기화 컴포넌트
-- 코덱 패키지 자동 검색 및 선택 UI
-- 코덱 제작을 위한 공통 런타임, 셰이더 include, catalog asset 형식
+## 가이드
 
-## 문서
+| 필요한 작업 | 문서 |
+| --- | --- |
+| 첫 씬 설치·구성 | [설치](https://kibalab.github.io/TSMP-Core/ko/docs/getting-started/installation) · [빠른 시작](https://kibalab.github.io/TSMP-Core/ko/docs/getting-started/quickstart) |
+| 동기화 컴포넌트 사용 | [Network components](https://kibalab.github.io/TSMP-Core/ko/docs/scripting-api/network-components) |
+| 커스텀 코덱 제작 | [Custom codec](https://kibalab.github.io/TSMP-Core/ko/docs/developer/custom-codec) |
+| 수신·디코딩 문제 해결 | [Troubleshooting](https://kibalab.github.io/TSMP-Core/ko/docs/troubleshooting) |
 
-사용자 가이드와 개발자 문서는 아래에서 확인할 수 있습니다.
+## 릴리즈와 참여
 
-https://kibalab.github.io/TSMP-Core/
+[최신 정식 릴리즈](https://github.com/kibalab/TSMP-Core/releases/latest) · [전체 릴리즈](https://github.com/kibalab/TSMP-Core/releases)
 
-## 배포 상태
+릴리즈 태그는 `v0.x.y` 형식을 사용하며, 1.0 이전에는 공개 API가 변경될 수 있습니다.
 
-TSMP Core 0.2.0은 베타가 아닌 정식 릴리즈입니다. 릴리즈 태그는 `v0.x.y` 형식을 사용하며, 1.0 이전에는 공개 API가 변경될 수 있습니다.
+버그나 제안은 [Issues](https://github.com/kibalab/TSMP-Core/issues)에 남겨 주세요. 코드·문서 기여는 [기여 가이드](CONTRIBUTING.md)를 참고하세요.
 
-## 라이선스
+---
 
-MIT License. Copyright (c) 2026 KIBA_Labs.
+[MIT License](LICENSE.md) · Copyright (c) 2026 KIBA_Labs.
