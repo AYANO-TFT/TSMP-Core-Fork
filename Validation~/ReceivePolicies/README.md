@@ -49,6 +49,12 @@ Ten additional cases passed in SDK-free C# and client Udon VM (32 total). They c
 
 Evidence: `F:/Unity/TSMP/Validation-Results/issue9`, native `after/20260913-133749-ReceivePolicies.log`, Udon `udon/20260913-133813-ReceivePoliciesVm.log`. `NetworkApiValidation.Run` can inventory the installed SDK's mesh and AnimatorStateInfo externs; set `TSMP_VALIDATION_RESULT` to its output path before running it with Unity `-executeMethod`.
 
+## Issue #10
+
+Animator reception now treats `layerIndices` as a whitelist before changing layer weight, state or time, matching the parameter selection policy. Null/empty selections receive no layers. The check reads the current list, including in-place edits.
+
+Six real-Animator cases cover selected/excluded/empty/null/changed/invalid layers. Before the fix, excluded/empty/null/changed cases reproduced unwanted weight changes. After the fix all 38 receive-policy cases passed in native C# and client Udon VM, with full client compilation. Evidence: `F:/Unity/TSMP/Validation-Results/issue10`, native `after/20260913-134424-ReceivePolicies.log`, Udon `udon/20260913-134446-ReceivePoliciesVm.log`.
+
 ## Final GPU Loopback
 
 After all three fixes (#5, #6, #8), the existing full loopback fixture passed in SDK-free Play Mode and an actual Windows x64 Development Mono Player (stripping disabled). It encodes using real Luma4, uses D3D11 GPU readback, and applies Transform, humanoid, Timeline, integer/Unicode fields and RPC results. The fixture also rejects blank input without changing variables. This is regression coverage for the full transport; the 22 policy-specific cases above run separately in Editor C# and client Udon VM.

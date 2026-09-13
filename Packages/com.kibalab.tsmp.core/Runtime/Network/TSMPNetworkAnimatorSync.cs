@@ -224,7 +224,7 @@ namespace K13A.TSMP.Udon
                     float weight = Binary.ReadFloat32LE(animatorBytes, cursor);
                     cursor += 4;
 
-                    if (layer < 0 || layer >= animator.layerCount)
+                    if (layer < 0 || layer >= animator.layerCount || !IsSelectedLayer(layer))
                         continue;
 
                     animator.SetLayerWeight(layer, weight);
@@ -240,6 +240,20 @@ namespace K13A.TSMP.Udon
                     }
                 }
             }
+        }
+
+        private bool IsSelectedLayer(int layer)
+        {
+            if (layerIndices == null)
+                return false;
+
+            for (int i = 0; i < layerIndices.Length; i++)
+            {
+                if (layerIndices[i] == layer)
+                    return true;
+            }
+
+            return false;
         }
 
         private void ResolveAnimator()

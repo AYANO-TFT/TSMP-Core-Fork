@@ -50,6 +50,8 @@ public static class ReceivePolicyValidation
         Test("Missing Rigidbody still receives Transform data", MissingRigidbody);
         foreach (string change in BlendShapePolicyCases.Changes)
             Test("BlendShape target invalidation: " + change, () => BlendShapePolicyCases.Run(change));
+        foreach (string selection in AnimatorPolicyCases.SelectionCases)
+            Test("Animator layer selection: " + selection, () => AnimatorPolicyCases.Selection(selection));
     }
 
     internal sealed class Endpoint : IDisposable
