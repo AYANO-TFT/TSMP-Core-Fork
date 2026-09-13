@@ -332,6 +332,59 @@ Transport가 색을 바꾼다면 payload block 앞에 calibration symbols를 둘
 
 필요하면 material property로 calibration start block을 노출하세요. Editor/native path는 `ConfigureMaterials(CodecMaterialContext context)`, runtime path는 `ApplyDecodeOptions()`에서 설정합니다.
 
+## 선택적 캘리브레이션 준비
+
+캘리브레이션은 수신 영상의 알려진 기준 심볼을 측정한 뒤 payload 샘플과 비교하는 과정입니다. 출력 바이트마다 같은 기준 블록을 다시 읽으면 작업이 반복됩니다. LUT(조회 테이블)를 사용하면 기준값 계산을 한 번의 GPU 준비 패스로 옮길 수 있습니다.
+
+LUT는 계산 위치만 바꿉니다. 패킷 형식이나 심볼 판정 알고리즘은 바꾸지 않습니다. 추가 패스의 비용이 더 큰 코덱은 기존 디코드 경로를 유지하세요.
+
+### 호출 순서
+
+Decoder는 **각 헤더 또는 payload 바이트 패스마다** 다음 순서로 처리합니다.
+
+1. 코덱을 선택하고 `ApplyDecodeOptions()`로 바이트 머티리얼과 레이아웃을 결정합니다.
+2. 해당 머티리얼에 `_MainTex`, 입력 크기, 블록/샘플 크기, `_StartBlock`, `_ByteCount`, 바이트 출력 크기, `_FlipY`를 설정합니다.
+3. `PrepareDecode(source, material)`을 호출합니다. 코덱은 이번 패스의 설정으로 캘리브레이션을 준비할 수 있습니다.
+4. 곧바로 같은 원본 Texture 참조를 바이트 머티리얼로 Blit합니다.
+5. LUT가 아닌 바이트 출력 텍스처에서 readback을 요청합니다.
+
+`ApplyDecodeOptions()` 안에서 준비하지 마세요. 이 시점에는 해당 패스의 프로퍼티가 모두 설정되지 않았습니다. `Start()`, 코덱 변경 시점, 프레임당 한 번만 준비하는 것도 충분하지 않습니다. 헤더와 payload 패스는 설정과 실행 시점이 다를 수 있습니다.
+
+같은 Texture 참조를 사용한다는 것은 **픽셀의 불변 스냅샷을 확보했다는 뜻이 아닙니다**. 헤더 readback을 기다리는 동안 영상 공급자가 픽셀을 갱신할 수 있습니다. 준비 훅은 영상을 고정하지 않으며, 헤더와 payload가 같은 영상 프레임이라는 보장도 추가하지 않습니다.
+
+### Luma4 최소 훅
+
+Luma4 핸들러는 아래 재정의를 사용합니다. 기존 코덱 클래스 안에서 인코드 메서드 및 `ApplyDecodeOptions()`와 함께 구현합니다.
+
+```csharp
+public override void PrepareDecode(Texture source, Material material)
+{
+    base.PrepareDecode(source, material);
+    if (material == null || GetDecodeSampleSize(material) <= 1)
+        return;
+
+    PrepareCalibrationLut(source, material, 16);
+}
+```
+
+Luma4의 기준 심볼은 16개이므로 테이블은 16×1입니다. 유효 샘플 크기가 1일 때는 측정 환경에서 준비 비용이 절감량보다 컸으므로 기존 경로를 유지합니다. 이는 Luma4의 정책이며 Core가 다른 코덱에 강제하는 규칙이 아닙니다. 사용자 정의 코덱은 준비 비용을 포함해 직접 측정한 뒤 조건을 선택하세요.
+
+코덱 프리팹의 상속된 `calibrationMaterial` 필드에 Luma4 준비 셰이더를 사용하는 머티리얼을 지정합니다. 이 필드는 일반 Inspector에서 숨겨져 있습니다. 패키지의 에디터 도구나 Inspector Debug 모드에서 직렬화 필드를 설정하세요. 최종 사용자는 별도의 설정 작업 없이 완성된 catalog/프리팹을 받아야 합니다.
+
+바이트 셰이더에도 `_CalibrationLut`, `TSMP_CALIBRATION_LUT` local variant와 기존 샘플링 경로가 필요합니다. 구체적인 구현은 [셰이더 가이드](./codec-shaders.md)를 참고하세요. C# 훅만 추가한다고 셰이더가 LUT를 사용하게 되지는 않습니다.
+
+### 리소스 소유권과 대체 경로
+
+- 코덱 부모 클래스가 생성한 LUT RenderTexture를 소유합니다. 할당은 재사용하되 활성화된 패스마다 내용을 다시 그리며, 비활성화·파괴 시 해제하고 제거합니다.
+- `calibrationMaterial`과 바이트 머티리얼은 외부에서 지정한 참조입니다. 훅이 만들지는 않지만 프로퍼티는 변경합니다. Setup은 컨트롤러별 머티리얼 복사본을 준비합니다. 직접 연동할 때도 공유 머티리얼의 사용이 충돌하지 않게 관리하세요.
+- 활성화 조건을 검사하기 전에 항상 `base.PrepareDecode(source, material)`을 호출하세요. 같은 머티리얼이 기존 경로로 돌아갈 때도 이전 LUT 키워드를 꺼야 합니다.
+- `OnDisable()` 또는 `OnDestroy()`를 재정의하면 해당 부모 구현을 호출하세요. 패키지 머티리얼 에셋이나 외부에서 받은 입력/출력 텍스처를 파괴하지 마세요.
+- 원본, 바이트 머티리얼, 준비 머티리얼이 없거나 LUT 너비가 잘못되었거나 출력 바이트가 없으면 준비를 생략합니다. Native 경로는 지원되지 않는 준비 셰이더와 ARGBFloat 장치도 검사합니다. 양쪽 경로 모두 실제 포맷과 텍스처 생성 결과를 검사하므로 기존 셰이더 variant를 유지해야 합니다.
+- 1행 linear `ARGBFloat`(채널당 32-bit float), Point 필터, mipmap 없는 설정을 사용하세요. Half·8-bit·sRGB 저장으로 대체하면 반올림 때문에 판정 경계의 심볼 결과가 바뀔 수 있습니다.
+- 준비 패스가 여러 개라면 실행 순서를 정하고 각 출력을 완전히 덮어쓰세요. 쓰고 있는 LUT를 동시에 읽지 마세요.
+
+메서드 선언, 검사 조건, 라이프사이클은 [TSMPCodec Scripting API](../scripting-api/codec.md#runtime-decode-preparation)를 참고하세요. 리소스 누락, 샘플 크기 변경, 비활성화·재활성화, 여러 코덱 인스턴스, Player의 두 셰이더 variant를 바이트 단위로 비교 검증하세요.
+
 ## 7. Materials 설정
 
 각 decode shader에 대한 material을 만들고 codec component에 지정합니다.

@@ -125,7 +125,32 @@ Update / decode tick
   -> diagnostics 갱신
 ```
 
-Decoder는 fail closed 방식이어야 합니다. Malformed payload data는 partial invalid state를 적용하지 않고 payload processing을 멈춘 뒤 diagnostics를 남깁니다.
+잘못된 payload를 발견하면 이후 처리를 중단하고 진단을 기록합니다. 하지만 앞에서 이미 적용한 변수나 RPC의 효과를 되돌리지는 않습니다. 프레임 전체의 원자적 적용은 별도 과제입니다.
+
+### 각 바이트 패스의 GPU 준비
+
+헤더 패스(Luma4)와 선택한 payload 코덱은 모두 다음 순서로 실행됩니다.
+
+```text
+ApplyDecodeOptions
+  -> 이번 패스의 바이트 머티리얼 설정
+  -> PrepareDecode(source, byteMaterial)
+       -> 이전 LUT 키워드 해제
+       -> 선택적으로 기준 심볼을 float LUT에 기록
+       -> LUT 연결 및 바이트 셰이더 variant 활성화
+  -> 같은 원본 Texture 참조에서 바이트 Blit
+  -> 복원 바이트의 GPU readback
+```
+
+LUT가 없으면 바이트 셰이더는 payload 심볼 판정 중 기준 블록을 반복해서 읽습니다. LUT가 있으면 활성 패스마다 기준값을 한 번 계산하고, payload 샘플링과 판정은 그대로 수행합니다. 추가 패스 비용이 제거한 반복 작업보다 작을 때만 이득입니다. 작은 payload와 큰 payload 모두 준비와 디코드를 합쳐 측정하세요.
+
+Luma4는 유효 샘플 크기가 1보다 클 때 16개 항목을 준비하고, 단일 샘플에서는 기존 경로를 사용합니다. 생성 텍스처는 linear ARGBFloat(채널당 32-bit float), Point 필터, mipmap 없는 설정입니다. Half·8-bit 양자화는 경계에서 판정 결과를 바꿀 수 있으므로 사용하지 않습니다.
+
+할당만 재사용하고 프레임 사이의 값은 재사용하지 않습니다. 활성 바이트 패스마다 다시 그립니다. 리소스가 없으면 기존 셰이더 경로를 유지합니다. 코덱은 자신이 생성한 LUT를 소유하고 비활성화·파괴 시 정리하며, 머티리얼 소유권은 별도로 관리합니다.
+
+원본은 불변 스냅샷이 아닌 Texture 참조입니다. 참조를 보관하고 바이트 패스 직전에 준비하더라도 헤더와 payload readback 사이에 영상 공급자가 픽셀을 갱신하는 것을 막지는 못합니다.
+
+훅, 머티리얼 설정, 라이프사이클, 대체 경로는 [구현 가이드](./codec-implementation.md), [셰이더 가이드](./codec-shaders.md), [준비 API](../scripting-api/codec.md#runtime-decode-preparation)를 참고하세요.
 
 ## Test를 추가할 위치
 

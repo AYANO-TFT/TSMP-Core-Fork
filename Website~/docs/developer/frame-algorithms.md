@@ -125,7 +125,32 @@ Update / decode tick
   -> update diagnostics
 ```
 
-The decoder should fail closed. Malformed payload data stops payload processing and records diagnostics instead of applying partial invalid state.
+Malformed payload data stops further processing and records diagnostics. This does not roll back variables or RPC effects already applied earlier in the payload; whole-frame transactional application is a separate issue.
+
+### GPU preparation within each byte pass
+
+Both the header pass (Luma4) and the selected payload codec use this sequence:
+
+```text
+ApplyDecodeOptions
+  -> configure byte material for this pass
+  -> PrepareDecode(source, byteMaterial)
+       -> disable the previous LUT keyword
+       -> optionally sample reference symbols into a float LUT
+       -> bind the LUT and enable its byte-shader variant
+  -> byte Blit from the same source Texture reference
+  -> GPU readback of recovered bytes
+```
+
+Without a LUT, the byte shader repeatedly samples reference blocks while classifying payload symbols. With a LUT, those reference samples are calculated once per enabled pass; payload sampling and classification remain unchanged. The extra pass is useful only when its cost is lower than the repeated work it removes. Measure preparation plus decoding for both small and large payloads.
+
+Luma4 prepares 16 entries when the effective sample size exceeds one; single-sample decoding retains the original path. The generated texture is linear ARGBFloat (32-bit float per channel), point-filtered, with no mipmaps. Half/8-bit quantization can change classification at boundaries and is not part of this algorithm.
+
+The texture allocation is reused, not its values across frames: contents are redrawn for every enabled byte pass. Missing resources keep the original shader path. Each codec owns its generated LUT and releases it on disable/destruction; material ownership is handled separately.
+
+The source is a Texture reference, not an immutable snapshot. Keeping that reference and preparing immediately before a byte pass does not prevent a video producer from updating pixels between header and payload readbacks.
+
+See the [implementation guide](./codec-implementation.md), [shader guide](./codec-shaders.md), and [preparation API](../scripting-api/codec.md#runtime-decode-preparation) for the hook, material setup, lifecycle and fallback contract.
 
 ## Where to add tests
 

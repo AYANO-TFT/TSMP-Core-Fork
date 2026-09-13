@@ -35,6 +35,76 @@ TSMP コーデック シェーダーは、ペイロード バイトと可視フ�
 
 回復されたバイトを RGBA バイト テクスチャに出力するデコード シェーダについては、[`TSMPDecodeByteOutput.cginc` スクリプト API](../scripting-api/decode-byte-output.md) を参照してください。
 
+## 準備シェーダーとバイトシェーダー
+
+LUT を使うコーデックには、異なる二つの出力があります。
+
+| パス | 出力 | 意味 |
+| --- | --- | --- |
+| 準備 | 1行の linear ARGBFloat LUT | 測定したキャリブレーション値。バイトではありません。 |
+| バイトデコード | RGBA バイト出力 | CPU readback 用の、1画素あたり4バイトです。 |
+
+順序はマテリアル設定、`PrepareDecode(source, material)`、必要なら準備 Blit、バイト Blit です。準備とバイトパスで、入力、サンプルサイズ、ブロック座標、上下方向を一致させます。[Luma4 の C# フックと所有権](./codec-implementation.md)、[TSMPCodec API](../scripting-api/codec.md#runtime-decode-preparation) も参照してください。
+
+### 1. キャリブレーション計算を共有する
+
+Luma4 は16個のシンボルそれぞれを、行1の基準ブロック二つから測定します。コーデック専用 include に次の関数を置き、両シェーダーで `TSMPDecodeCommon.cginc` の後に含めます。
+
+```hlsl
+#if defined(TSMP_CALIBRATION_LUT)
+Texture2D<float4> _CalibrationLut;
+#endif
+
+float CalibrationLuma(int symbol)
+{
+#if defined(TSMP_CALIBRATION_LUT)
+    return _CalibrationLut.Load(int3(symbol, 0, 0)).r;
+#else
+    float a = SampleBlockLuma(symbol * 2, 1.0);
+    float b = SampleBlockLuma(symbol * 2 + 1, 1.0);
+    return (a + b) * 0.5;
+#endif
+}
+```
+
+有効経路は整数テクセルの `Load` を使い、項目間の補間を避けます。無効経路は元のサンプル位置、平均計算、`float` 精度を維持します。ペイロードのシンボル判定は変更しないでください。精度を落としたキャリブレーションへの置き換えは、バイト結果を維持する最適化ではありません。
+
+### 2. 全準備テクセルを書き込む
+
+標準の入力/ブロック/サンプル/flip プロパティ、`Cull Off`、`ZWrite Off`、`ZTest Always`、target 3.5、共通 vertex 関数を使う準備シェーダーを作成します。`TSMPDecodeCommon.cginc` と上の関数を含め、次の fragment 関数を使います。
+
+```hlsl
+float4 frag(v2f i) : SV_Target
+{
+    int symbol = (int)floor(i.pos.x);
+    return CalibrationLuma(symbol).xxxx;
+}
+```
+
+この例の出力は16×1です。`_OutputWidth` と `_OutputHeight` は**バイト**マテリアルからコピーされた寸法なので、LUT の項目計算には使わないでください。このコードは実際のラスタ位置を使います。
+
+準備シェーダーでは LUT キーワード variant を**コンパイルせず**、`TSMPDecodeByteOutput.cginc` も**含めません**。常に元の画像から測定して float 値を書き込みます。特に、出力中の `_CalibrationLut` を読んではいけません。このパスでは blending、sRGB 変換、mipmap、Half 変換、RGBA8 バイトパッキングを使わないでください。
+
+### 3. 両方のバイトデコード variant を維持する
+
+バイトシェーダーの `Properties` に `[HideInInspector] _CalibrationLut ("Calibration LUT", 2D) = "black" {}` を宣言し、プログラムに次を追加します。
+
+```hlsl
+#pragma multi_compile_local _ TSMP_CALIBRATION_LUT
+```
+
+同じキャリブレーション関数を含め、既存の `DecodeByte(int byteIndex)` を維持し、その後に `TSMPDecodeByteOutput.cginc` を含めます。基底フックは各パスの開始時にキーワードを解除し、LUT を準備できた場合だけ再度有効にします。保存されたマテリアルで無効だった variant がビルドから消えないよう、`multi_compile_local` を使います。
+
+準備マテリアルとバイトマテリアルは別にしてください。ヘルパーはプロパティをコピーしますが、準備シェーダーを置き換えません。プレハブに両マテリアルを設定し、パッケージ内のシェーダー参照を維持します。
+
+### 4. 二つのパスをまとめて検証する
+
+最後のバイトシェーダーだけでなく、準備とバイトパスの合計を元の経路と比較します。小さい payload では追加 Blit の費用が上回ることがあります。Luma4 は有効サンプルサイズ1で元の経路、それより大きい場合に準備経路を使います。
+
+正常色と変化させた色、両 Y 方向、自動/明示サンプルサイズ、RGBA の一部だけを使う出力、入力変更、準備マテリアル不足でバイト一致を確認します。パッケージのプレハブ、無効化と再有効化、複数コントローラーも検証してください。Player を実際にビルド・実行し、両 local variant が残ることを確認します。Editor のみでは不十分です。
+
+LUT の割り当ては再利用しますが、有効な各パスで内容を更新します。Texture 参照の保持は映像のピクセルを固定しません。この最適化は、フレーム間の値の再利用やヘッダー/payload のスナップショット保証を提供しません。
+
 ## シェーダ インクルード パス
 
 パッケージ シェーダーは、パッケージ安定したインクルード パスを使用する必要があります。シーン フォルダーに依存する相対インクルード パスは、パッケージがプロジェクトとパッケージの場所の間で移動される場合に脆弱になります。
