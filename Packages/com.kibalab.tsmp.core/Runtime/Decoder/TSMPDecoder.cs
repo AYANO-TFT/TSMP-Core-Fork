@@ -419,6 +419,7 @@ namespace K13A.TSMP.Udon
             material.SetFloat(ShaderProperties.OutputHeight, payloadByteTexture.height);
             material.SetFloat(ShaderProperties.FlipY, _decodeFlipY ? 1f : 0f);
 
+            handler.PrepareDecode(decodeSource, material);
             GraphicsBridge.Blit(decodeSource, payloadByteTexture, material);
         }
 
