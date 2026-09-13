@@ -41,6 +41,14 @@ Evidence root: `F:/Unity/TSMP/Validation-Results/issue8-20260913`.
 - Native: `after/20260913-131851-ReceivePolicies.log`.
 - Udon: `udon/20260913-131948-ReceivePoliciesVm.log`.
 
+## Issue #9
+
+Continuous BlendShape targets are invalidated when their selection, renderer, mesh, receive mode or active state changes. Remaining selected shapes keep interpolating. Re-enabling a shape does not replay its discarded target; the next received packet can set it again. Mesh bounds are checked in both native C# and Udon.
+
+Ten additional cases passed in SDK-free C# and client Udon VM (32 total). They cover in-place and null selection changes, renderer replacement, same-size/smaller/empty meshes, None/Discrete and component/object disable cycles. Repeated Discrete packets still restore externally modified weights. Full Udon compilation passed.
+
+Evidence: `F:/Unity/TSMP/Validation-Results/issue9`, native `after/20260913-133749-ReceivePolicies.log`, Udon `udon/20260913-133813-ReceivePoliciesVm.log`. `NetworkApiValidation.Run` can inventory the installed SDK's mesh and AnimatorStateInfo externs; set `TSMP_VALIDATION_RESULT` to its output path before running it with Unity `-executeMethod`.
+
 ## Final GPU Loopback
 
 After all three fixes (#5, #6, #8), the existing full loopback fixture passed in SDK-free Play Mode and an actual Windows x64 Development Mono Player (stripping disabled). It encodes using real Luma4, uses D3D11 GPU readback, and applies Transform, humanoid, Timeline, integer/Unicode fields and RPC results. The fixture also rejects blank input without changing variables. This is regression coverage for the full transport; the 22 policy-specific cases above run separately in Editor C# and client Udon VM.

@@ -48,9 +48,11 @@ public static class ReceivePolicyValidation
         foreach (var mode in new[] { ReceiveInterpolationMode.Discrete, ReceiveInterpolationMode.Continuous })
             Test("Disabling Rigidbody clears pending targets while " + mode, () => CancelRigidbodyTarget(mode));
         Test("Missing Rigidbody still receives Transform data", MissingRigidbody);
+        foreach (string change in BlendShapePolicyCases.Changes)
+            Test("BlendShape target invalidation: " + change, () => BlendShapePolicyCases.Run(change));
     }
 
-    private sealed class Endpoint : IDisposable
+    internal sealed class Endpoint : IDisposable
     {
         public readonly Component Target;
 #if UDONSHARP
@@ -61,7 +63,8 @@ public static class ReceivePolicyValidation
         {
 #if UDONSHARP
             string path = type == typeof(TSMPEncoder) ? "Packages/com.kibalab.tsmp.core/Runtime/Encoder/TSMPEncoder.asset" :
-                type == typeof(TSMPNetworkTransformSync) ? "Packages/com.kibalab.tsmp.core/Runtime/Network/TSMPNetworkTransformSync.asset" : Root + type.Name + ".asset";
+                type.Assembly == typeof(TSMPEncoder).Assembly && typeof(TSMPNetworkBehaviour).IsAssignableFrom(type)
+                    ? "Packages/com.kibalab.tsmp.core/Runtime/Network/" + type.Name + ".asset" : Root + type.Name + ".asset";
             var asset = AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(path);
             program = asset.SerializedProgramAsset.RetrieveProgram();
             Check(program != null && program.ByteCode.Length > 0, "Missing bytecode: " + path);
