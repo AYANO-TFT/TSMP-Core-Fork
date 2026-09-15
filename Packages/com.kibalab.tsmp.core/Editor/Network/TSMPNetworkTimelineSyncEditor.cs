@@ -16,7 +16,7 @@ namespace K13A.TSMP.Editor
 
             serializedObject.Update();
 
-            DrawTSMPNetworkSection(false);
+            DrawTSMPNetworkSection(true);
             DrawProperty("director");
 
             TSMPNetworkTimelineSync sync = (TSMPNetworkTimelineSync)target;

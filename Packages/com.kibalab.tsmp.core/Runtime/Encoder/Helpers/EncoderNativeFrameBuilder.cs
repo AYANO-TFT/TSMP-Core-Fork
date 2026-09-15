@@ -29,7 +29,10 @@ namespace K13A.TSMP
             out int variableMessageCount,
             out int rpcMessageCount,
             out int payloadBytes,
-            out string error)
+            out string error,
+            EncoderNativeSendState sendState = null,
+            double now = 0.0,
+            float refreshInterval = 1f)
         {
             networkMessageCount = 0;
             variableMessageCount = 0;
@@ -37,7 +40,8 @@ namespace K13A.TSMP
             payloadBytes = 0;
             error = string.Empty;
 
-            payload = NetworkPayloadBuffer.EnsureCapacity(payload, maxPayloadBytes);
+            if (payload == null || payload.Length < maxPayloadBytes)
+                payload = NetworkPayloadBuffer.EnsureCapacity(payload, maxPayloadBytes);
             NetworkPayloadBuffer.Clear(payload);
 
             payloadOffset = NetworkFrameWriter.BeginNetworkFrame(payload, 0, frameIndex);
@@ -48,13 +52,19 @@ namespace K13A.TSMP
             }
 
             ushort sequence = unchecked((ushort)frameIndex);
-            if (!WriteVariableStateMessages(behaviours, bindingCache, payload, ref payloadOffset, ref currentMessageStartOffset, ref currentVariableCount, sequence, out networkMessageCount, out variableMessageCount, out error))
-                return false;
-
             if (!WriteRpcMessages(queuedRpcs, payload, ref payloadOffset, sequence, ref networkMessageCount, out rpcMessageCount, out error))
                 return false;
 
-            AdvanceQueuedRpcs(queuedRpcs);
+            if (!CaptureSources(behaviours, bindingCache, payload, sequence, ref payloadOffset,
+                ref currentMessageStartOffset, ref currentVariableCount, out int manualMessages, out error))
+                return false;
+            if (sendState == null)
+                sendState = new EncoderNativeSendState();
+            if (!sendState.Write(behaviours, bindingCache, payload, maxPayloadBytes, sequence, now, refreshInterval,
+                ref payloadOffset, out variableMessageCount, out error, false))
+                return false;
+            variableMessageCount += manualMessages;
+            networkMessageCount += variableMessageCount;
 
             if (!NetworkFrameWriter.EndNetworkFrame(payload, 0, networkMessageCount))
             {
@@ -67,70 +77,47 @@ namespace K13A.TSMP
             return true;
         }
 
-        private static bool WriteVariableStateMessages(
-            List<TSMPNetworkBehaviour> behaviours,
-            Dictionary<System.Type, TransSyncMetadata.Cache> bindingCache,
-            byte[] payload,
-            ref int payloadOffset,
-            ref int currentMessageStartOffset,
-            ref int currentVariableCount,
-            ushort sequence,
-            out int networkMessageCount,
-            out int variableMessageCount,
-            out string error)
+        private static bool CaptureSources(List<TSMPNetworkBehaviour> behaviours,
+            Dictionary<System.Type, TransSyncMetadata.Cache> cache, byte[] payload, ushort sequence,
+            ref int offset, ref int messageStart, ref int variableCount, out int messages, out string error)
         {
-            networkMessageCount = 0;
-            variableMessageCount = 0;
+            messages = 0;
             error = string.Empty;
-
+            messageStart = -1;
+            variableCount = 0;
             if (behaviours == null)
                 return true;
-
-            for (int i = 0; i < behaviours.Count; i++)
+            foreach (TSMPNetworkBehaviour behaviour in behaviours)
             {
-                TSMPNetworkBehaviour behaviour = behaviours[i];
                 if (behaviour == null)
                     continue;
-
-                ushort networkId = BindingTable.ResolveNetworkId(behaviour);
-                if (!BeginVariableState(payload, ref payloadOffset, ref currentMessageStartOffset, ref currentVariableCount, networkId, sequence))
-                {
-                    error = "Failed to begin VariableState message.";
-                    return false;
-                }
-
-                InvokeBeforeEncode(behaviour, bindingCache);
-
-                int writtenVariableCount;
-                int failedFieldIndex;
-                int writeError;
-                TransSyncMetadata.Field[] fields = GetTransSyncFields(behaviour, bindingCache);
-                int nextOffset = NetworkFrameWriter.WriteVariableEntries(payload, payloadOffset, behaviour, fields, out writtenVariableCount, out failedFieldIndex, out writeError);
-                if (nextOffset < 0)
-                {
-                    CancelMessage(ref payloadOffset, ref currentMessageStartOffset, ref currentVariableCount);
-                    error = NetworkFrameWriter.GetVariableStateWriteError(fields, failedFieldIndex, writeError);
-                    return false;
-                }
-
-                payloadOffset = nextOffset;
-                currentVariableCount += writtenVariableCount;
-                if (currentVariableCount == 0)
-                {
-                    CancelMessage(ref payloadOffset, ref currentMessageStartOffset, ref currentVariableCount);
+                var method = TransSyncMetadata.GetOrCreate(cache, behaviour.GetType()).BeforeEncodeMethod;
+                if (method == null)
                     continue;
-                }
-
-                if (!EndVariableState(payload, ref currentMessageStartOffset, ref currentVariableCount, payloadOffset))
+                int start = offset;
+                int body = NetworkFrameWriter.BeginVariableState(payload, start, BindingTable.ResolveNetworkId(behaviour), sequence);
+                if (body >= 0)
                 {
-                    error = "Failed to end VariableState message.";
-                    return false;
+                    messageStart = start;
+                    offset = body;
                 }
-
-                networkMessageCount++;
-                variableMessageCount++;
+                method.Invoke(behaviour, null);
+                if (messageStart >= 0 && variableCount > 0)
+                {
+                    if (!NetworkFrameWriter.EndVariableState(payload, messageStart, offset, variableCount))
+                    {
+                        error = "Failed to finish manually written VariableState message.";
+                        return false;
+                    }
+                    messages++;
+                }
+                else
+                {
+                    offset = start;
+                }
+                messageStart = -1;
+                variableCount = 0;
             }
-
             return true;
         }
 
@@ -161,7 +148,7 @@ namespace K13A.TSMP
             return true;
         }
 
-        private static void AdvanceQueuedRpcs(List<QueuedRpc> queuedRpcs)
+        public static void AdvanceQueuedRpcs(List<QueuedRpc> queuedRpcs)
         {
             if (queuedRpcs == null)
                 return;
@@ -195,54 +182,6 @@ namespace K13A.TSMP
             return true;
         }
 
-        private static bool BeginVariableState(byte[] payload, ref int payloadOffset, ref int currentMessageStartOffset, ref int currentVariableCount, ushort networkId, ushort sequence)
-        {
-            int nextOffset = NetworkFrameWriter.BeginVariableState(payload, payloadOffset, networkId, sequence);
-            if (nextOffset < 0)
-                return false;
-
-            currentMessageStartOffset = payloadOffset;
-            currentVariableCount = 0;
-            payloadOffset = nextOffset;
-            return true;
-        }
-
-        private static bool EndVariableState(byte[] payload, ref int currentMessageStartOffset, ref int currentVariableCount, int payloadOffset)
-        {
-            if (currentMessageStartOffset < 0)
-                return false;
-
-            if (!NetworkFrameWriter.EndVariableState(payload, currentMessageStartOffset, payloadOffset, currentVariableCount))
-                return false;
-
-            currentMessageStartOffset = -1;
-            currentVariableCount = 0;
-            return true;
-        }
-
-        private static void CancelMessage(ref int payloadOffset, ref int currentMessageStartOffset, ref int currentVariableCount)
-        {
-            if (currentMessageStartOffset >= 0)
-                payloadOffset = currentMessageStartOffset;
-
-            currentMessageStartOffset = -1;
-            currentVariableCount = 0;
-        }
-
-        private static void InvokeBeforeEncode(TSMPNetworkBehaviour behaviour, Dictionary<System.Type, TransSyncMetadata.Cache> bindingCache)
-        {
-            if (behaviour == null)
-                return;
-
-            System.Reflection.MethodInfo method = TransSyncMetadata.GetOrCreate(bindingCache, behaviour.GetType()).BeforeEncodeMethod;
-            if (method != null)
-                method.Invoke(behaviour, null);
-        }
-
-        private static TransSyncMetadata.Field[] GetTransSyncFields(TSMPNetworkBehaviour behaviour, Dictionary<System.Type, TransSyncMetadata.Cache> bindingCache)
-        {
-            return TransSyncMetadata.GetOrCreate(bindingCache, behaviour.GetType()).Fields;
-        }
     }
 }
 #endif

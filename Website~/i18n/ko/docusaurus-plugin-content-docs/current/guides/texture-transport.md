@@ -69,6 +69,18 @@ OBS를 사용할 때:
 - TSMP 영역을 완전히 보이게 합니다.
 - Receiver input texture가 원본 encoder render texture가 아니라 OBS output인지 확인합니다.
 
+## Unity에서 FFmpeg로 송출
+
+`TSMPFfmpegRtmpPublisher`는 별도로 설치한 FFmpeg 실행 파일을 사용해 Unity 텍스처를 RTMP 서버로 송출합니다. 데스크톱 Unity용 컴포넌트이며, VRChat 내부에서 실행하는 Udon 컴포넌트가 아닙니다.
+
+`Source Texture`, `FFmpeg Path`, RTMP 수신 주소를 지정한 뒤 `StartPublishing()`을 호출하거나 `Auto Start`를 켭니다. 에디터에서도 캡처하려면 `Publish In Edit Mode`를 켭니다. `StopPublishing()` 호출, 컴포넌트 비활성화 또는 삭제 시 송출이 종료됩니다.
+
+`Use Source Dimensions`를 켜면 텍스처의 실제 해상도를 사용합니다. 끈 경우 `Width`와 `Height`가 원본과 정확히 같아야 합니다. 불일치하면 경고와 함께 시작을 거부하며 TSMP 픽셀을 임의로 리사이즈하지 않습니다. YUV420p는 너비와 높이가 모두 짝수여야 합니다.
+
+해상도와 프레임레이트는 송출 시작 시 고정됩니다. 해당 설정이나 원본 해상도를 바꾼 뒤에는 송출을 종료하고 다시 시작하세요. 원본을 제거하거나 크기를 바꾸면 호환되지 않는 바이트를 보내기 전에 송출을 중단합니다. 재시작 이후 도착한 이전 세션의 GPU 요청 결과는 버립니다.
+
+`Flip Vertical`은 행 크기를 유지하면서 위아래 순서만 뒤집습니다. `Repeat Last Frame When Idle`은 새 캡처가 없을 때 마지막 프레임을 반복합니다. 프로세스 오류는 `Last Error`와 경고 로그에 표시되며, 추가 출력은 `Log Ffmpeg Output`으로 확인할 수 있습니다. H.264 압축과 색상 변환은 여전히 데이터를 손상시킬 수 있으므로 실제 전송 경로의 디코딩 결과를 확인하세요.
+
 ## 첫 전송 테스트
 
 복잡한 avatar를 동기화하기 전에:

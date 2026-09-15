@@ -1,5 +1,7 @@
 using UnityEngine;
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
+#endif
 
 namespace K13A.TSMP
 {
@@ -49,9 +51,17 @@ namespace K13A.TSMP
             values[QueryOptionByte4] = optionByteCount > 4 ? codec.GetEncoderCodecOptionByte(4) : 0;
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         public static void QueryBridge(UdonBehaviour codec, int width, int height, int blockSize, int fallbackCodecId, int fallbackCapacityBytes, int[] values)
         {
             CodecBridge.QueryEncoder(codec, width, height, blockSize);
+            int[] result = (int[])TSMPBehaviour.GetProgramVariable(codec, TSMPCodec.EncoderQueryValuesFieldName);
+            if (result != null && result.Length == QueryValueCount)
+            {
+                for (int i = 0; i < QueryValueCount; i++)
+                    values[i] = result[i];
+                return;
+            }
             values[QueryCodecId] = CodecBridge.GetEncoderCodecId(codec, fallbackCodecId);
             values[QuerySymbolMode] = CodecBridge.GetEncoderSymbolMode(codec, (int)K13A.TSMP.SymbolMode.Luma4);
             values[QueryPayloadStartRow] = CodecBridge.GetEncoderPayloadStartRow(codec, Luma4Raster.PayloadStartRow);
@@ -64,6 +74,8 @@ namespace K13A.TSMP
             values[QueryOptionByte3] = optionByteCount > 3 ? CodecBridge.GetEncoderCodecOptionByte(codec, 3) : 0;
             values[QueryOptionByte4] = optionByteCount > 4 ? CodecBridge.GetEncoderCodecOptionByte(codec, 4) : 0;
         }
+
+#endif
 
         public static bool WriteDirectPayload(TSMPCodec codec, Color32[] pixels, bool pixelsAreBlocks, byte[] payloadBytes, int payloadByteCount, int width, int height, int blockSize)
         {
@@ -78,6 +90,7 @@ namespace K13A.TSMP
             return codec.encoderWriteResult;
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         public static bool WriteBridgePayload(UdonBehaviour codec, int width, int height, int blockSize, Color32[] pixels, bool pixelsAreBlocks, byte[] payloadBytes, int payloadByteCount)
         {
             if (codec == null)
@@ -85,5 +98,6 @@ namespace K13A.TSMP
 
             return CodecBridge.WritePreparedEncoderPayload(codec, pixels, pixelsAreBlocks, payloadBytes, payloadByteCount);
         }
+#endif
     }
 }

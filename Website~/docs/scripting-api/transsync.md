@@ -21,32 +21,29 @@ The field must be discoverable by `TSMPSetup`. After adding or removing a `[Tran
 | --- | --- | --- | --- |
 | `Key` | `string` | `null` | Stable identifier used to calculate the variable hash. If omitted, TSMP uses the field name. Sender and receiver fields must use the same key, network ID, and value type to match. |
 | `Direction` | `NetworkSyncDirection` | `SendReceive` | Controls whether the setup process puts this field in the encoder binding table, the decoder binding table, or both. Use this to separate source fields from receive/display fields. |
-| `Priority` | `int` | `0` | Stored in the generated receiver binding table as an ordering hint for tooling and future scheduling. The current runtime does not use it to throttle or reorder variable writes. |
-| `SendOnChange` | `bool` | `true` | Metadata for change-based sending. It is accepted by the attribute but the current encoder still samples bound fields during encode. Do not rely on it as a runtime bandwidth limiter. |
-| `MinSendInterval` | `float` | `0` | Metadata for rate-limited sending. It is accepted by the attribute but the current encoder does not enforce per-field intervals. Use component-level logic or packed `byte[]` flags when you need custom pacing. |
+| `Priority` | `int` | `0` | Higher numbers are considered first across all automatic TransSync fields in this encoder. Fields that do not fit are deferred, not truncated. |
+| `SendOnChange` | `bool` | `true` | Sends the first sample, then samples whose encoded contents differ from the last successful output. Unchanged-value refresh is controlled by the encoder. `false` sends whenever the minimum interval permits. |
+| `MinSendInterval` | `float` | `0` | Minimum seconds between successful outputs for this field, using unscaled real time. `0` adds no interval limit; negative or non-finite values are treated as `0`. |
 | `EnabledBy` | `string` | `null` | Name of a `bool` field or property on the same component. When `Apply Setup` builds bindings and the member is false, this field is omitted from the generated binding table. |
 
 Use a clear, stable key such as `transform.packed`, `animator.bytes`, or `counter.value`. Do not use a key that changes at runtime.
 
 ### `Key`
 
-`Key` is the wire identity of the field. It lets two different field names synchronize as the same variable:
+The hash includes the component's fully qualified C# type name and the key. Different field names on the same component type can therefore share an identity, but the same key on different component types does not produce the same hash.
 
 ```csharp
-public class ChatInput : TSMPNetworkBehaviour
+public class ChatChannel : TSMPNetworkBehaviour
 {
     [TransSync("chat.text", Direction = NetworkSyncDirection.SendOnly)]
     public string outgoingText;
-}
 
-public class ChatOutput : TSMPNetworkBehaviour
-{
     [TransSync("chat.text", Direction = NetworkSyncDirection.ReceiveOnly)]
     public string incomingText;
 }
 ```
 
-Both fields use `chat.text`, so TSMP gives them the same variable hash. Keep this key stable after publishing a world. If you rename or change the key, run `Apply Setup` again and make sure all senders and receivers are updated together.
+Use the same component type and matching Network ID on both ends. Keep the key stable, and regenerate bindings after changing it.
 
 ### `Direction`
 
@@ -62,13 +59,31 @@ For a loopback test such as `instance A encoder -> stream -> instance A decoder`
 
 ### `Priority`, `SendOnChange`, and `MinSendInterval`
 
-These options describe intended send policy, but they are not a per-field scheduler in the current runtime.
+These options schedule automatic variable writes in both ordinary Unity and Udon. They do not change the receiver's interpolation or apply to manual Writer calls and RPCs.
 
-- `Priority` is recorded in receiver bindings and can be used by tools or future scheduler work.
-- `SendOnChange` does not currently stop the encoder from sampling the field each encode.
-- `MinSendInterval` does not currently throttle that field by time.
+```csharp
+[TransSync("status", Priority = 10, SendOnChange = true, MinSendInterval = 0.1f)]
+public string status;
 
-When you need real bandwidth control today, put your own logic in `TSMPBeforeEncode()` and write either an unchanged value, an empty packet, or a packed `byte[]` with flags. For high-frequency data, one packed field is usually cheaper and easier to control than many scalar fields.
+[TransSync("meter", SendOnChange = false, MinSendInterval = 0.05f)]
+public float meter;
+```
+
+- `status` sends its initial value immediately, then sends changed contents at most 10 times per second. Several changes during a waiting interval are coalesced into the latest value.
+- `meter` sends at most 20 times per second even when unchanged. The encoder frame rate and available payload capacity may reduce that rate further.
+- Change detection compares serialized bytes, including array elements. Editing a `byte[]` in place is detected; replacing it with an equal array is not a change. Floating-point values use encoded precision, not an epsilon.
+- Higher priorities are scheduled first across components. Equal priorities rotate after successful frames. Persistent high-priority traffic can still starve lower priorities; priority does not create more capacity.
+- A queued RPC is written before automatic variables. A field that cannot fit is counted in **Deferred Variables** and retried with its current value in a later frame. An individual field is never split or truncated.
+- Snapshots and interval clocks advance only after successful output. Serialization failures, failed codec writes and deferred fields do not consume their send state.
+- When no field is due and no RPC is queued, no new frame is written. The existing output texture remains displayed, without a no-data error.
+
+#### Refresh and video loss
+
+The encoder's **Trans Sync Refresh Interval** (`transSyncRefreshInterval`) defaults to **1 second**. It resends unchanged values so a lost final update or a newly connected receiver can recover. A field's `MinSendInterval` still applies; a 2-second minimum is never bypassed by a 1-second refresh.
+
+Set refresh to `0` for strict change-only sending. In that mode, a lost update or late join can leave a value unavailable until it changes again. Refresh is best-effort retransmission, not an acknowledgement or delivery guarantee.
+
+To retain the previous every-encode sending behavior for a field, use `SendOnChange = false, MinSendInterval = 0`. Use an RPC for events that must not be coalesced as state.
 
 ### `EnabledBy`
 
@@ -115,7 +130,7 @@ For high-frequency data, prefer packed `byte[]` fields.
 
 ## Binding rebuilds
 
-`Key`, `Direction`, value type, and `EnabledBy` affect generated bindings. After changing any of them, run `Apply Setup` on `TSMPSetup`. In uploaded VRChat worlds, TSMP uses those generated tables instead of runtime reflection.
+`Key`, `Direction`, value type, `EnabledBy`, `Priority`, `SendOnChange`, and `MinSendInterval` affect generated bindings. After changing any of them, run `Apply Setup` on `TSMPSetup`. In uploaded VRChat worlds, TSMP uses those generated tables instead of runtime reflection.
 
 ## Payload advice
 

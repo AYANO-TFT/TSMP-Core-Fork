@@ -4,9 +4,11 @@ using K13A.TSMP.Udon;
 using UnityEditor;
 using UnityEditor.Callbacks;
 using UnityEngine;
+#if UDONSHARP
 using UdonSharp;
 using UdonSharpEditor;
 using VRC.Udon;
+#endif
 
 namespace K13A.TSMP.Editor
 {
@@ -28,8 +30,10 @@ namespace K13A.TSMP.Editor
 
         static TransSyncBindingBuilder()
         {
+#if UDONSHARP
             UdonProxySyncBridge.SyncAction = SyncUdonProxy;
             UdonProxySyncBridge.ResolveProxyAction = ResolveUdonProxy;
+#endif
             EditorApplication.hierarchyChanged -= QueueAutomaticRebuild;
             EditorApplication.hierarchyChanged += QueueAutomaticRebuild;
             Undo.postprocessModifications -= OnPostprocessModifications;
@@ -250,6 +254,21 @@ namespace K13A.TSMP.Editor
         {
             var usedIds = new HashSet<ushort>();
             var idOwners = new Dictionary<ushort, string>();
+            for (int i = 0; i < behaviours.Length;)
+            {
+                if (behaviours[i] == null)
+                {
+                    i++;
+                    continue;
+                }
+
+                int end = FindNextObjectGroupIndex(behaviours, i, behaviours[i].transform);
+                ushort requestedId = ResolveRequestedNetworkId(behaviours, i, end);
+                if (requestedId != 0)
+                    usedIds.Add(requestedId);
+                i = end;
+            }
+
             int assignedCount = 0;
             int index = 0;
 
@@ -325,7 +344,7 @@ namespace K13A.TSMP.Editor
             if (requestedId == 0)
                 return AllocateNetworkId(usedIds);
 
-            if (!usedIds.Contains(requestedId))
+            if (!idOwners.ContainsKey(requestedId))
                 return requestedId;
 
             string ownerPath;
@@ -499,12 +518,17 @@ namespace K13A.TSMP.Editor
                 return false;
 
             var targets = new List<Component>();
+#if UDONSHARP
             var udonTargets = new List<UdonBehaviour>();
+#endif
             var networkIds = new List<ushort>();
             var variableHashes = new List<uint>();
             var valueTypes = new List<byte>();
             var fieldNames = new List<string>();
             var directions = new List<int>();
+            var priorities = new List<int>();
+            var sendOnChange = new List<bool>();
+            var minSendIntervals = new List<float>();
             var collisions = new Dictionary<BindingKey, BindingOwner>();
             TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
 
@@ -546,23 +570,33 @@ namespace K13A.TSMP.Editor
                     collisions.Add(key, current);
 
                     targets.Add(behaviour);
+#if UDONSHARP
                     udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
+#endif
                     networkIds.Add(networkId);
                     variableHashes.Add(variableHash);
                     valueTypes.Add((byte)valueType);
                     fieldNames.Add(field.Name);
                     directions.Add((int)sync.Direction);
+                    priorities.Add(sync.Priority);
+                    sendOnChange.Add(sync.SendOnChange);
+                    minSendIntervals.Add(TransSyncSendScheduler.NormalizeInterval(sync.MinSendInterval));
                 }
             }
 
             Undo.RecordObject(encoder, "Assign TSMP encoder bindings");
             SetComponentArrayFieldValue(encoder, FieldBindingTargets, targets);
+#if UDONSHARP
             SetFieldValue(encoder, FieldBindingUdonTargets, udonTargets.ToArray());
+#endif
             SetFieldValue(encoder, FieldBindingNetworkIds, networkIds.ToArray());
             SetFieldValue(encoder, FieldBindingVariableHashes, variableHashes.ToArray());
             SetFieldValue(encoder, FieldBindingValueTypes, valueTypes.ToArray());
             SetFieldValue(encoder, FieldBindingFieldNames, fieldNames.ToArray());
             SetFieldValue(encoder, FieldBindingDirections, directions.ToArray());
+            SetFieldValue(encoder, FieldBindingPriorities, priorities.ToArray());
+            SetFieldValue(encoder, nameof(TSMPEncoder.bindingSendOnChange), sendOnChange.ToArray());
+            SetFieldValue(encoder, nameof(TSMPEncoder.bindingMinSendIntervals), minSendIntervals.ToArray());
             EditorUtility.SetDirty(encoder);
             bindingCount = targets.Count;
             return true;
@@ -574,7 +608,9 @@ namespace K13A.TSMP.Editor
                 return 0;
 
             var targets = new List<Component>();
+#if UDONSHARP
             var udonTargets = new List<UdonBehaviour>();
+#endif
             var networkIds = new List<ushort>();
             var variableHashes = new List<uint>();
             var valueTypes = new List<byte>();
@@ -623,7 +659,9 @@ namespace K13A.TSMP.Editor
                     collisions.Add(key, current);
 
                     targets.Add(behaviour);
+#if UDONSHARP
                     udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
+#endif
                     networkIds.Add(networkId);
                     variableHashes.Add(variableHash);
                     valueTypes.Add((byte)valueType);
@@ -633,12 +671,18 @@ namespace K13A.TSMP.Editor
                 }
 
                 if (targets.Count == targetStartCount)
-                    AddRpcOnlyTarget(behaviour, networkId, targets, udonTargets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
+                    AddRpcOnlyTarget(behaviour, networkId, targets,
+#if UDONSHARP
+                        udonTargets,
+#endif
+                        networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
             }
 
             Undo.RecordObject(decoder, "Rebuild TSMP TransSync bindings");
             SetComponentArrayFieldValue(decoder, FieldBindingTargets, targets);
+#if UDONSHARP
             SetFieldValue(decoder, FieldBindingUdonTargets, udonTargets.ToArray());
+#endif
             SetFieldValue(decoder, FieldBindingNetworkIds, networkIds.ToArray());
             SetFieldValue(decoder, FieldBindingVariableHashes, variableHashes.ToArray());
             SetFieldValue(decoder, FieldBindingValueTypes, valueTypes.ToArray());
@@ -654,7 +698,9 @@ namespace K13A.TSMP.Editor
             TSMPNetworkBehaviour behaviour,
             ushort networkId,
             List<Component> targets,
+#if UDONSHARP
             List<UdonBehaviour> udonTargets,
+#endif
             List<ushort> networkIds,
             List<uint> variableHashes,
             List<byte> valueTypes,
@@ -663,7 +709,9 @@ namespace K13A.TSMP.Editor
             List<int> priorities)
         {
             targets.Add(behaviour);
+#if UDONSHARP
             udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
+#endif
             networkIds.Add(networkId);
             variableHashes.Add(0u);
             valueTypes.Add((byte)NetworkFrameProtocol.ValueTypeUnsupported);
@@ -807,13 +855,21 @@ namespace K13A.TSMP.Editor
             return false;
         }
 
+#if UDONSHARP
         private static UdonBehaviour GetBackingUdonBindingTarget(TSMPNetworkBehaviour behaviour)
         {
             if (behaviour == null)
                 return null;
 
-            return UdonSharpEditorUtility.GetBackingUdonBehaviour(behaviour);
+            Component component = behaviour;
+            UdonSharpBehaviour proxy = component as UdonSharpBehaviour;
+            if (proxy == null)
+                return null;
+
+            return UdonSharpEditorUtility.GetBackingUdonBehaviour(proxy);
         }
+
+#endif
 
         private static bool SameArray(System.Array current, List<Component> next)
         {
@@ -864,6 +920,7 @@ namespace K13A.TSMP.Editor
             UdonProxySyncBridge.Sync(component);
         }
 
+#if UDONSHARP
         private static void SyncUdonProxy(Component component)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
@@ -890,6 +947,8 @@ namespace K13A.TSMP.Editor
 
             return UdonSharpEditorUtility.GetProxyBehaviour(behaviour);
         }
+
+#endif
 
         private static object GetFieldValue(Component target, string fieldName)
         {

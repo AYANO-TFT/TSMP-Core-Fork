@@ -74,3 +74,7 @@ Available outside `COMPILER_UDONSHARP`:
 | `OnTSMPEncoderWritePayload()` | Calls `WriteEncoderPayload` and stores the result. |
 
 The encoder uses this bridge so optional codec packages can be called without hard-coding codec classes.
+
+The Udon Encoder queries once per encoding attempt, so changing options on the same codec instance updates its capacity, payload row and header options together. Getters should be inexpensive and side-effect-free. A query result is reused within that attempt, not across subsequent encodes.
+
+`OnTSMPEncoderQuery()` also populates `encoderQueryValues`, a reused `int[10]`: codec ID, symbol mode, payload start row, capacity in bytes, option count, then five option bytes. The bridge reads this array in one call. Treat it as a read-only result that changes on the next query, not as persistent configuration. Existing individual result fields remain available; custom codecs continue to override the same getters and need no codec-specific invalidation API.

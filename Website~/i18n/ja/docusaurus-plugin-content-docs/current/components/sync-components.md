@@ -81,9 +81,25 @@ TSMP に送信するオブジェクトにこれらのコンポーネントを追
 
 ## タイムライン同期
 
-`TSMPNetworkTimelineSync` またはタイムラインの再生状態には `PlayableDirector` を使用します。
+`TSMPNetworkTimelineSync` は `PlayableDirector` の Timeline 再生状態と時刻を同期します。
 
 受信機が再生/一時停止およびタイムライン時間に従う必要がある場合に使用します。送信者と受信者の間でディレクターのセットアップの一貫性を保ちます。
+
+両側に Timeline アセットを設定した `PlayableDirector` を指定してください。空欄の場合は同じ GameObject から Director を探します。Timeline の内容、長さ、トラックのバインディング、Wrap Mode、Update Mode は送信されないため、両側で一致させてください。
+
+| Receive Interpolation | 動作 |
+| --- | --- |
+| `None` | 受信パケットを無視し、進行中の補正を取り消します。ローカル再生自体は停止しません。 |
+| `Discrete` | 再生状態を即座に適用し、時間差が `Time Apply Threshold`（秒）を超えた場合に位置を合わせます。 |
+| `Continuous` | パケット間も `Continuous Interpolation Rate` に従って再生時刻のずれを滑らかに補正します。ループ境界では短い方向に補正します。 |
+
+最初のパケットと再生状態が変わるパケットでは、閾値に関係なく正確な位置を適用します。一時停止中の位置も即座に適用します。Stop パケットを繰り返し受け取っても Director の graph は再作成しません。Manual Update Mode の場合は受信位置だけを補正し、再生時刻を自動では進めません。Continuous は映像配信の遅延を取り除いたり、Timeline Signal を個別に同期したりする機能ではありません。
+
+通常の Unity では Director の実際の再生状態を読み取ります。一時停止中に時間を変更しても再生中とは判断せず、同じ時間を二度取得しても一時停止とは判断しません。
+
+VRChat では Director を直接呼び出さず、送信側の `TSMPNetworkTimelineSync.Play()`、`Pause()`、`Resume()`、`Stop()` で制御してください。Udon には Director の再生状態や PlayableGraph を取得する API がないため、`playOnAwake` を初期状態としてこれらのコマンドを追跡します。外部スクリプトによる直接操作やタイムラインの自動終了は確実には検出できません。シーケンス終了時には意図に応じて `Stop()` または `Pause()` を呼び出してください。再生時間は引き続き Director から取得します。
+
+[Scripting API の Timeline 制御](../scripting-api/network-components.md#timeline-controls)も参照してください。
 
 ## ゲームオブジェクトの切り替え
 

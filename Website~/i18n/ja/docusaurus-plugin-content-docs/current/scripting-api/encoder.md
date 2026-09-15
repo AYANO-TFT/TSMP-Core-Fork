@@ -19,7 +19,8 @@ title: TSMPEncoder API
 | `selectedCodec` | ペイロード バイトをピクセルに変換するために使用されるコーデック コンポーネント。 Luma4 はデフォルトのコーデックです。 |
 | `useBlockSymbolTexture` | 選択したコーデックがサポートしている場合は、コーデック ブロック テクスチャ パスを使用します。 |
 | `networkBehaviours` | `[TransSync]` データおよび TSMP RPC メッセージに寄与する可能性のあるバインドされた動作。 |
-| `transRpcRepeatFrames` | キューに入れられた RPC を表示し続ける追加フレームの数。損失の多いキャプチャ パスの場合は、これを増やします。 |
+| `transRpcRepeatFrames` | キュー内の TransRPC を含むフレームの出力に成功する総回数です。初回送信を含めて 1-16 回で、エンコードに失敗した場合は回数を消費しません。 |
+| `transSyncRefreshInterval` | 変化のない自動 TransSync フィールドを再送する秒数（既定 1）。0 は再送を無効にし、フィールドごとの最小間隔は引き続き適用します。 |
 | `streamId` | フレームヘッダーに書き込まれる論理ストリーム識別子。 |
 | `layoutId` | フレームヘッダーに書き込まれる論理レイアウト識別子。 |
 
@@ -33,6 +34,7 @@ title: TSMPEncoder API
 | `QueuedRpcCount` / `queuedRpcCount` | エンコードを待機している RPC メッセージの数。 |
 | `PayloadBytes` / `payloadBytes` | 最後のペイロードに書き込まれたバイト数。 |
 | `usablePayloadBytes` | フレームヘッダーとコーデックレイアウト後のペイロード容量が考慮されます。 |
+| `deferredVariableCount` | 直近の試行で容量不足により見送った送信対象フィールド数です。後の試行で再送します。 |
 | `messageCount` | 最後のネットワーク フレーム内の可変メッセージと RPC メッセージ。 |
 | `variableMessageCount` | 変数状態メッセージの数。 |
 | `rpcMessageCount` | RPC メッセージの数。 |
@@ -55,6 +57,8 @@ public void EncodeNow()
 - 編集時プレビュー ツール。
 
 `EncodeNow()` 可変データもキューイングされた RPC データもない場合はフレームを書き込まずにリターンします。
+
+フィールドが変化していない場合や最小間隔の待機中は、新しいフレームを生成しないことがあります。エラーではなく、フレーム番号も増えません。`ResetFrameIndex()` は送信スナップショットも初期化し、次の試行で初期状態を再送します。
 
 ## `ResetFrameIndex()`
 
@@ -84,6 +88,8 @@ public void QueueTransRpc(int networkId, uint rpcHash, string methodName)
 ネットワーク ID とメソッド ハッシュによって TSMP RPC をキューに入れます。これは、`TSMPNetworkBehaviour.SendTransRPC()` によって使用されるエンコーダ側のエントリ ポイントです。
 
 キューは `transRpcRepeatFrames` に従って後続のフレームに書き込まれるため、単一のイベントはテクスチャ パスでの短いフレーム ドロップに耐えることができます。
+
+これは繰り返し送信であり、受信確認による配信保証ではありません。イベントを含むすべてのフレームが失われると、RPC も失われます。Decoder は Stream ID、Network ID、メソッドハッシュ、イベント ID を使って直近 32 件の異なるイベントを記憶し、重複実行を防ぎます。1 つの Decoder で複数の送信元を受信する場合は、それぞれ異なる `streamId` を使用してください。送信元を再起動して同じ Stream ID とイベント ID を再利用すると、以前のキャッシュと衝突する可能性があります。
 
 ## 生の変数ライター API
 
