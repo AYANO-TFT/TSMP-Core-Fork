@@ -17,6 +17,7 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _clearAfterEncode;
         private SerializedProperty _useBlockSymbolTexture;
         private SerializedProperty _transRpcRepeatFrames;
+        private SerializedProperty _transSyncRefreshInterval;
         private SerializedProperty _selectedCodec;
         private SerializedProperty _codecId;
         private SerializedProperty _maxPayloadBytes;
@@ -42,6 +43,7 @@ namespace K13A.TSMP.Editor
             _clearAfterEncode = serializedObject.FindProperty("clearAfterEncode");
             _useBlockSymbolTexture = serializedObject.FindProperty("useBlockSymbolTexture");
             _transRpcRepeatFrames = serializedObject.FindProperty("transRpcRepeatFrames");
+            _transSyncRefreshInterval = serializedObject.FindProperty("transSyncRefreshInterval");
             _selectedCodec = serializedObject.FindProperty("selectedCodec");
             _codecId = serializedObject.FindProperty("codecId");
             _maxPayloadBytes = serializedObject.FindProperty("maxPayloadBytes");
@@ -110,6 +112,7 @@ namespace K13A.TSMP.Editor
             InspectorUI.Property(_layoutId);
             InspectorUI.Property(_autoBuildVariablesFromBindings);
             InspectorUI.Property(_transRpcRepeatFrames);
+            InspectorUI.Property(_transSyncRefreshInterval);
 
             if (_networkBehaviours != null)
             {
@@ -123,6 +126,7 @@ namespace K13A.TSMP.Editor
                 TSMPEncoder encoder = (TSMPEncoder)target;
                 InspectorUI.ReadOnlyInt("Binding Count", encoder.bindingCount);
                 InspectorUI.ReadOnlyInt("Auto Variables", encoder.autoVariableCount);
+                InspectorUI.ReadOnlyInt("Deferred Variables", encoder.deferredVariableCount);
             }
             InspectorUI.EndSection();
         }

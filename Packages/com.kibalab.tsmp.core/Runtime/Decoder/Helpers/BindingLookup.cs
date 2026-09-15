@@ -36,6 +36,25 @@ namespace K13A.TSMP
             return true;
         }
 
+        public static bool MatchesBindings(ushort[] lookupNetworkIds, uint[] lookupVariableHashes,
+            int[] lookupBindingIndices, int lookupCount, ushort[] networkIds, uint[] variableHashes, int targetCount)
+        {
+            int count = BindingTable.ClampNetworkHashCount(targetCount, networkIds, variableHashes);
+            if (lookupCount != count || lookupNetworkIds == null || lookupNetworkIds.Length != count ||
+                lookupVariableHashes == null || lookupVariableHashes.Length != count ||
+                lookupBindingIndices == null || lookupBindingIndices.Length != count)
+                return false;
+            for (int i = 0; i < count; i++)
+            {
+                int index = lookupBindingIndices[i];
+                if (index < 0 || index >= count)
+                    return false;
+                if (lookupNetworkIds[i] != networkIds[index] || lookupVariableHashes[i] != variableHashes[index])
+                    return false;
+            }
+            return true;
+        }
+
         public static void Build(
             ushort[] lookupNetworkIds,
             uint[] lookupVariableHashes,

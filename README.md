@@ -18,10 +18,12 @@ https://vpm.kiba.red/
 
 ## クイック スタート
 
+VRCSDK のない通常の Unity では、通常の Unity 対応を含む Core と Luma4 を UPM の **Add package from disk** でインストールしてください。両環境で下記の同じプレハブを使い、コンポーネントとバインディングは自動準備されます。`Assets/TSMPGenerated` をシーンと一緒に管理してください。Windows x64 Mono を検証済みです。リフレクションと stripping の制限はインストールガイドを参照してください。
+
 1. `Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab` をシーンに配置します。
 2. 同期したいオブジェクトに必要な `TSMPNetwork*` コンポーネントを追加します。
 3. `TSMPSetup` で `Refresh Codecs` を押し、使用する codec を選択します。
-4. `Apply Setup` を実行し、Encoder、Decoder、codec handler、binding table を更新します。
+4. Setup で入出力とコーデック設定を確認します。コンポーネントとバインディングは自動更新されます。
 5. Encoder の出力 RenderTexture を配信し、同じ TSMP 映像を Decoder の入力 RenderTexture に入れます。
 
 ## 主な機能
@@ -42,7 +44,7 @@ https://kibalab.github.io/TSMP-Core/
 
 ## リリース状態
 
-TSMP は現在 beta 段階です。パッケージ バージョンと Git タグは `v0.0.x-beta.x` 形式を使用します。
+TSMP Core 0.2.0 はベータではない正式リリースです。リリースタグは `v0.x.y` 形式を使用し、1.0 より前は公開 API が変更される場合があります。
 
 ## ライセンス
 

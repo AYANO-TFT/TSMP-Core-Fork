@@ -35,6 +35,7 @@ namespace K13A.TSMP
         public const string EncoderCodecOptionByte3FieldName = nameof(encoderCodecOptionByte3);
         public const string EncoderCodecOptionByte4FieldName = nameof(encoderCodecOptionByte4);
         public const string OnEncoderQueryEventName = nameof(OnTSMPEncoderQuery);
+        public const string EncoderQueryValuesFieldName = nameof(encoderQueryValues);
         public const string OnEncoderWritePayloadEventName = nameof(OnTSMPEncoderWritePayload);
         public const int EncoderCodecOptionByteCapacity = 5;
 
@@ -67,6 +68,7 @@ namespace K13A.TSMP
         [HideInInspector] public int encoderCodecOptionByte3;
         [HideInInspector] public int encoderCodecOptionByte4;
         [HideInInspector] public bool encoderWriteResult;
+        [HideInInspector] public int[] encoderQueryValues;
 
         public virtual void ApplyDecodeOptions()
         {
@@ -149,6 +151,17 @@ namespace K13A.TSMP
             encoderPayloadStartRow = GetEncoderPayloadStartRow(encoderRequestWidth, encoderRequestBlockSize);
             encoderPayloadCapacityBytes = GetEncoderPayloadCapacityBytes(encoderRequestWidth, encoderRequestHeight, encoderRequestBlockSize);
             SetEncoderCodecOptionFields(GetEncoderCodecOptionByteCount());
+            encoderQueryValues = EncoderCodecRuntime.EnsureQueryValues(encoderQueryValues);
+            encoderQueryValues[EncoderCodecRuntime.QueryCodecId] = encoderCodecId;
+            encoderQueryValues[EncoderCodecRuntime.QuerySymbolMode] = encoderSymbolMode;
+            encoderQueryValues[EncoderCodecRuntime.QueryPayloadStartRow] = encoderPayloadStartRow;
+            encoderQueryValues[EncoderCodecRuntime.QueryPayloadCapacityBytes] = encoderPayloadCapacityBytes;
+            encoderQueryValues[EncoderCodecRuntime.QueryOptionByteCount] = encoderCodecOptionByteCount;
+            encoderQueryValues[EncoderCodecRuntime.QueryOptionByte0] = encoderCodecOptionByte0;
+            encoderQueryValues[EncoderCodecRuntime.QueryOptionByte1] = encoderCodecOptionByte1;
+            encoderQueryValues[EncoderCodecRuntime.QueryOptionByte2] = encoderCodecOptionByte2;
+            encoderQueryValues[EncoderCodecRuntime.QueryOptionByte3] = encoderCodecOptionByte3;
+            encoderQueryValues[EncoderCodecRuntime.QueryOptionByte4] = encoderCodecOptionByte4;
         }
 
         public void OnTSMPEncoderWritePayload()

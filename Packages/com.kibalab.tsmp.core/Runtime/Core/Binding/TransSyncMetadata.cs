@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Reflection;
 using K13A.TSMP.Udon;
 using UnityEngine;
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
+#endif
 
 namespace K13A.TSMP
 {
@@ -152,13 +154,17 @@ namespace K13A.TSMP
     public sealed class TransSyncBindingSnapshot
     {
         public Component[] Targets;
+#if UDONSHARP || COMPILER_UDONSHARP
         public UdonBehaviour[] UdonTargets;
+#endif
         public ushort[] NetworkIds;
         public uint[] VariableHashes;
         public byte[] ValueTypes;
         public string[] FieldNames;
         public int[] Directions;
         public int[] Priorities;
+        public bool[] SendOnChange;
+        public float[] MinSendIntervals;
     }
 
     public static class TransSyncBindingSnapshotBuilder
@@ -170,26 +176,38 @@ namespace K13A.TSMP
             System.Array.Sort(behaviours, CompareNetworkBehaviours);
 
             List<Component> targets = new List<Component>();
+#if UDONSHARP || COMPILER_UDONSHARP
             List<UdonBehaviour> udonTargets = new List<UdonBehaviour>();
+#endif
             List<ushort> networkIds = new List<ushort>();
             List<uint> variableHashes = new List<uint>();
             List<byte> valueTypes = new List<byte>();
             List<string> fieldNames = new List<string>();
             List<int> directions = new List<int>();
             List<int> priorities = new List<int>();
+            List<bool> sendOnChange = new List<bool>();
+            List<float> minSendIntervals = new List<float>();
 
             for (int i = 0; i < behaviours.Length; i++)
-                AddBehaviour(behaviours[i], avatarPoseSyncs, receive, targets, udonTargets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
+                AddBehaviour(behaviours[i], avatarPoseSyncs, receive, targets,
+#if UDONSHARP || COMPILER_UDONSHARP
+                    udonTargets,
+#endif
+                    networkIds, variableHashes, valueTypes, fieldNames, directions, priorities, sendOnChange, minSendIntervals);
 
             TransSyncBindingSnapshot snapshot = new TransSyncBindingSnapshot();
             snapshot.Targets = targets.ToArray();
+#if UDONSHARP || COMPILER_UDONSHARP
             snapshot.UdonTargets = udonTargets.ToArray();
+#endif
             snapshot.NetworkIds = networkIds.ToArray();
             snapshot.VariableHashes = variableHashes.ToArray();
             snapshot.ValueTypes = valueTypes.ToArray();
             snapshot.FieldNames = fieldNames.ToArray();
             snapshot.Directions = directions.ToArray();
             snapshot.Priorities = priorities.ToArray();
+            snapshot.SendOnChange = sendOnChange.ToArray();
+            snapshot.MinSendIntervals = minSendIntervals.ToArray();
             return snapshot;
         }
 
@@ -198,13 +216,17 @@ namespace K13A.TSMP
             TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs,
             bool receive,
             List<Component> targets,
+#if UDONSHARP || COMPILER_UDONSHARP
             List<UdonBehaviour> udonTargets,
+#endif
             List<ushort> networkIds,
             List<uint> variableHashes,
             List<byte> valueTypes,
             List<string> fieldNames,
             List<int> directions,
-            List<int> priorities)
+            List<int> priorities,
+            List<bool> sendOnChange,
+            List<float> minSendIntervals)
         {
             if (behaviour == null)
                 return;
@@ -231,39 +253,55 @@ namespace K13A.TSMP
                     continue;
 
                 targets.Add(behaviour);
+#if UDONSHARP || COMPILER_UDONSHARP
                 udonTargets.Add(ComponentReflection.GetBackingUdonBehaviour(behaviour));
+#endif
                 networkIds.Add(networkId);
                 variableHashes.Add(field.VariableHash);
                 valueTypes.Add((byte)field.ValueType);
                 fieldNames.Add(field.FieldInfo.Name);
                 directions.Add((int)field.Sync.Direction);
                 priorities.Add(field.Sync.Priority);
+                sendOnChange.Add(field.Sync.SendOnChange);
+                minSendIntervals.Add(TransSyncSendScheduler.NormalizeInterval(field.Sync.MinSendInterval));
             }
 
             if (receive && targets.Count == targetStartCount)
-                AddRpcOnlyTarget(behaviour, networkId, targets, udonTargets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
+                AddRpcOnlyTarget(behaviour, networkId, targets,
+#if UDONSHARP || COMPILER_UDONSHARP
+                    udonTargets,
+#endif
+                    networkIds, variableHashes, valueTypes, fieldNames, directions, priorities, sendOnChange, minSendIntervals);
         }
 
         private static void AddRpcOnlyTarget(
             TSMPNetworkBehaviour behaviour,
             ushort networkId,
             List<Component> targets,
+#if UDONSHARP || COMPILER_UDONSHARP
             List<UdonBehaviour> udonTargets,
+#endif
             List<ushort> networkIds,
             List<uint> variableHashes,
             List<byte> valueTypes,
             List<string> fieldNames,
             List<int> directions,
-            List<int> priorities)
+            List<int> priorities,
+            List<bool> sendOnChange,
+            List<float> minSendIntervals)
         {
             targets.Add(behaviour);
+#if UDONSHARP || COMPILER_UDONSHARP
             udonTargets.Add(ComponentReflection.GetBackingUdonBehaviour(behaviour));
+#endif
             networkIds.Add(networkId);
             variableHashes.Add(0u);
             valueTypes.Add((byte)NetworkFrameProtocol.ValueTypeUnsupported);
             fieldNames.Add(string.Empty);
             directions.Add((int)NetworkSyncDirection.ReceiveOnly);
             priorities.Add(0);
+            sendOnChange.Add(false);
+            minSendIntervals.Add(0f);
         }
 
         private static int CompareNetworkBehaviours(TSMPNetworkBehaviour left, TSMPNetworkBehaviour right)
