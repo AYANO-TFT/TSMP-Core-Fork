@@ -23,7 +23,7 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public int notifiedChangeCounter = -1;
 
         [HideInInspector]
-        [TransSync("selection.slots")]
+        [TransSync("selection.slots", SendOnChange = false)]
 #if UDONSHARP
         [FieldChangeCallback(nameof(SelectionBytes))]
 #endif
