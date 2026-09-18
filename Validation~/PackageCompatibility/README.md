@@ -1,8 +1,10 @@
 # Codec Preparation API Package Compatibility
 
+The candidates were published on 2026-09-18. See [public download, UPM/VPM installation and runtime results](PUBLISHED-20260918.md). The original candidate workflow below is retained for provenance; the isolated SDK minimum matrix is still open.
+
 Tracks Core #28 and the dependent Luma4 #2, RGB16 #1, RGB20 #1 and Color256 #1 issues. Documentation implementation is tracked in Core #21.
 
-These are **unpublished candidates**. Updating a manifest and validating a Git archive does not publish a package or verify a public repository installation. Keep the release issues open until the final gate below is complete.
+The initial checks covered **unpublished candidates**. Updating a manifest and validating a Git archive does not publish a package or verify a public repository installation. Keep the release issues open until the final gate below is complete.
 
 Recorded checks, known warnings and remaining validation are in [Results](RESULTS.md).
 
