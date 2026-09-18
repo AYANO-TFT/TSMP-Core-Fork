@@ -103,7 +103,7 @@ Compare the original path with the preparation-plus-byte path, not just the cost
 
 Compare exact decoded bytes on clean and perturbed colors, both Y orientations, automatic and explicit sample sizes, partial RGBA output, changing input and missing preparation material. Test the packaged prefab, disable/re-enable and multiple controllers. Build and run a Player to check that both local variants survive; an Editor-only test is insufficient.
 
-LUT allocation is reused, but its contents are refreshed per enabled pass. A stored Texture reference does not freeze a video's pixels. This optimization provides neither cross-frame calibration reuse nor a header/payload snapshot guarantee.
+LUT allocation is reused, but its contents are refreshed per enabled pass. `TSMPDecoder` provides its frozen input snapshot to both preparation and byte shaders. LUT preparation does not take another source snapshot and does not reuse calibration values across decode operations. Custom codec callers must keep their input image stable themselves.
 
 ## Shader include paths
 

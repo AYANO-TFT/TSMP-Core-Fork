@@ -19,6 +19,7 @@ namespace K13A.TSMP.Editor
         {
             "m_Script",
             "networkId",
+            "sendMode",
             "receiveInterpolation",
             "continuousInterpolationRate",
             "transRpcEncoder",
@@ -51,6 +52,7 @@ namespace K13A.TSMP.Editor
         {
             EditorGUILayout.Space(2f);
             DrawNetworkIdProperty();
+            DrawProperty("sendMode");
             NetworkEditorUtil.DrawReceiveProperties(serializedObject, supportsContinuous);
             DrawTransSyncCollisionWarnings();
 #if UDONSHARP

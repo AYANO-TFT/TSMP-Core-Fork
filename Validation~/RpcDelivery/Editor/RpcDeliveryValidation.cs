@@ -81,6 +81,7 @@ public static class RpcDeliveryValidation
             bool wasActive = Target.activeSelf;
             Decoder.lastStreamId = stream;
             typeof(TSMPDecoder).GetField("_payloadBytes", Private).SetValue(Decoder, payload);
+            typeof(TSMPDecoder).GetField("_payloadDataBytes", Private).SetValue(Decoder, payload.Length);
             Check((bool)typeof(TSMPDecoder).GetMethod("ApplyNetworkFrame", Private).Invoke(Decoder, null), Decoder.lastError);
             Check(Decoder.lastRpcCallCount == (duplicate ? 0 : 1), "Unexpected dispatched RPC count for stream " + stream);
             Check(Decoder.skippedDuplicateRpcCount == (duplicate ? 1 : 0), "Unexpected duplicate count");

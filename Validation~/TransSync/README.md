@@ -12,6 +12,7 @@ This feature implements the existing `Priority`, `SendOnChange`, and `MinSendInt
 - Unchanged fields refresh every second by default. Set the encoder's `transSyncRefreshInterval` to zero to disable refresh. Minimum intervals also apply to refresh. This is best-effort recovery, not acknowledgement-based reliability.
 - If nothing is eligible and no RPC is queued, the encoder preserves its output texture and frame index. Manual Writer calls retain their existing behavior and are not change-filtered.
 - Native capture hooks still run once per encoding attempt. In Udon, capture runs once per target with an interval-eligible binding. Existing per-frame component capture remains independent of this scheduler.
+- The component's `sendMode` overrides only change filtering: Default honors field attributes, On Change forces change filtering with refresh, and Always includes unchanged values. Live switches preserve snapshots and interval clocks. Udon caches the mode once per captured target per encode. RPC and manual writes remain independent.
 
 Existing attributes now affect traffic. To retain unconditional per-encode sending for a field, specify `SendOnChange = false, MinSendInterval = 0`. Rebuild bindings after changing attribute options and recompile Udon programs before building a world. Existing Setup preparation remains the entry point; no alternative SDK-free workflow is required.
 
@@ -37,6 +38,8 @@ $vrc = 'F:/Unity/TSMP/Validation-VRC'
 ```
 
 `TransSync` checks the native scheduler, metadata generation and legacy manual writes through the real native Encoder. `TransSyncVm` compiles the Udon client programs and executes the real Encoder bytecode, Udon field/event bridge and Luma4 output in the Editor VM. It does not substitute C# proxy calls for the sender. Timing cases inspect/set the scheduler clock state rather than depending on wall-clock sleeps.
+
+Both suites also check component send mode overrides, live switching, refresh and minimum interval preservation. Native tests cover independent instances sharing metadata, serialized multi-edit and undo. Run `TransSync` in the SDK project as well to check editor proxy mode reads. `EditorEncoding` checks stationary Transform output across all three modes in both editor paths. Recorded results for that addition are in [Component Send Mode](./COMPONENT-SEND-MODE.md).
 
 ## Recorded Results: 2026-09-12
 

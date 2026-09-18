@@ -370,7 +370,7 @@ For **each header or payload byte pass**, the decoder:
 
 Do not prepare in `ApplyDecodeOptions()`: the decoder has not yet assigned all properties for this pass. Do not prepare only in `Start()`, on a codec change, or once per frame. Header and payload passes can use different settings and run at different times.
 
-The shared Texture reference is **not an immutable pixel snapshot**. A video producer can update its pixels while the decoder waits for header readback. Preparation does not freeze the image or guarantee that header and payload came from the same video frame.
+`TSMPDecoder` copies the input into an owned snapshot before the header pass and supplies that snapshot to every preparation and byte pass in the decode operation. Do not modify or release it. Header and payload therefore use the same captured image even when the video producer updates its source texture. The hook itself does not capture an image: integrations that call codecs without `TSMPDecoder` must provide their own stable input.
 
 ### Minimal Luma4 hook
 

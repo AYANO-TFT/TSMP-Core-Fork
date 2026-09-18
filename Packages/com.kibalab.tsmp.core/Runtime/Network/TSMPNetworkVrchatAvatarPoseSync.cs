@@ -1269,15 +1269,24 @@ namespace K13A.TSMP.Udon
                 _recordIndexSlots = ArrayUtil.CreateFilledIntArray(MaxPlayers, -1);
             if (_slotPlayerIds == null || _slotPlayerIds.Length != capacity)
             {
+                if (avatarPool != null)
+                {
+                    for (int i = capacity; i < avatarPool.Length; i++)
+                    {
+                        if (avatarPool[i] != null && avatarPool[i].activeSelf)
+                            avatarPool[i].SetActive(false);
+                    }
+                }
                 _slotPlayerIds = ArrayUtil.ResizeIntArray(_slotPlayerIds, capacity, -1);
                 InvalidateSlotCache();
+                RecountActiveAvatars();
             }
             if (_slotLastSeen == null || _slotLastSeen.Length != capacity)
                 _slotLastSeen = ArrayUtil.ResizeFloatArray(_slotLastSeen, capacity);
-            if (avatarPool == null || avatarPool.Length != capacity)
+            if (avatarPool == null || avatarPool.Length < capacity)
                 avatarPool = VrchatAvatarPool.ResizeGameObjectArray(avatarPool, capacity);
-            if (avatarRigs == null || avatarRigs.Length != capacity)
-                avatarRigs = VrchatAvatarPool.ResizeRigArray(avatarRigs, capacity);
+            if (avatarRigs == null || avatarRigs.Length < avatarPool.Length)
+                avatarRigs = VrchatAvatarPool.ResizeRigArray(avatarRigs, avatarPool.Length);
 
             RecountPoolSize();
         }
@@ -1605,6 +1614,9 @@ namespace K13A.TSMP.Udon
 
         private void RetireStaleAvatars()
         {
+            if (_slotPlayerIds != null && _slotPlayerIds.Length != maxPlayers)
+                InitializeRuntimeArrays();
+
             if (_slotPlayerIds == null || _slotLastSeen == null || staleAvatarSeconds <= 0f)
                 return;
 

@@ -23,6 +23,7 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _codecHandlers;
         private SerializedProperty _applyEveryFrame;
         private SerializedProperty _skipDuplicateFrames;
+        private SerializedProperty _frameWindowSize;
         private SerializedProperty _blockSize;
         private SerializedProperty _sampleSize;
         private SerializedProperty _flipY;
@@ -43,6 +44,7 @@ namespace K13A.TSMP.Editor
             _codecHandlers = serializedObject.FindProperty("codecHandlers");
             _applyEveryFrame = serializedObject.FindProperty("applyEveryFrame");
             _skipDuplicateFrames = serializedObject.FindProperty("skipDuplicateFrames");
+            _frameWindowSize = serializedObject.FindProperty("frameWindowSize");
             _blockSize = serializedObject.FindProperty("blockSize");
             _sampleSize = serializedObject.FindProperty("sampleSize");
             _flipY = serializedObject.FindProperty("flipY");
@@ -89,7 +91,9 @@ namespace K13A.TSMP.Editor
         {
             InspectorUI.BeginSection("Decode");
             InspectorUI.Property(_applyEveryFrame);
-            InspectorUI.Property(_skipDuplicateFrames);
+            EditorGUILayout.PropertyField(_skipDuplicateFrames, new GUIContent("Filter Frames", "Skip duplicate and older frames, with a frame-zero restart exception based on Window Size."));
+            using (new EditorGUI.DisabledScope(!_skipDuplicateFrames.hasMultipleDifferentValues && !_skipDuplicateFrames.boolValue))
+                EditorGUILayout.PropertyField(_frameWindowSize, new GUIContent("Window Size", "Frame count used to recognize a restart at frame zero. Default: 256."));
 
             using (new EditorGUI.DisabledScope(targets.Length != 1))
             {
@@ -158,6 +162,7 @@ namespace K13A.TSMP.Editor
             InspectorUI.ReadOnlyInt("Applied Variables", decoder.lastAppliedVariableCount);
             InspectorUI.ReadOnlyInt("RPC Calls", decoder.lastRpcCallCount);
             InspectorUI.ReadOnlyInt("Skipped Duplicate Frames", decoder.skippedDuplicateFrameCount);
+            InspectorUI.ReadOnlyInt("Skipped Older Frames", decoder.skippedOutOfOrderFrameCount);
             InspectorUI.ReadOnlyText("Last RPC", decoder.lastRpcMethodName);
         }
 

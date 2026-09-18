@@ -2,6 +2,12 @@
 
 ## 0.3.0-beta.2 (Unreleased)
 
+### Added
+
+- Add the shared component-level Send Mode dropdown: Default preserves each TransSync field's SendOnChange setting, On Change enables change filtering with periodic refresh, and Always also sends unchanged values. Mode changes are read live in native Unity and Udon without rebuilding bindings.
+- Preserve minimum send intervals, successful-output state, field eligibility, priority and payload capacity in every mode. Udon reads the mode once per captured target per encode. RPCs, manual Writer calls and the wire format are unchanged.
+- Document Send Mode and its bandwidth/delivery tradeoffs in English, Korean and Japanese.
+
 ### Codec API
 
 - Add `TSMPCodec.PrepareDecode(Texture, Material)` before each header/payload byte pass, with codec-owned linear Float32 calibration LUT allocation, per-pass refresh and lifecycle cleanup. Existing custom codecs can retain the default no-op preparation path.
@@ -11,6 +17,11 @@
 
 ### Fixes
 
+- Remove Setup's redundant Editor output Blit. The encoder alone presents successful frames, including block expansion; failed or skipped encodes no longer trigger a second copy of stale texture data.
+- Reuse decoder payload capacity across shorter frames while bounding all network parsing and diagnostics to the current valid byte count. Reject zero/truncated NetworkFrame payloads before payload readback. Exact-length plugin arguments and independently owned received field arrays are unchanged.
+- Deactivate avatar pool slots above a reduced Max Players limit, clear retired assignments and retain their objects and rigs for reuse when the limit grows. Supplied pool objects are not destroyed; Pool Size includes retained inactive objects.
+- Filter duplicate and older frames within the current stream using wrap-aware UInt32 ordering. Decoder Window Size defaults to 256 frames and is user-configurable: frame zero is also accepted when the previous applied index is at least one window. Track skipped older frames separately.
+- Freeze decoder input in a reusable linear Float32 snapshot so header, calibration and payload passes use the same image. Discard pending readbacks after disable, release owned snapshots and preserve the existing wire format.
 - Preserve RPC queue accounting under reentrant sends and reject events that cannot fit the configured payload. Retransmission remains a finite attempt budget, not guaranteed delivery.
 - Pace FFmpeg output independently of incoming updates while retaining the latest frame.
 - Ignore TransSync reception before value decoding when the target selects None, and clear pending Rigidbody velocities when physics reception is disabled.
@@ -18,6 +29,22 @@
 - Correct Animator drift handling for loop boundaries and non-looping states; read negative state hashes without Udon numeric conversion failures.
 - Preserve integer-sized pixel blocks during output expansion and clear right/bottom remainder pixels for dimensions not divisible by block size.
 - Commit avatar root delta and keepalive state only after successful output through the opt-in `TransSync.SentEvent` callback; guard encoder reentry during callbacks.
+
+### Datagram and receiver compatibility
+
+The datagram and protocol version are unchanged: a 56-byte header followed by the existing payload. Relevant header fields remain:
+
+| Byte range | Field | Encoding |
+| --- | --- | --- |
+| 20..23 | StreamId | UInt32 little-endian |
+| 24..27 | FrameIndex | UInt32 little-endian |
+| 28..31 | TimestampMs | UInt32 little-endian; not used for ordering |
+| 44..49 | Reserved | Six zero bytes |
+| 52..55 | Header CRC32 | UInt32 little-endian; computed over bytes 0..51 |
+
+Window Size is receiver-local; no window or session field is transmitted. Existing senders do not need changes. The existing `skipDuplicateFrames` option now controls both duplicate and older-frame filtering. With filtering disabled, neither order rule is enforced. Changing streams replaces the order baseline after successful application; no retired-stream history is kept.
+
+The zero/window exception is a restart heuristic, not a session identifier: a delayed old zero can trigger a false restart, a missing zero or restart before one window may be missed, and high old frame numbers may appear newer after a reset. RPC event deduplication is unchanged.
 
 Release candidates must be validated and Core published before the dependent codec releases. This heading does not indicate that the version is already available from VPM or GitHub Releases.
 

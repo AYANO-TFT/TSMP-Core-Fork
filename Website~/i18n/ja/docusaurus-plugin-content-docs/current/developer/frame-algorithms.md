@@ -115,10 +115,11 @@ CRC はヘッダー バイト `0..51` に対して計算されます。保存さ
 
 ```text
 Update / decode tick
-  -> read header area from texture
+  -> 入力を decoder 所有のスナップショットへキャプチャ
+  -> スナップショットからヘッダーを読み取る
   -> validate header and CRC
   -> choose codec by codecId
-  -> request payload bytes according to PayloadSize
+  -> 同じスナップショットから PayloadSize 分の payload を取得
   -> decode network frame header
   -> iterate messages
   -> apply variable values or dispatch RPC calls
@@ -138,7 +139,7 @@ ApplyDecodeOptions
        -> 前の LUT キーワードを解除
        -> 必要なら基準シンボルを float LUT に記録
        -> LUT を接続し、バイトシェーダー variant を有効化
-  -> 同じ入力 Texture 参照からバイト Blit
+  -> 準備パスと同じスナップショットからバイト Blit
   -> 復元バイトの GPU readback
 ```
 
@@ -148,7 +149,9 @@ Luma4 は有効サンプルサイズが1より大きい場合に16項目を準�
 
 再利用するのは割り当てであり、フレーム間の値ではありません。有効な各バイトパスで描き直します。リソース不足では従来のシェーダー経路を維持します。コーデックは生成した LUT を所有し、無効化・破棄時に解放します。マテリアルの所有権は別途管理します。
 
-入力は不変のスナップショットではなく Texture 参照です。参照の保持と直前の準備は、ヘッダーと payload の readback 間に映像側がピクセルを更新することを防ぎません。
+`TSMPDecoder` はヘッダーパスの前に、入力を同じサイズの再利用可能な linear `ARGBFloat` RenderTexture へキャプチャします。ヘッダー・キャリブレーション・payload の全パスは処理終了までこの画像を読みます。元画像が更新・差し替えられても異なる時点の画像が混ざりません。必要に応じて処理間でサイズを変更し、無効化・破棄時に解放します。無効化すると処理を取り消し、保留中のコールバックを破棄してから次のデコードを開始できます。キャプチャ失敗時は更新中の元画像へ戻らず処理を拒否します。
+
+デコード試行ごとに画像全体の GPU Blit が1回、スナップショットに1ピクセル16バイトのメモリが必要です。CPU readback や通信形式のフィールドは追加しません。Float32 はサンプリングした入力値に8ビット・half-float の量子化を追加しないための選択です。所有権とリソース条件は [decoder API](../scripting-api/decoder.md#input-snapshot) を参照してください。入力済みの壊れた画像を修復したり、変数・RPC の適用をトランザクションにしたりする機能ではありません。
 
 フック、マテリアル設定、ライフサイクル、フォールバックは[実装ガイド](./codec-implementation.md)、[シェーダーガイド](./codec-shaders.md)、[準備 API](../scripting-api/codec.md#runtime-decode-preparation)を参照してください。
 

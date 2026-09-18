@@ -1,0 +1,5 @@
+PASS
+Full client UdonSharp compile; actual decoder/codec bytecode, VRCGraphics and asynchronous VRC GPU readback callbacks in editor VM
+Unity=2022.3.22f1; GPU=NVIDIA GeForce RTX 4090
+PASS 16 decoder/codec VM changing-source cases, samples 1/4, payload/codec/length changes
+PASS 8 VM cancellation cases: actual component/GameObject disable during header/payload, callbacks while disabled or after early re-enable, restart and snapshot cleanup

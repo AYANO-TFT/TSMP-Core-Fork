@@ -8,7 +8,7 @@ Use `TSMPEncoder` on the sender side. It writes TSMP data into an output render 
 
 Most users configure it through `TSMPSetup` instead of editing every field directly.
 
-Automatic fields honor [TransSync send scheduling](../scripting-api/transsync.md#priority-sendonchange-and-minsendinterval). Unchanged values normally refresh once per second. A stationary scene can therefore stop incrementing the frame index between refreshes; this is expected.
+Automatic fields honor [TransSync send scheduling](../scripting-api/transsync.md#priority-sendonchange-and-minsendinterval). Unchanged values normally refresh once per second. A stationary scene can therefore stop incrementing the frame index between refreshes; this is expected. To repeat one component's state more frequently without changing every component's refresh interval, select [Send Mode: Always](./network-behaviour.md#send-mode) on that component. Minimum intervals and capacity still apply.
 
 ## What you need
 

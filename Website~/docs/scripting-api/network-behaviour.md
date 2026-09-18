@@ -15,6 +15,7 @@ Use this when a component should participate in TSMP message routing. It provide
 | Field | Type | Use |
 | --- | --- | --- |
 | `networkId` | `ushort` | Routes payload messages to this behaviour. |
+| `sendMode` | `SendMode` | Component-wide override of automatic fields' change filtering. Defaults to `Default`. |
 | `receiveInterpolation` | `ReceiveInterpolationMode` | Controls receive behaviour. |
 | `continuousInterpolationRate` | `float` | Smoothing rate for continuous receive mode. |
 | `transRpcEncoder` | `TSMPEncoder` | Encoder used by `SendTransRPC`. Assigned by setup. |
@@ -25,6 +26,24 @@ Use this when a component should participate in TSMP message routing. It provide
 | `lastRpcMethodName` | `string` | Method name for the last received RPC. |
 
 Do not assign `transRpcEncoder` manually in normal scenes. Let `TSMPSetup` assign it.
+
+## SendMode
+
+Namespace: `K13A.TSMP.Udon`. Inspector label: **Send Mode**.
+
+| Value | Numeric value | Effective `SendOnChange` |
+| --- | --- | --- |
+| `Default` | `0` | Each field's attribute setting. |
+| `OnChange` | `1` | `true` for every automatic field on this component. |
+| `Always` | `2` | `false` for every automatic field on this component. |
+
+```csharp
+sendMode = SendMode.Always;
+```
+
+Changes are read during encoding, without rebuilding bindings. The existing field snapshots and successful-output times remain intact, so switching modes does not bypass `MinSendInterval`. Unknown enum values fall back to `Default`. Existing scenes and prefabs without this field use `Default`.
+
+This override does not modify attribute metadata, priority, direction, capture logic, RPC behavior or manual Writer calls. `OnChange` retains the Encoder's periodic refresh. `Always` remains subject to minimum intervals and payload capacity. See [Send Mode](../components/network-behaviour.md#send-mode) for usage examples.
 
 ## ReceiveInterpolationMode
 

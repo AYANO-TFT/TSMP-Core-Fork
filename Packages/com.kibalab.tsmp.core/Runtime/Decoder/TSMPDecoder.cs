@@ -56,6 +56,7 @@ namespace K13A.TSMP.Udon
 
         public bool applyEveryFrame = true;
         public bool skipDuplicateFrames = true;
+        [Min(1)] public int frameWindowSize = 256;
 
         [HideInInspector]
         public int sourceWidth = 640;
@@ -80,6 +81,7 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public uint lastStreamId;
         [HideInInspector] public uint lastFrameIndex;
         [HideInInspector] public int skippedDuplicateFrameCount;
+        [HideInInspector] public int skippedOutOfOrderFrameCount;
         [HideInInspector] public int lastSymbolMode;
         [HideInInspector] public int lastHeaderRow;
         [HideInInspector] public int lastHeaderSource;
@@ -112,7 +114,9 @@ namespace K13A.TSMP.Udon
         private const string LogPrefix = "[TSMP] ";
 
         private Color32[] _readbackPixels;
-        private Texture _decodeSourceTexture;
+        private RenderTexture _decodeSourceTexture;
+        private bool _decodeSuspended;
+        private bool _discardReadback;
         private byte[] _headerBytes;
         private byte[] _payloadBytes;
         private int _payloadDataBytes;
@@ -172,6 +176,28 @@ namespace K13A.TSMP.Udon
             DecodeNow();
         }
 
+        private void OnEnable()
+        {
+            _decodeSuspended = false;
+        }
+
+        private void OnDisable()
+        {
+            _decodeSuspended = true;
+            _discardReadback = readbackInFlight;
+            _decodeStage = 0;
+            lastFrameValid = false;
+            lastHeaderValid = false;
+            DecoderSnapshotRuntime.Release(_decodeSourceTexture);
+            _decodeSourceTexture = null;
+        }
+
+        private void OnDestroy()
+        {
+            DecoderSnapshotRuntime.Release(_decodeSourceTexture);
+            _decodeSourceTexture = null;
+        }
+
         public void ResetDecodeDiagnostics()
         {
             ResetTSMPLogBudget(debugErrorLogBudget);
@@ -181,7 +207,7 @@ namespace K13A.TSMP.Udon
         {
             lastError = string.Empty;
 
-            if (readbackInFlight)
+            if (readbackInFlight || _decodeSuspended)
                 return;
 
             if (!ValidateSetup())
@@ -191,7 +217,14 @@ namespace K13A.TSMP.Udon
             InitializeBuffers();
             _currentHeaderRow = 2;
             _decodeFlipY = flipY;
-            _decodeSourceTexture = sourceTexture;
+            _decodeSourceTexture = DecoderSnapshotRuntime.Capture(sourceTexture, _decodeSourceTexture, out lastError);
+            if (_decodeSourceTexture == null)
+            {
+                lastFrameValid = false;
+                lastHeaderValid = false;
+                LogDecodeError(lastError);
+                return;
+            }
 
             RequestHeaderCopy();
         }
@@ -199,7 +232,8 @@ namespace K13A.TSMP.Udon
 #if COMPILER_UDONSHARP
         public override void OnAsyncGpuReadbackComplete(VRCAsyncGPUReadbackRequest request)
         {
-            readbackInFlight = false;
+            if (!AcceptReadback())
+                return;
 
             if (request.hasError)
             {
@@ -222,7 +256,8 @@ namespace K13A.TSMP.Udon
 #else
         private void OnAsyncGpuReadbackComplete(AsyncGPUReadbackRequest request)
         {
-            readbackInFlight = false;
+            if (this == null || !AcceptReadback())
+                return;
 
             if (request.hasError)
             {
@@ -248,6 +283,21 @@ namespace K13A.TSMP.Udon
         }
 #endif
 
+        private bool AcceptReadback()
+        {
+            if (!readbackInFlight)
+                return false;
+
+            readbackInFlight = false;
+            if (_discardReadback || _decodeSuspended)
+            {
+                _discardReadback = false;
+                return false;
+            }
+
+            return true;
+        }
+
         private void CompleteReadbackStage()
         {
             if (_decodeStage == 1)
@@ -258,13 +308,8 @@ namespace K13A.TSMP.Udon
                 if (!ReadHeader())
                     return;
 
-                if (IsDuplicateFrame())
-                {
-                    skippedDuplicateFrameCount++;
-                    lastFrameValid = true;
-                    lastError = "Duplicate frame skipped.";
+                if (ShouldSkipFrame())
                     return;
-                }
 
                 if (decodeSafetyMode == DecodeSafetyHeaderOnly)
                 {
@@ -406,7 +451,7 @@ namespace K13A.TSMP.Udon
             if (material == null)
                 return;
 
-            Texture decodeSource = _decodeSourceTexture != null ? _decodeSourceTexture : sourceTexture;
+            Texture decodeSource = _decodeSourceTexture;
             material.SetTexture(ShaderProperties.MainTex, decodeSource);
             material.SetFloat(ShaderProperties.BlockSize, blockSize);
             material.SetFloat(ShaderProperties.SampleSize, sampleSize);
@@ -510,12 +555,38 @@ namespace K13A.TSMP.Udon
 
             DecoderHeaderRuntime.ResolvePayloadLayout(useHeaderPayloadLayout, sourceWidth, headerBlockSize, headerActiveWidthBlocks, headerSampleSize, payloadSize, headerCodecHandler.payloadStartRow, blockSize, sampleSize, _activeWidthBlocks, _payloadDataBytes, _payloadBytes, out blockSize, out sampleSize, out _activeWidthBlocks, out _payloadDataBytes, out _payloadBytes, out _payloadStartBlock, out lastPayloadStartRow);
 
+            if (_payloadDataBytes < NetworkFrameProtocol.NetworkHeaderBytes)
+                return FailHeaderRead("Payload is too small for NetworkFrame.");
+
             return true;
         }
 
-        private bool IsDuplicateFrame()
+        private bool ShouldSkipFrame()
         {
-            return skipDuplicateFrames && _hasAppliedFrame && lastStreamId == _lastAppliedStreamId && lastFrameIndex == _lastAppliedFrameIndex;
+            if (!skipDuplicateFrames || !_hasAppliedFrame || lastStreamId != _lastAppliedStreamId)
+                return false;
+
+            if (lastFrameIndex == _lastAppliedFrameIndex)
+            {
+                skippedDuplicateFrameCount++;
+                lastFrameValid = true;
+                lastError = "Duplicate frame skipped.";
+                return true;
+            }
+
+            long distance = (long)lastFrameIndex - (long)_lastAppliedFrameIndex;
+            if (distance < 0L)
+                distance += 4294967296L;
+            if (distance < 2147483648L)
+                return false;
+
+            if (lastFrameIndex == 0u && (long)_lastAppliedFrameIndex >= (long)Mathf.Max(1, frameWindowSize))
+                return false;
+
+            skippedOutOfOrderFrameCount++;
+            lastFrameValid = true;
+            lastError = "Out-of-order frame skipped.";
+            return true;
         }
 
         private int GetPayloadDataStartRow()
@@ -550,15 +621,18 @@ namespace K13A.TSMP.Udon
             lastRpcCallCount = 0;
             lastRpcMethodName = string.Empty;
             skippedDuplicateRpcCount = 0;
-            lastPayloadAvailableBytes = _payloadBytes != null ? _payloadBytes.Length : 0;
+            lastPayloadAvailableBytes = _payloadBytes != null ? Mathf.Clamp(_payloadDataBytes, 0, _payloadBytes.Length) : 0;
 
-            if (_payloadBytes == null || _payloadBytes.Length < NetworkFrameProtocol.NetworkHeaderBytes)
+            if (_payloadBytes == null || _payloadDataBytes < NetworkFrameProtocol.NetworkHeaderBytes)
             {
                 lastFrameValid = false;
                 lastError = "Payload is too small for NetworkFrame.";
                 LogDecodeError(lastError);
                 return false;
             }
+
+            if (_payloadDataBytes > _payloadBytes.Length)
+                return FailNetworkFrame("Payload length exceeds buffer capacity.");
 
             int cursor;
             int messageCount;
@@ -576,7 +650,7 @@ namespace K13A.TSMP.Udon
                 int bodyStart;
                 int bodyEnd;
                 int nextMessageOffset;
-                if (!NetworkFrameReader.TryReadMessageHeader(_payloadBytes, cursor, _payloadBytes.Length, out networkId, out messageType, out bodyStart, out bodyEnd, out nextMessageOffset))
+                if (!NetworkFrameReader.TryReadMessageHeader(_payloadBytes, cursor, _payloadDataBytes, out networkId, out messageType, out bodyStart, out bodyEnd, out nextMessageOffset))
                     return FailNetworkFrame("NetworkFrame message is malformed.");
 
                 if (NetworkFrameReader.IsVariableStateMessage(messageType))
@@ -593,7 +667,7 @@ namespace K13A.TSMP.Udon
                 cursor = nextMessageOffset;
             }
 
-            if (cursor != _payloadBytes.Length)
+            if (cursor != _payloadDataBytes)
                 return FailNetworkFrame("NetworkFrame has trailing bytes.");
 
             return true;

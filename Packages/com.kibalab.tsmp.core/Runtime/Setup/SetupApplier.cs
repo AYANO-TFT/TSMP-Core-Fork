@@ -103,21 +103,6 @@ namespace K13A.TSMP
             }
         }
 
-        public static void BlitEncoderOutputInEditor(Component encoder)
-        {
-#if UNITY_EDITOR
-            if (Application.isPlaying || encoder == null)
-                return;
-
-            Texture outputTexture = ComponentReflection.GetMemberValue(encoder, TSMPEncoder.OutputTextureMemberName) as Texture;
-            RenderTexture output = ComponentReflection.GetMemberValue(encoder, TSMPEncoder.OutputFieldName) as RenderTexture;
-            if (outputTexture == null || output == null)
-                return;
-
-            Graphics.Blit(outputTexture, output);
-#endif
-        }
-
         public static bool GetEncoderAutoEncode(Component encoder)
         {
             return ComponentReflection.GetBoolMember(encoder, TSMPEncoder.AutoEncodeFieldName, false);

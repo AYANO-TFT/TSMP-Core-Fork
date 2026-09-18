@@ -16,7 +16,8 @@ Custom receiver wiring, diagnostics 확인, frame이 무시된 이유를 debug�
 | `payloadByteTexture` | Codec shader가 payload bytes를 복구할 때 사용하는 render texture. |
 | `codecHandlers` | Decoder가 사용할 수 있는 codec components. Header의 `codecId`가 handler를 선택합니다. |
 | `applyEveryFrame` | Component update loop에서 decode합니다. 다른 script가 `DecodeNow()`를 호출한다면 끄세요. |
-| `skipDuplicateFrames` | Header frame index가 이미 처리된 frame이면 무시합니다. |
+| `skipDuplicateFrames` | 현재 스트림의 중복·역순 프레임을 걸러냅니다. Inspector 이름은 Filter Frames입니다. |
+| `frameWindowSize` | Window Size. 기본 256프레임, 실제 최소값 1입니다. 0번 프레임의 재시작 판정에 사용하며 버퍼를 할당하지 않습니다. |
 | `flipY` | Capture path가 image를 뒤집는 경우 texture sampling을 반전합니다. |
 | `useHeaderPayloadLayout` | Header payload metadata로 readback size를 결정합니다. 일반적으로 켜둡니다. |
 | `payloadBytesOverride` | Test path용 manual payload byte count. |
@@ -42,16 +43,45 @@ CRC failure는 warning log로 표시됩니다. 손상된 capture frame이 잘못
 public void DecodeNow()
 ```
 
-즉시 한 frame을 decode합니다. `applyEveryFrame`이 꺼져 있어도 호출할 수 있습니다.
+현재 이미지를 캡처하고 비동기 디코딩을 시작합니다. `applyEveryFrame`이 꺼져 있어도 호출할 수 있지만 컴포넌트는 활성화되어 있어야 합니다. readback이 대기 중이면 새 작업을 시작하지 않습니다.
 
 실행 순서:
 
-1. Header pixels를 읽습니다.
-2. Magic, version, payload layout, CRC를 검증합니다.
-3. `codecId`로 codec handler를 선택합니다.
-4. Payload bytes를 decode합니다.
-5. Network messages를 parse합니다.
-6. Variables를 적용하고 RPC를 dispatch합니다.
+1. 현재 입력 이미지를 디코더의 스냅샷에 복사합니다.
+2. 스냅샷에서 헤더 픽셀을 읽습니다.
+3. Magic, version, payload layout, CRC를 검증합니다.
+4. `codecId`로 codec handler를 선택합니다.
+5. 같은 스냅샷에서 payload bytes를 디코딩합니다.
+6. Network messages를 파싱합니다.
+7. 변수를 적용하고 RPC를 호출합니다.
+
+## 입력 스냅샷 {#input-snapshot}
+
+Inspector에 추가 참조나 모드를 설정할 필요가 없습니다. 디코더가 입력과 같은 크기의 linear `ARGBFloat` RenderTexture를 소유하고, 작업 사이에 재사용하며 비활성화·제거 시 해제합니다. 원본을 샘플링한 값에 8비트·half-float 양자화 단계를 더하지 않기 위한 선택입니다. Float32 렌더 타깃 지원이 필요하며 포맷·할당에 실패하면 디코딩을 거부하고 기존 오류 로그 정책에 따라 `lastError`를 알립니다. 갱신 중인 원본을 대신 읽지는 않습니다.
+
+추가 메모리는 `width * height * 16`바이트입니다. 640x360에서 약 3.52 MiB, 1920x1080에서 31.64 MiB, 3840x2160에서 126.56 MiB입니다. 시작한 디코딩 작업마다 입력 전체를 한 번 복사하며, 이후 CRC·중복 검사에서 거부되는 시도에도 이 비용이 듭니다. CPU readback은 추가하지 않습니다. 실제 배포 장치에서 GPU 복사 비용을 측정하세요.
+
+캡처 이후 `sourceTexture`를 교체하거나 제거해도 현재 작업의 이미지는 바뀌지 않습니다. 변경은 다음 작업에 반영됩니다. 디코더를 비활성화하면 진행 중인 작업을 취소하며, 재활성화 뒤 도착한 이전 콜백도 폐기한 후 새 디코딩을 시작합니다. native와 Udon 모두 헤더·LUT 준비·payload에 같은 스냅샷을 사용합니다. 사용자 정의 코덱은 전달받은 이미지를 읽기 전용으로 다루고 영구적인 프레임 복사본처럼 보관하지 않아야 합니다. 프레임 역순이나 변수·RPC의 트랜잭션 적용을 해결하는 기능은 아닙니다.
+
+## 윈도우와 프레임 순서 {#frame-window}
+
+필터가 켜져 있으면 수신 번호 `N`과 현재 스트림에서 마지막으로 적용에 성공한 번호 `P`를 비교합니다. 실제 윈도우 크기는 `W = max(1, frameWindowSize)`이며, 변경은 다음 헤더 판정부터 반영합니다.
+
+1. 적용 이력이 없거나 `StreamId`가 다르면 순서 비교 없이 후보를 허용합니다.
+2. `N == P`이면 중복으로 건너뜁니다.
+3. `D = (N - P) modulo 2^32`를 계산합니다. `0 < D < 2^31`이면 정상 번호 순환을 포함해 새로운 프레임으로 허용합니다.
+4. 그 외에도 `N == 0`이고 `P >= W`이면 재시작으로 추정해 허용합니다.
+5. 나머지는 역순 또는 순서가 불분명한 프레임으로 건너뜁니다. UInt32 범위의 정확히 절반만큼 차이나는 경우도 0번 재시작 예외가 아니면 거부합니다.
+
+허용은 payload 디코딩을 진행한다는 뜻입니다. 네트워크 프레임 적용에 성공해야 기준 스트림과 번호가 갱신됩니다. 손상된 payload, 취소된 요청, 헤더/readback 전용 안전 모드는 기준을 갱신하지 않습니다. 중복·역순으로 건너뛴 프레임은 기존 중복 처리처럼 `lastFrameValid=true`이며, 각각 `skippedDuplicateFrameCount`와 `skippedOutOfOrderFrameCount`에 집계되고 `lastError`에 상태가 표시됩니다. payload를 읽거나 메시지를 실행하지 않습니다.
+
+`W=256`이면 `100 -> 101 -> 100`의 마지막 100은 무시하고, `255 -> 0`은 거부하며, `256 -> 0 -> 1`은 재시작과 후속 프레임으로 허용합니다. `4294967295 -> 0`은 윈도우 크기와 관계없이 정상 순환입니다. `W=512`이면 `256 -> 0`은 거부합니다. 윈도우는 프레임 수 기준이지 시간, 슬라이딩 재생 기록, 텍스처 저장 묶음이 아닙니다.
+
+세션 ID가 없는 추정 규칙이므로 지연된 과거 0번을 재시작으로 오인할 수 있습니다. 재시작의 0번이 유실되거나 한 윈도우 이전에 재시작하면 이 예외로 감지하지 못합니다. 초기화를 허용한 뒤에는 높은 번호의 과거 프레임도 새 프레임처럼 보일 수 있습니다. 다른 스트림은 허용하고 적용 성공 시 기준을 교체하며, 이전 스트림의 기록은 보관하지 않습니다. RPC 이벤트 중복 판정은 변경하거나 초기화하지 않습니다. `skipDuplicateFrames`를 끄면 중복·역순 검사와 재시작 규칙을 모두 우회하므로 녹화 영상 탐색에는 사용할 수 있지만 과거 변수값도 다시 적용됩니다.
+
+### 데이터그램 호환성
+
+데이터그램과 프로토콜 버전은 **변경하지 않습니다**. 헤더는 56바이트이고 payload 형식도 같습니다. `20..23`은 `StreamId` UInt32 LE, `24..27`은 `FrameIndex` UInt32 LE, `28..31`은 `TimestampMs` UInt32 LE이며 타임스탬프는 이 판정에 사용하지 않습니다. 예약 영역 `44..49`는 계속 0입니다. CRC32는 `0..51`을 계산해 `52..55`에 기록합니다. 윈도우 크기와 세션 ID는 전송하지 않습니다. 나머지는 [프레임 레이아웃](../concepts/protocol.md)을 참조하세요. 기존 송신기는 변경할 필요가 없으며 수신기의 프레임 채택 정책만 바뀝니다.
 
 ## `ResetDecodeDiagnostics()`
 
@@ -59,7 +89,7 @@ public void DecodeNow()
 public void ResetDecodeDiagnostics()
 ```
 
-Counters와 last-error fields를 초기화합니다. 반복 가능한 test나 scene wiring 변경 후 사용하세요.
+오류 로그 출력 예산을 초기화합니다. 카운터나 순서 판정에 쓰는 마지막 적용 스트림·프레임은 초기화하지 않습니다.
 
 ## Diagnostics
 

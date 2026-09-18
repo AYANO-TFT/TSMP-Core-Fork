@@ -15,6 +15,7 @@ TSMP 同期動作の基本タイプ。
 | 分野 | タイプ | 使用 |
 | --- | --- | --- |
 | `networkId` | `ushort` | ペイロード メッセージをこの動作にルーティングします。 |
+| `sendMode` | `SendMode` | 自動フィールドの変更検出をコンポーネント単位で上書きします。既定値は `Default` です。 |
 | `receiveInterpolation` | `ReceiveInterpolationMode` | コントロールは動作を受け取ります。 |
 | `continuousInterpolationRate` | `float` | 連続受信モードの平滑化率。 |
 | `transRpcEncoder` | `TSMPEncoder` | `SendTransRPC` によって使用されるエンコーダー。セットアップによって割り当てられます。 |
@@ -25,6 +26,24 @@ TSMP 同期動作の基本タイプ。
 | `lastRpcMethodName` | `string` | 最後に受信した RPC のメソッド名。 |
 
 通常のシーンでは `transRpcEncoder` を手動で割り当てないでください。 `TSMPSetup` に割り当ててください。
+
+## SendMode
+
+名前空間: `K13A.TSMP.Udon`。インスペクター上の表示: **Send Mode**。
+
+| 値 | 数値 | 実際に適用する `SendOnChange` |
+| --- | --- | --- |
+| `Default` | `0` | 各フィールドの属性設定を使用します。 |
+| `OnChange` | `1` | このコンポーネントの全自動フィールドに `true` を適用します。 |
+| `Always` | `2` | このコンポーネントの全自動フィールドに `false` を適用します。 |
+
+```csharp
+sendMode = SendMode.Always;
+```
+
+エンコード時に値を読むため、バインディングの再生成は不要です。既存のスナップショットと出力成功時刻を維持するので、モードの切り替えで `MinSendInterval` を回避することはありません。未知の enum 値は `Default` として扱います。このフィールドがない既存のシーンやプレハブも `Default` を使用します。
+
+属性メタデータ、優先度、送受信方向、キャプチャ処理、RPC、手動 Writer 呼び出しは変更しません。`OnChange` でもエンコーダーの定期再送が適用され、`Always` も最小間隔と容量制限に従います。使用例は [Send Mode](../components/network-behaviour.md#send-mode) を参照してください。
 
 ## 受信補間モード
 

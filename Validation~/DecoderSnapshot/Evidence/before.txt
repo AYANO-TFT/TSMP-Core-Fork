@@ -1,0 +1,6 @@
+FAIL
+Unity=2022.3.22f1; GPU=NVIDIA GeForce RTX 4090; API=Direct3D11; ColorSpace=Gamma
+System.InvalidOperationException: Luma4/0/1/True/0/ARGB32: header/payload generation mismatch
+  at DecoderSnapshotValidation.Verify (K13A.TSMP.Udon.TSMPDecoder decoder, System.Byte[] expected, System.UInt32 frame, System.String label) [0x00061] in F:\Unity\TSMP\Validation-Results\issue22-20260913\Before\Assets\DecoderSnapshot\DecoderSnapshotValidation.cs:176
+  at DecoderSnapshotValidation+<Validate>d__22.MoveNext () [0x00490] in F:\Unity\TSMP\Validation-Results\issue22-20260913\Before\Assets\DecoderSnapshot\DecoderSnapshotValidation.cs:218
+  at DecoderSnapshotValidation+<Start>d__10.MoveNext () [0x000b4] in F:\Unity\TSMP\Validation-Results\issue22-20260913\Before\Assets\DecoderSnapshot\DecoderSnapshotValidation.cs:75

@@ -109,6 +109,7 @@ public static class DecoderArrayCacheValidation
     private static void Apply(TSMPDecoder decoder, byte[] bytes)
     {
         typeof(TSMPDecoder).GetField("_payloadBytes", Private).SetValue(decoder, bytes);
+        typeof(TSMPDecoder).GetField("_payloadDataBytes", Private).SetValue(decoder, bytes.Length);
         bool accepted = (bool)typeof(TSMPDecoder).GetMethod("ApplyNetworkFrame", Private).Invoke(decoder, null);
         ArrayCacheCases.Require(accepted, "Decoder rejected test frame: " + decoder.lastError);
     }

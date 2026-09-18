@@ -116,7 +116,8 @@ namespace K13A.TSMP
                         error = "Failed to serialize TransSync field '" + entry.Field.FieldInfo.Name + "'.";
                         return false;
                     }
-                    if (!TransSyncSendScheduler.ShouldSend(entry.Sent, entry.LastSent, now, entry.Field.Sync.SendOnChange, refreshInterval, entry.Previous, _scratch, length))
+                    bool sendOnChange = TransSyncSendScheduler.ResolveSendOnChange((int)entry.Target.sendMode, entry.Field.Sync.SendOnChange);
+                    if (!TransSyncSendScheduler.ShouldSend(entry.Sent, entry.LastSent, now, sendOnChange, refreshInterval, entry.Previous, _scratch, length))
                         continue;
                     bool newMessage = messageStart < 0 || openNetworkId != entry.NetworkId;
                     int overhead = newMessage ? NetworkFrameProtocol.MessageHeaderBytes + NetworkFrameProtocol.VariableStateBodyHeaderBytes : 0;

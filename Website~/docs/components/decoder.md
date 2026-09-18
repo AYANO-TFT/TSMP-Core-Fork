@@ -25,6 +25,14 @@ Most decode problems are caused by the input texture not containing an unmodifie
 5. Click `Apply Setup`.
 6. Watch logs or `TSMPDebugCanvas` for frame status.
 
+## Frame window
+
+In the decoder's **Decode** section, keep **Filter Frames** enabled for live reception. **Window Size** defaults to **256** frames and is adjustable on the receiver; the sender needs no matching setting.
+
+The decoder normally ignores repeated or older frame numbers. It also recognizes frame zero as a possible restart when the last applied number is at least one window: with 256, `256 -> 0` is allowed but `255 -> 0` is not. Natural UInt32 counter wrap is handled separately. No textures are buffered for this window and the datagram is unchanged.
+
+This does not identify sessions: an old zero can look like a restart, and missing frame zero can prevent restart detection. Disable the filter for intentional seeking through recorded frames, understanding that old values may then be applied. See [exact ordering rules and limitations](../scripting-api/decoder.md#frame-window).
+
 ## What valid decode looks like
 
 In `TSMPDebugCanvas`, a working decoder should show:

@@ -115,10 +115,11 @@ CRC는 header bytes `0..51`에 대해 계산됩니다. Stored CRC는 bytes `52..
 
 ```text
 Update / decode tick
-  -> texture에서 header 영역 읽기
+  -> 입력을 디코더 소유 스냅샷에 캡처
+  -> 스냅샷에서 header 영역 읽기
   -> header와 CRC 검증
   -> codecId로 codec 선택
-  -> PayloadSize만큼 payload bytes 요청
+  -> 같은 스냅샷에서 PayloadSize만큼 payload bytes 요청
   -> network frame header decode
   -> messages 반복
   -> variable values 적용 또는 RPC dispatch
@@ -138,7 +139,7 @@ ApplyDecodeOptions
        -> 이전 LUT 키워드 해제
        -> 선택적으로 기준 심볼을 float LUT에 기록
        -> LUT 연결 및 바이트 셰이더 variant 활성화
-  -> 같은 원본 Texture 참조에서 바이트 Blit
+  -> 준비 패스와 같은 스냅샷에서 바이트 Blit
   -> 복원 바이트의 GPU readback
 ```
 
@@ -148,7 +149,9 @@ Luma4는 유효 샘플 크기가 1보다 클 때 16개 항목을 준비하고, �
 
 할당만 재사용하고 프레임 사이의 값은 재사용하지 않습니다. 활성 바이트 패스마다 다시 그립니다. 리소스가 없으면 기존 셰이더 경로를 유지합니다. 코덱은 자신이 생성한 LUT를 소유하고 비활성화·파괴 시 정리하며, 머티리얼 소유권은 별도로 관리합니다.
 
-원본은 불변 스냅샷이 아닌 Texture 참조입니다. 참조를 보관하고 바이트 패스 직전에 준비하더라도 헤더와 payload readback 사이에 영상 공급자가 픽셀을 갱신하는 것을 막지는 못합니다.
+`TSMPDecoder`는 헤더 패스 전에 입력을 같은 크기의 재사용 가능한 linear `ARGBFloat` RenderTexture로 캡처합니다. 헤더·캘리브레이션·payload 패스는 작업이 끝날 때까지 이 스냅샷을 읽습니다. 원본 영상이 갱신되거나 교체되어도 서로 다른 시점의 이미지가 섞이지 않습니다. 필요할 때 작업 사이에 크기를 변경하고, 비활성화·제거 시 해제합니다. 비활성화하면 진행 중인 작업을 취소하며, 대기 중인 콜백을 폐기한 뒤 다음 디코딩을 시작할 수 있습니다. 캡처 실패 시 갱신 중인 원본으로 되돌아가지 않고 작업을 거부합니다.
+
+디코딩 시도마다 전체 이미지 GPU Blit 1회와 픽셀당 16바이트의 스냅샷 메모리가 추가됩니다. CPU readback이나 통신 포맷 필드는 추가하지 않습니다. Float32는 샘플링한 원본 값에 8비트·half-float 양자화 단계를 더하지 않기 위한 선택입니다. 소유권과 리소스 조건은 [decoder API](../scripting-api/decoder.md#input-snapshot)를 참고하세요. 이미 손상된 입력을 복구하거나 변수·RPC 적용을 트랜잭션으로 만드는 기능은 아닙니다.
 
 훅, 머티리얼 설정, 라이프사이클, 대체 경로는 [구현 가이드](./codec-implementation.md), [셰이더 가이드](./codec-shaders.md), [준비 API](../scripting-api/codec.md#runtime-decode-preparation)를 참고하세요.
 

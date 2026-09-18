@@ -29,6 +29,8 @@ The field must be discoverable by `TSMPSetup`. After adding or removing a `[Tran
 
 Use a clear, stable key such as `transform.packed`, `animator.bytes`, or `counter.value`. Do not use a key that changes at runtime.
 
+`SendOnChange` is the field author's default. A user can override it for this component in the Inspector with [Send Mode](../components/network-behaviour.md#send-mode): `Default` uses the attribute, `On Change` treats it as `true`, and `Always` treats it as `false`. This does not override `MinSendInterval` or the other properties.
+
 ### `Key`
 
 The hash includes the component's fully qualified C# type name and the key. Different field names on the same component type can therefore share an identity, but the same key on different component types does not produce the same hash.
@@ -60,7 +62,7 @@ For a loopback test such as `instance A encoder -> stream -> instance A decoder`
 
 ### `Priority`, `SendOnChange`, and `MinSendInterval`
 
-These options schedule automatic variable writes in both ordinary Unity and Udon. They do not change the receiver's interpolation or apply to manual Writer calls and RPCs.
+These options schedule automatic variable writes in both ordinary Unity and Udon. They do not change the receiver's interpolation or apply to manual Writer calls and RPCs. The following examples assume the component's Send Mode is `Default`.
 
 ```csharp
 [TransSync("status", Priority = 10, SendOnChange = true, MinSendInterval = 0.1f)]
@@ -82,9 +84,9 @@ public float meter;
 
 The encoder's **Trans Sync Refresh Interval** (`transSyncRefreshInterval`) defaults to **1 second**. It resends unchanged values so a lost final update or a newly connected receiver can recover. A field's `MinSendInterval` still applies; a 2-second minimum is never bypassed by a 1-second refresh.
 
-Set refresh to `0` for strict change-only sending. In that mode, a lost update or late join can leave a value unavailable until it changes again. Refresh is best-effort retransmission, not an acknowledgement or delivery guarantee.
+Set refresh to `0` for strict change-only sending on fields whose effective `SendOnChange` is `true`. In that mode, a lost update or late join can leave a value unavailable until it changes again. Refresh is best-effort retransmission, not an acknowledgement or delivery guarantee. It does not limit `Always` or `SendOnChange = false` fields.
 
-To retain the previous every-encode sending behavior for a field, use `SendOnChange = false, MinSendInterval = 0`. Use an RPC for events that must not be coalesced as state.
+To request every-encode sending for a whole component without editing its script, select **Send Mode: Always**. For a single field with Send Mode `Default`, use `SendOnChange = false, MinSendInterval = 0`. In both cases, encoder frequency, minimum intervals, priority and capacity still limit actual sending. Use an RPC for events that must not be coalesced as state.
 
 ### `SentEvent`
 
@@ -146,6 +148,8 @@ For high-frequency data, prefer packed `byte[]` fields.
 ## Binding rebuilds
 
 `Key`, `Direction`, value type, `EnabledBy`, `Priority`, `SendOnChange`, and `MinSendInterval` affect generated bindings. After changing any of them, run `Apply Setup` on `TSMPSetup`. In uploaded VRChat worlds, TSMP uses those generated tables instead of runtime reflection.
+
+Changing only the component's `sendMode` does not require a binding rebuild. It is read at runtime without changing the generated attribute settings.
 
 ## Payload advice
 
