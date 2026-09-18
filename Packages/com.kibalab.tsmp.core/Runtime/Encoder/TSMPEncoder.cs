@@ -579,6 +579,7 @@ namespace K13A.TSMP
         private int _codecQueryActiveHeightBlocksKey;
         private UdonBehaviour[] _cachedBindingUdonTargets;
         private UdonBehaviour[] _beforeEncodeTargets;
+        private int[] _beforeEncodeSendModes;
         private int _beforeEncodeTargetCount;
         private int _cachedBindingTargetCount = -1;
         private const int MaxPendingTransRpcs = 32;
@@ -1067,13 +1068,13 @@ namespace K13A.TSMP
                     }
                     if (!TransSyncSendScheduler.IsDue(_sendCompleted[index], _sendLastTimes[index], _sendTime, _sendIntervals[index]))
                         continue;
-                    SendBeforeEncodeOnce(target);
+                    int sendMode = SendBeforeEncodeOnce(target);
                     object value = GetProgramVariable(target, bindingFieldNames[index]);
                     int length = NetworkValueEntryWriter.WriteVariableValue(_sendScratch, 0, bindingVariableHashes[index], _sendTypes[index], value);
                     if (length < 0)
                         return Fail("Failed to serialize TransSync field '" + bindingFieldNames[index] + "'.");
                     if (!TransSyncSendScheduler.ShouldSend(_sendCompleted[index], _sendLastTimes[index], _sendTime,
-                        _sendOnChange[index], transSyncRefreshInterval, _sendPrevious[index], _sendScratch, length))
+                        TransSyncSendScheduler.ResolveSendOnChange(sendMode, _sendOnChange[index]), transSyncRefreshInterval, _sendPrevious[index], _sendScratch, length))
                         continue;
                     int networkId = bindingNetworkIds[index];
                     bool newMessage = !_boundVariableMessageOpen || _boundVariableOpenNetworkId != networkId;
@@ -1223,11 +1224,15 @@ namespace K13A.TSMP
         private void EnsureBeforeEncodeTargetCache(int count)
         {
             _beforeEncodeTargets = EncoderUdonBindingRuntime.EnsureBeforeEncodeTargetCache(_beforeEncodeTargets, count);
+            if (_beforeEncodeSendModes == null || _beforeEncodeSendModes.Length < count)
+                _beforeEncodeSendModes = new int[count];
         }
 
-        private void SendBeforeEncodeOnce(UdonBehaviour target)
+        private int SendBeforeEncodeOnce(UdonBehaviour target)
         {
-            _beforeEncodeTargetCount = EncoderUdonBindingRuntime.SendBeforeEncodeOnce(target, _beforeEncodeTargets, _beforeEncodeTargetCount);
+            int sendMode;
+            _beforeEncodeTargetCount = EncoderUdonBindingRuntime.SendBeforeEncodeOnce(target, _beforeEncodeTargets, _beforeEncodeTargetCount, _beforeEncodeSendModes, out sendMode);
+            return sendMode;
         }
 
         private void EnsureBindingTargetCache(int count)

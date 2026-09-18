@@ -14,6 +14,8 @@ namespace K13A.TSMP.Udon
         public const string OnRpcReceivedEventName = nameof(OnTSMPRpcReceived);
 
         [Header("TSMP Network")] public ushort networkId;
+        [Tooltip("Default uses each TransSync field's SendOnChange setting. On Change sends changed values and periodic refreshes. Always also sends unchanged values. Minimum intervals and payload capacity still apply.")]
+        public SendMode sendMode = SendMode.Default;
         public ReceiveInterpolationMode receiveInterpolation = ReceiveInterpolationMode.Discrete;
         public float continuousInterpolationRate = 24f;
         [HideInInspector] public TSMPEncoder transRpcEncoder;

@@ -82,6 +82,17 @@ public static class EditorEncodingValidation
             source.transform.position += Vector3.right;
             setup.EncodeEncoderNow();
             Require(encoder.frameIndex == before + 2, "Setup manual encoding produces exactly one frame");
+            before = encoder.frameIndex;
+            sync.sendMode = SendMode.Always;
+            encoder.EncodeNow();
+            setup.EncodeEncoderNow();
+            Require(encoder.frameIndex == before + 2, "Always repeats a stationary Transform without rebuilding bindings");
+            sync.sendMode = SendMode.OnChange;
+            encoder.EncodeNow();
+            Require(encoder.frameIndex == before + 2, "On Change suppresses unchanged Transform output immediately");
+            sync.sendMode = SendMode.Default;
+            encoder.EncodeNow();
+            Require(encoder.frameIndex == before + 2, "Default restores the Transform field's original policy");
             encoder.autoEncode = true;
 
 #if UDONSHARP

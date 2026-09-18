@@ -108,6 +108,47 @@ public sealed class LoopbackValidation : MonoBehaviour
             Check(receivedValues.rpcCalls == (i == 0 ? 2 : 3), "Independent streams delivered; returning repeat suppressed: " + receivedValues.rpcCalls);
             framesChecked++;
         }
+        encoder.networkBehaviours = new TSMPNetworkBehaviour[] { sentTransform, sentTimeline };
+        encoder.transSyncRefreshInterval = 0;
+        sentTransform.target.localPosition = new Vector3(2, 3, 4);
+        sentTimeline.Pause();
+        sentTimeline.Seek(4);
+        encoder.EncodeNow();
+        Check(string.IsNullOrEmpty(encoder.lastError), "Initial stationary state encoded without receiving it");
+        uint beforeModeChange = encoder.frameIndex;
+        encoder.EncodeNow();
+        Check(encoder.frameIndex == beforeModeChange, "Default suppresses unchanged Transform and paused Timeline");
+        sentTransform.sendMode = SendMode.Always;
+        sentTimeline.sendMode = SendMode.Always;
+        for (int i = 0; i < 2 && !failed; i++)
+        {
+            receivedTransform.target.localPosition = Vector3.zero;
+            receivedTimeline.Seek(0);
+            receivedTimeline.Resume();
+            encoder.EncodeNow();
+            Check(encoder.frameIndex == beforeModeChange + (uint)i + 1, "Always writes another stationary-state frame");
+            yield return null;
+            decoder.DecodeNow();
+            float deadline = Time.realtimeSinceStartup + 10f;
+            while (decoder.readbackInFlight && Time.realtimeSinceStartup < deadline)
+                yield return null;
+            Check(!decoder.readbackInFlight && decoder.lastFrameValid, "Always state frame decoded: " + decoder.lastError);
+            Check(Vector3.Distance(sentTransform.target.localPosition, receivedTransform.target.localPosition) < .002f,
+                "Repeated stationary Transform recovers through texture loopback");
+            Check(Math.Abs(receivedTimeline.director.time - 4) < .001
+                && receivedTimeline.director.state == UnityEngine.Playables.PlayState.Paused,
+                "Repeated paused Timeline recovers through texture loopback");
+            framesChecked++;
+        }
+        sentTransform.sendMode = SendMode.OnChange;
+        sentTimeline.sendMode = SendMode.OnChange;
+        uint stationaryFrame = encoder.frameIndex;
+        encoder.EncodeNow();
+        Check(encoder.frameIndex == stationaryFrame, "On Change stops unchanged output without rebuilding bindings");
+        sentTransform.sendMode = SendMode.Default;
+        sentTimeline.sendMode = SendMode.Default;
+        encoder.EncodeNow();
+        Check(encoder.frameIndex == stationaryFrame, "Default restores field scheduling after Always");
         int previousValue = receivedValues.number;
         RenderTexture blank = new RenderTexture(encoder.output.width, encoder.output.height, 0, RenderTextureFormat.ARGB32);
         blank.Create();

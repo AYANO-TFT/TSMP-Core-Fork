@@ -23,6 +23,22 @@ ID 할당과 갱신은 `TSMPSetup`을 사용하세요. 고정 mapping이 꼭 필
 
 Manual ID는 고급 옵션으로 취급하세요. Inspector는 실수로 바꾸는 것을 막기 위해 기본적으로 필드를 잠급니다.
 
+## Send Mode
+
+**송신 컴포넌트**의 Network ID 바로 아래에 있는 **Send Mode**에서 송신 방식을 선택하세요. 스크립트를 수정하거나 다른 컴포넌트까지 영향을 받는 인코더의 재전송 간격을 바꿀 필요가 없습니다.
+
+| 모드 | 송신 방식 |
+| --- | --- |
+| Default | 각 필드의 `TransSync.SendOnChange` 설정을 따릅니다. 기본값이며 기존 동작을 유지합니다. |
+| On Change | 최초 값, 변경된 값, 주기적인 재전송 값을 보냅니다. 작성자가 변경 감지를 꺼둔 필드에도 적용됩니다. |
+| Always | 값이 그대로여도 매 인코딩마다 송신 대상으로 고려합니다. 정지한 Transform이나 일시 정지한 Timeline의 상태를 더 자주 반복해서 보낼 때 사용하세요. |
+
+`On Change`는 인코더의 **Trans Sync Refresh Interval**을 따릅니다(기본 1초). 이 간격이 `0`이면 변경되지 않은 값의 주기적 재전송을 끕니다. `Always`는 재전송 간격을 기다리지 않지만, 필드의 최소 전송 간격, 활성 상태, 송수신 방향, 우선순위와 페이로드 용량 제한은 계속 지킵니다. 전송량이 늘어나며, 도착을 보장하거나 우선순위를 자동으로 높이는 옵션은 아닙니다.
+
+이 설정은 해당 컴포넌트의 자동 `[TransSync]` 필드 전체에 적용됩니다. 다른 컴포넌트, RPC, 수동 Writer 호출에는 영향을 주지 않으며 컴포넌트 내부의 캡처·패킹 방식도 바꾸지 않습니다. 필드마다 다르게 설정하려면 `Default`를 선택하고 [필드 어트리뷰트](../scripting-api/transsync.md)를 사용하세요.
+
+Send Mode만 변경할 때는 `Apply Setup` 없이 다음 전송 가능한 인코딩부터 반영됩니다. 일반 Unity와 UdonSharp 양쪽에서 동작합니다. 수신 컴포넌트의 **Receive Interpolation**은 별도 설정입니다.
+
 ## Receive interpolation
 
 컴포넌트별 receive interpolation을 설정합니다.

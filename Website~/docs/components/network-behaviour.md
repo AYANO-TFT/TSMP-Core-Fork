@@ -23,6 +23,22 @@ Rules:
 
 Treat manual IDs as an advanced option. The Inspector locks the field by default to prevent accidental changes.
 
+## Send Mode
+
+Choose **Send Mode** on the **sending component**, directly below Network ID. You do not need to edit its script or change the Encoder's refresh interval for every other component.
+
+| Mode | What is sent |
+| --- | --- |
+| Default | Uses each field's `TransSync.SendOnChange` setting. This is the default and preserves existing behavior. |
+| On Change | Sends the first value, then changes and periodic refreshes, even for fields whose author disabled change detection. |
+| Always | Considers unchanged values for every encode as well as changed values. Use this to repeat a stationary Transform or a paused Timeline's state more frequently. |
+
+`On Change` uses the Encoder's **Trans Sync Refresh Interval** (default: 1 second). Set that interval to `0` to disable unchanged-value refresh. `Always` does not wait for a refresh, but still respects each field's minimum send interval, enabled state, direction, priority and available payload capacity. It increases traffic; it does not guarantee delivery or automatically raise priority.
+
+The setting affects all automatic `[TransSync]` fields on this component, not other components, RPCs or manual Writer calls. It does not change how the component captures or packs its data. For different policies per field, use `Default` and configure the [field attributes](../scripting-api/transsync.md).
+
+Changing Send Mode takes effect on the next eligible encode without `Apply Setup`. It works in ordinary Unity and UdonSharp. The receiving component's **Receive Interpolation** setting remains independent.
+
 ## Receive interpolation
 
 Set receive interpolation per component:

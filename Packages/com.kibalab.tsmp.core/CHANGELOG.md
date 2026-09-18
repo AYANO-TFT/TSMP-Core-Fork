@@ -2,6 +2,12 @@
 
 ## 0.3.0-beta.2 (Unreleased)
 
+### Added
+
+- Add the shared component-level Send Mode dropdown: Default preserves each TransSync field's SendOnChange setting, On Change enables change filtering with periodic refresh, and Always also sends unchanged values. Mode changes are read live in native Unity and Udon without rebuilding bindings.
+- Preserve minimum send intervals, successful-output state, field eligibility, priority and payload capacity in every mode. Udon reads the mode once per captured target per encode. RPCs, manual Writer calls and the wire format are unchanged.
+- Document Send Mode and its bandwidth/delivery tradeoffs in English, Korean and Japanese.
+
 ### Codec API
 
 - Add `TSMPCodec.PrepareDecode(Texture, Material)` before each header/payload byte pass, with codec-owned linear Float32 calibration LUT allocation, per-pass refresh and lifecycle cleanup. Existing custom codecs can retain the default no-op preparation path.

@@ -30,6 +30,9 @@ public static class TransSyncSchedulingValidation
         Test("First send, unchanged suppression, scalar and in-place array changes", Changes);
         Test("Minimum interval coalesces latest value and SendOnChange=false polls", Intervals);
         Test("Refresh obeys minimum interval, zero disables refresh", Refresh);
+        Test("Component send modes override only change filtering and switch live", ComponentModes);
+        Test("Component send modes remain independent for shared field metadata", IndependentModes);
+        Test("Send Mode supports serialized multi-edit, undo and SDK editor proxies", ModeInspector);
         Test("Priority crosses object boundaries, capacity defers lower priorities", Priority);
         Test("Equal priorities rotate after successful output", Fairness);
         Test("Output failure retains snapshots, times and pending state", FailedOutput);
@@ -153,6 +156,93 @@ public static class TransSyncSchedulingValidation
             Check(s.State.DeferredCount == 1, "Deferred field was not reported");
             other.highEnabled = false;
             Check(s.Send(.01, capacity: 29).ContainsKey(Hash("low")), "Deferred field was marked sent");
+        }
+    }
+
+    private static void ComponentModes()
+    {
+        using (var s = new Sender())
+        {
+            Check(s.Probe.sendMode == SendMode.Default, "New components changed the default policy");
+            s.Probe.changedEnabled = s.Probe.pollEnabled = true;
+            Check(s.Send(0).Count == 2, "Default first send missing");
+            Check(s.Send(.25).Keys.Single() == Hash("poll"), "Default ignored field attributes");
+            s.Probe.sendMode = SendMode.OnChange;
+            Check(s.Send(.5).Count == 0, "On Change did not override SendOnChange=false");
+            Check(s.Send(.75, refresh: .5f).Count == 2, "On Change lost unchanged-value refresh");
+            s.Probe.sendMode = SendMode.Always;
+            Check(s.Send(.8).Keys.Single() == Hash("changed"), "Always bypassed the minimum interval");
+            Check(s.Send(1).Count == 2, "Always did not resend unchanged values");
+            s.Probe.sendMode = SendMode.Default;
+            Check(s.Send(1.25).Keys.Single() == Hash("poll"), "Default did not restore field attributes");
+            s.Probe.sendMode = (SendMode)99;
+            Check(s.Send(1.5).Keys.Single() == Hash("poll"), "Unknown policy did not fall back to Default");
+            s.Probe.sendMode = SendMode.Always;
+            s.Probe.changedEnabled = false;
+            Check(s.Send(1.75).Keys.Single() == Hash("poll"), "Always sent a disabled field");
+            s.Probe.enabled = false;
+            Check(s.Send(2).Count == 0, "Always sent a disabled component");
+        }
+        using (var s = new Sender())
+        {
+            s.Probe.sendMode = SendMode.Always;
+            s.Probe.pacedEnabled = true;
+            Check(s.Send(0, false).Count == 1 && s.Send(.01, false).Count == 1, "Always consumed failed output");
+            s.Send(.02);
+            s.Probe.sendMode = SendMode.OnChange;
+            s.Probe.paced++;
+            Check(s.Send(.1).Count == 0, "Changing mode reset the minimum interval");
+            Check(s.Send(.28).Count == 1, "Mode switch lost the latest changed value");
+        }
+    }
+
+    private static void IndependentModes()
+    {
+        using (var s = new Sender())
+        {
+            s.Probe.changedEnabled = true;
+            s.Probe.sendMode = SendMode.Always;
+            var other = Create("Independent mode source");
+            other.networkId = 2;
+            other.pollEnabled = true;
+            other.sendMode = SendMode.OnChange;
+            s.Sources.Add(other);
+            Check(s.Send(0).Count == 2, "Independent first samples missing");
+            Check(s.Send(.25).Keys.Single() == Hash("changed"), "One component changed another's mode");
+            s.Probe.sendMode = SendMode.OnChange;
+            other.sendMode = SendMode.Always;
+            Check(s.Send(.5).Keys.Single() == Hash("poll"), "Live per-component mode switch failed");
+            var metadata = TransSyncMetadata.GetOrCreate(null, typeof(TransSyncSchedulingProbe)).Fields;
+            Check(metadata.Single(f => f.FieldInfo.Name == "changed").Sync.SendOnChange
+                && !metadata.Single(f => f.FieldInfo.Name == "poll").Sync.SendOnChange, "Mode override mutated shared attribute metadata");
+        }
+    }
+
+    private static void ModeInspector()
+    {
+        var first = Create("Mode inspector first");
+        var second = Create("Mode inspector second");
+        try
+        {
+            var serialized = new SerializedObject(new Object[] { first, second });
+            var property = serialized.FindProperty("sendMode");
+            Check(property != null && property.propertyType == SerializedPropertyType.Enum, "Send Mode is not a serialized enum");
+            Check(property.enumDisplayNames.SequenceEqual(new[] { "Default", "On Change", "Always" }), "Dropdown labels differ");
+            Undo.IncrementCurrentGroup();
+            property.enumValueIndex = (int)SendMode.Always;
+            serialized.ApplyModifiedProperties();
+            Undo.FlushUndoRecordObjects();
+            Check(first.sendMode == SendMode.Always && second.sendMode == SendMode.Always, "Multi-edit failed");
+#if UDONSHARP
+            Check(EncoderUdonBindingRuntime.GetSendMode(UdonSharpEditorUtility.GetBackingUdonBehaviour(first)) == (int)SendMode.Always, "SDK Editor read stale backing mode instead of proxy");
+#endif
+            Undo.PerformUndo();
+            Check(first.sendMode == SendMode.Default && second.sendMode == SendMode.Default, "Undo failed");
+        }
+        finally
+        {
+            Object.DestroyImmediate(first.gameObject);
+            Object.DestroyImmediate(second.gameObject);
         }
     }
     private static void Fairness()
@@ -449,10 +539,36 @@ public static class TransSyncSchedulingValidation
         Check(source.Get<int>("captures") == 3, "Udon before-encode event not dispatched once per source");
         Results.Add("PASS Udon scalar/string/array scheduling and real cross-behaviour field/event calls");
 
+        ConfigureVm(encoder, source, new[] { "changed", "poll" }, new int[2], new[] { true, false }, new float[2]);
+        Check(EncodeVm(encoder).Count == 2 && EncodeVm(encoder).Keys.Single() == Hash("poll"), "Udon Default ignored field modes");
+        source.Set("sendMode", (int)SendMode.OnChange);
+        Check(EncodeVm(encoder).Count == 0, "Udon On Change did not suppress polling field");
+        encoder.Set("transSyncRefreshInterval", 1f);
+        double[] refreshTimes = encoder.Get<double[]>("_sendLastTimes");
+        for (int i = 0; i < refreshTimes.Length; i++) refreshTimes[i] = Time.realtimeSinceStartupAsDouble - 2;
+        Check(EncodeVm(encoder).Count == 2, "Udon On Change lost refresh");
+        encoder.Set("transSyncRefreshInterval", 0f);
+        source.Set("sendMode", (int)SendMode.Always);
+        int captures = source.Get<int>("captures");
+        Check(EncodeVm(encoder).Count == 2 && EncodeVm(encoder).Count == 2, "Udon Always suppressed unchanged fields");
+        Check(source.Get<int>("captures") == captures + 2 && encoder.Get<int>("_beforeEncodeTargetCount") == 1
+            && encoder.Get<int[]>("_beforeEncodeSendModes")[0] == (int)SendMode.Always, "Udon per-source capture/mode cache failed");
+        source.Set("sendMode", (int)SendMode.Default);
+        Check(EncodeVm(encoder).Keys.Single() == Hash("poll"), "Udon Default did not restore attributes");
+        source.Set("sendMode", 99);
+        Check(EncodeVm(encoder).Keys.Single() == Hash("poll"), "Udon invalid mode did not use Default");
+        source.Set("sendMode", (int)SendMode.Default);
+        Results.Add("PASS Udon live component modes, refresh, fallback and once-per-source mode cache");
+
         ConfigureVm(encoder, source, new[] { "paced", "poll" }, new int[2], new[] { true, false }, new[] { 1000f, 1000f });
         Check(EncodeVm(encoder).Count == 2, "Udon interval delayed first sample");
         source.Set("paced", 77);
         Check(EncodeVm(encoder).Count == 0, "Udon ignored interval");
+        source.Set("sendMode", (int)SendMode.Always);
+        Check(EncodeVm(encoder).Count == 0, "Udon Always bypassed the minimum interval or reset timestamps");
+        source.Set("sendMode", (int)SendMode.OnChange);
+        Check(EncodeVm(encoder).Count == 0, "Udon On Change reset timestamps");
+        source.Set("sendMode", (int)SendMode.Default);
         double[] times = encoder.Get<double[]>("_sendLastTimes");
         for (int i = 0; i < times.Length; i++) times[i] = Time.realtimeSinceStartupAsDouble - 2000;
         values = EncodeVm(encoder);

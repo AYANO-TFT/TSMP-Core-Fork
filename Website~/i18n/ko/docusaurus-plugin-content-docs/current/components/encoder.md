@@ -8,7 +8,7 @@ title: TSMPEncoder
 
 대부분의 사용자는 모든 필드를 직접 수정하기보다 `TSMPSetup`을 통해 설정합니다.
 
-자동 변수는 [TransSync 송신 스케줄링](../scripting-api/transsync.md)을 따릅니다. 변경 없는 값은 기본적으로 1초마다 다시 전송하므로, 정지한 씬에서 재전송 사이에 프레임 번호가 멈추는 것은 정상입니다.
+자동 변수는 [TransSync 송신 스케줄링](../scripting-api/transsync.md)을 따릅니다. 변경 없는 값은 기본적으로 1초마다 다시 전송하므로, 정지한 씬에서 재전송 사이에 프레임 번호가 멈추는 것은 정상입니다. 다른 컴포넌트의 재전송 간격은 그대로 두고 특정 컴포넌트만 자주 보내려면 해당 컴포넌트에서 [Send Mode: Always](./network-behaviour.md#send-mode)를 선택하세요. 최소 간격과 용량 제한은 계속 적용됩니다.
 
 ## 필요한 것
 

@@ -29,6 +29,8 @@ Field는 `TSMPSetup`이 discover할 수 있어야 합니다. `[TransSync]` field
 
 `transform.packed`, `animator.bytes`, `counter.value`처럼 명확하고 stable한 key를 사용하세요. Runtime에 바뀌는 key를 사용하지 마세요.
 
+`SendOnChange`는 필드 작성자가 정한 기본값입니다. 사용자는 인스펙터의 [Send Mode](../components/network-behaviour.md#send-mode)에서 컴포넌트 단위로 재정의할 수 있습니다. `Default`는 어트리뷰트 설정을 따르고, `On Change`는 `true`, `Always`는 `false`로 처리합니다. `MinSendInterval`이나 다른 속성은 재정의하지 않습니다.
+
 ### `Key`
 
 해시는 컴포넌트의 전체 C# 타입 이름과 key로 계산합니다. 같은 컴포넌트 타입에서 서로 다른 필드 이름에 같은 key를 사용할 수 있지만, 서로 다른 타입은 같은 key만으로 동일한 해시가 되지 않습니다.
@@ -60,7 +62,7 @@ public class ChatChannel : TSMPNetworkBehaviour
 
 ### `Priority`, `SendOnChange`, `MinSendInterval`
 
-일반 Unity와 Udon 모두 자동 변수 송신에 이 옵션들을 적용합니다. 수신 보간이나 수동 Writer 호출, RPC의 정책을 변경하는 옵션은 아닙니다.
+일반 Unity와 Udon 모두 자동 변수 송신에 이 옵션들을 적용합니다. 수신 보간이나 수동 Writer 호출, RPC의 정책을 변경하는 옵션은 아닙니다. 아래 예시는 컴포넌트의 Send Mode가 `Default`일 때의 동작입니다.
 
 ```csharp
 [TransSync("status", Priority = 10, SendOnChange = true, MinSendInterval = 0.1f)]
@@ -82,9 +84,9 @@ public float meter;
 
 인코더의 **Trans Sync Refresh Interval** (`transSyncRefreshInterval`) 기본값은 **1초**입니다. 값이 그대로여도 다시 보내므로 마지막 변경 프레임을 놓쳤거나 뒤늦게 접속한 수신기가 값을 복구할 기회를 얻습니다. 필드의 `MinSendInterval`은 계속 지킵니다. 최소 간격이 2초면 재전송 설정이 1초여도 2초보다 빨리 보내지 않습니다.
 
-재전송 간격을 `0`으로 설정하면 변경된 값만 보냅니다. 이때는 유실이나 늦은 접속 후 값이 다시 변경될 때까지 수신 값이 복구되지 않을 수 있습니다. 재전송은 수신 확인이나 전달 보장을 의미하지 않습니다.
+재전송 간격을 `0`으로 설정하면 실제 `SendOnChange`가 `true`인 필드는 변경된 값만 보냅니다. 이때는 유실이나 늦은 접속 후 값이 다시 변경될 때까지 수신 값이 복구되지 않을 수 있습니다. 재전송은 수신 확인이나 전달 보장을 의미하지 않습니다. `Always`나 `SendOnChange = false`인 필드의 송신을 제한하지는 않습니다.
 
-필드의 예전 매 인코딩 전송 동작을 유지하려면 `SendOnChange = false, MinSendInterval = 0`을 지정하세요. 중간 상태가 합쳐지면 안 되는 이벤트는 RPC로 보내세요.
+스크립트를 수정하지 않고 컴포넌트 전체를 매 인코딩마다 전송 대상으로 삼으려면 **Send Mode: Always**를 선택하세요. Send Mode가 `Default`일 때 개별 필드만 그렇게 하려면 `SendOnChange = false, MinSendInterval = 0`을 지정합니다. 두 경우 모두 실제 송신은 인코더 빈도, 최소 간격, 우선순위와 용량 제한을 받습니다. 중간 상태가 합쳐지면 안 되는 이벤트는 RPC로 보내세요.
 
 ### `SentEvent`
 
@@ -140,6 +142,8 @@ Direction은 setup 중에 해석됩니다. 변경 후 setup을 다시 실행하�
 ## 바인딩 재생성
 
 `Key`, `Direction`, value type, `EnabledBy`, `Priority`, `SendOnChange`, `MinSendInterval`은 generated binding에 영향을 줍니다. 이 값을 바꾼 뒤에는 `TSMPSetup`에서 `Apply Setup`을 실행하세요. 업로드된 VRChat world에서 TSMP는 runtime reflection 대신 generated table을 사용합니다.
+
+컴포넌트의 `sendMode`만 바꾸는 경우에는 바인딩을 다시 만들 필요가 없습니다. 생성된 어트리뷰트 설정을 수정하지 않고 런타임에 모드를 읽습니다.
 
 ## Payload advice
 
