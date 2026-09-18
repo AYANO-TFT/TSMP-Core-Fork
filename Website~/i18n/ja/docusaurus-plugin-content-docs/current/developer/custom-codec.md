@@ -48,7 +48,7 @@ com.example.tsmp.codec.mycodec/
 "com.kibalab.tsmp.core": "0.3.0-beta.2"
 ```
 
-このバージョンは、まだ公開していない準備 API のリリース候補です。[バージョンとインストールの規則](./codec-implementation.md)を確認してください。新 API を使わない既存コーデックは検証済みの最小バージョンを維持できます。
+このバージョンは準備 API に必要な Core の最小バージョンです。[バージョンとインストールの規則](./codec-implementation.md)を確認してください。新 API を使わない既存コーデックは検証済みの最小バージョンを維持できます。
 
 パッケージが VRChat ユーザーを対象としている場合は、VPM 依存関係メタデータも使用します。
 

@@ -48,7 +48,7 @@ Package는 Core에 의존해야 합니다.
 "com.kibalab.tsmp.core": "0.3.0-beta.2"
 ```
 
-이 버전은 아직 공개되지 않은 준비 API 배포 후보입니다. [버전 및 설치 규칙](./codec-implementation.md)을 확인하세요. 새 API를 사용하지 않는 기존 코덱은 검증한 최소 버전을 유지할 수 있습니다.
+이 버전은 준비 API를 사용하는 데 필요한 최소 Core 버전입니다. [버전 및 설치 규칙](./codec-implementation.md)을 확인하세요. 새 API를 사용하지 않는 기존 코덱은 검증한 최소 버전을 유지할 수 있습니다.
 
 VRChat 사용자용 package라면 VPM dependency metadata도 함께 넣으세요.
 

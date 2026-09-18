@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0-beta.2 (Unreleased)
+## 0.3.0-beta.2
 
 ### Added
 
@@ -46,7 +46,11 @@ Window Size is receiver-local; no window or session field is transmitted. Existi
 
 The zero/window exception is a restart heuristic, not a session identifier: a delayed old zero can trigger a false restart, a missing zero or restart before one window may be missed, and high old frame numbers may appear newer after a reset. RPC event deduplication is unchanged.
 
-Release candidates must be validated and Core published before the dependent codec releases. This heading does not indicate that the version is already available from VPM or GitHub Releases.
+Install this Core version before updating codecs that use the preparation API. Existing codecs using the default no-op preparation path do not require changes.
+
+### Validation limits
+
+Native Unity scheduling, Gamma GPU loopback and a Windows x64 Mono Player passed. UdonSharp client compilation, Encoder VM tests and a local SDK world bundle build also passed; these do not establish live VRChat client compatibility. The full legacy Linear loopback harness failed its CPU calibration/block-expansion check, although separate Linear Editor encoding checks passed. IL2CPP, Quest and serialized references in a running VRChat client remain unverified.
 
 ## 0.3.0-beta.1
 

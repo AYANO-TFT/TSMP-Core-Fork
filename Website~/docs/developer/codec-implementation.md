@@ -71,7 +71,7 @@ The package should depend on Core:
 }
 ```
 
-This example targets Core **0.3.0-beta.2**, currently a release candidate, not an already published version. Core 0.2.0 and 0.3.0-beta.1 do not contain the preparation API. Publish a dependent codec only after the matching Core is available and the packaged combination has been tested.
+This example requires the preparation API introduced in Core **0.3.0-beta.2**. Core 0.2.0 and 0.3.0-beta.1 do not contain this API. Install a compatible Core before the dependent codec, and test the actual packaged combination before publishing your codec.
 
 Use `"com.kibalab.tsmp.core": ">=0.3.0-beta.2"` in `vpmDependencies` too. UPM package dependencies use version strings, not ranges or Git URLs. For local/disk or Git installation, the **project** must explicitly supply a compatible Core too; this package manifest does not locate it on GitHub. VPM resolves the range from configured repositories; enable pre-release visibility when selecting betas.
 
