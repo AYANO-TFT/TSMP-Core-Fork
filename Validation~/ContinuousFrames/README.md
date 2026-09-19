@@ -19,6 +19,10 @@ This harness measures the production Encoder and Decoder under a continuously ch
 
 The optional [combined byte output](COMBINED-OUTPUT.md) comparison uses `TSMP_DISABLE_COMBINED_OUTPUT=1` for the separate-packing control and `0` for compatible direct-output shaders. It is independent of prediction enablement; the first frame and prediction fallbacks still use ordinary decode passes.
 
+The [two-slot overlap](TWO-SLOTS.md) comparison uses `TSMP_SINGLE_SLOT=1` for single-slot admission and `0` for the default bounded two-slot mode. This switch is independent of prediction and combined output. Use the same source and scheduling mode for each comparison. `overlap-regression` explicitly enables two slots for its assertions regardless of this switch.
+
+`overlap-regression` checks simultaneous captures, full-capacity rejection, codec/sample/length changes, source overwrite, disable/re-enable cancellation and repeated RPC deduplication. Its ordering test first lets real GPU requests complete while the consumer is paused, then temporarily holds the older slot pending via test-only private state access. This tests ordered draining without claiming the hardware naturally completed out of order or synthesizing readback bytes. It also checks that a discarded or error-injected head does not stall its successor; diagnostic logging is disabled only around the intentional error. Results are written to `overlap-regression.txt`. `sustained-60-at-120` measures sixty seconds of 60-Hz publication with a 120-Hz target render loop.
+
 Use isolated Unity 2022.3.22f1 projects with file dependencies referencing the actual Core and four codec repositories. Do not use `-nographics`. Only run one benchmark process at a time.
 
 ```powershell
@@ -45,7 +49,7 @@ The Udon adapter performs a full client-target UdonSharp compilation, loads the 
 
 ## Interpretation
 
-Compare `txHz` with `applyHz`, not the configured target alone. `schedulerMisses` can indicate that the source itself could not sustain the requested rate. `busyPercent` counts render ticks at which a new decode could not start; it is not GPU utilization. `captureCount` includes duplicate-image requests. `decoderErrorObservations` records failing decoder diagnostics observed between requests, independently of callback delivery gaps.
+Compare `txHz` with `applyHz`, not the configured target alone. `schedulerMisses` can indicate that the source itself could not sustain the requested rate. `busyPercent` counts render ticks at which occupied slots meet the configured admission limit; it is not GPU utilization or the percentage of ticks with any pending request. `captureCount` includes duplicate-image requests. `decoderErrorObservations` records failing decoder diagnostics observed between requests, independently of callback delivery gaps.
 
 `valueBytes` excludes TSMP message headers; use `payloadBytes` for the encoded payload length. The four sample-4 cases use the shipped codec prefab settings, including RGB16 4/4/4 Refine and Color256 Robust Refine.
 

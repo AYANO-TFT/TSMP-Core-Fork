@@ -67,6 +67,12 @@ After a valid frame, **Use Predicted Readback** is enabled by default. The decod
 
 No extra material assignment is required. You can disable the optimization under **Diagnostics > Advanced Decode** for comparison. Manual layout and safety modes retain sequential decoding. CRC failures discard the frame even when speculative GPU decoding has already run. This improves processing opportunities, not guaranteed delivery or a fixed receive frame rate.
 
+## Overlapping readbacks
+
+**Overlap Readbacks** is enabled by default under **Diagnostics > Advanced Decode**. The decoder can retain two images, starting the next capture while the first is waiting on the GPU. Results are applied in capture order. If both slots are occupied, it skips a new capture instead of extending a queue. Disable this option to compare with single-slot operation; no sender change is needed.
+
+This can reduce missing frames when a readback takes longer than one update, but uses more memory and can increase application latency and GPU/CPU load. Each snapshot needs about 3.52 MiB at 640x360 or 31.64 MiB at 1920x1080; two allocated slots double that storage, excluding byte buffers. It cannot recover frames that never reached the input texture. **Pending Frames** shows occupied slots and **Skipped Busy Captures** counts attempts rejected at capacity, not unique lost frames.
+
 ## Receive interpolation
 
 Each `TSMPNetworkBehaviour` has a receive mode:

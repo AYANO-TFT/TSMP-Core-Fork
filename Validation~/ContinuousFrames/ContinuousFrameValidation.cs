@@ -54,6 +54,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         void Decode();
         void Stop();
         object ReadDecoder(string name);
+        void WriteDecoder(string name, object value);
         void SelectCodec(int index);
         void SetSample(int sample);
         void Resume();
@@ -136,6 +137,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             "\nManaged source=" + Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_REVISION") +
             "\nAutomatic scheduling=" + Environment.GetEnvironmentVariable("TSMP_AUTOMATIC_SCHEDULING") +
             "\nCombined output disabled=" + Environment.GetEnvironmentVariable("TSMP_DISABLE_COMBINED_OUTPUT") +
+            "\nSingle slot=" + Environment.GetEnvironmentVariable("TSMP_SINGLE_SLOT") +
             "\nRetry disabled=" + Environment.GetEnvironmentVariable("TSMP_DISABLE_READBACK_RETRY"));
         rows.Add(CsvHeader);
         var work = Run();
@@ -178,6 +180,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
     static IEnumerable<Case> Cases()
     {
         yield return new Case { Name = "prediction-regression", Width = 1280, Height = 720, Bytes = 4096 };
+        yield return new Case { Name = "overlap-regression", Width = 1280, Height = 720, Bytes = 4096 };
         yield return new Case { Name = "sender-only-60", Baseline = true };
         foreach (int loop in new[] { 60, 90, 120, 144, 180, 240, -1 })
             yield return new Case { Name = "small-60-at-" + loop, LoopHz = loop };
@@ -192,6 +195,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         yield return new Case { Name = "hd-small", Width = 1280, Height = 720, LoopHz = 120 };
         yield return new Case { Name = "hd-large", Width = 1280, Height = 720, Bytes = 4096, LoopHz = 120 };
         yield return new Case { Name = "sustained-60", Seconds = 60 };
+        yield return new Case { Name = "sustained-60-at-120", Seconds = 60, LoopHz = 120 };
     }
 
     IEnumerator Run()
@@ -204,7 +208,8 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             using (ILoopback loop = UdonFactory != null ? UdonFactory(this, test) : CreateNative(test))
             {
                 yield return null;
-                var run = test.Name == "prediction-regression" ? Regression(loop) : Measure(test, loop);
+                var run = test.Name == "prediction-regression" ? Regression(loop) :
+                    test.Name == "overlap-regression" ? OverlapRegression(loop) : Measure(test, loop);
                 while (run.MoveNext()) yield return run.Current;
             }
             yield return null;
@@ -292,7 +297,11 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             if (!test.Baseline)
             {
                 if (measured && !string.IsNullOrEmpty(loop.DecoderError)) decodeErrors++;
-                if (loop.Busy)
+                bool atCapacity = loop.Busy;
+                object pending = loop.ReadDecoder("pendingDecodeCount");
+                if (pending != null)
+                    atCapacity = (int)pending >= (Environment.GetEnvironmentVariable("TSMP_SINGLE_SLOT") == "1" ? 1 : 2);
+                if (atCapacity)
                 {
                     if (measured) busy++;
                 }
@@ -534,6 +543,132 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         File.WriteAllLines(Path.Combine(resultRoot, "regression.txt"), results);
         loop.Stop();
     }
+    IEnumerator OverlapRegression(ILoopback loop)
+    {
+        loop.SetAutomatic(false);
+        loop.WriteDecoder("overlapReadbacks", true);
+        var results = new List<string>();
+        int id = 0;
+        Func<int, byte[]> packet = size =>
+        {
+            var value = Enumerable.Range(0, size).Select(i => (byte)(i * 37)).ToArray();
+            SetPacketId(value, ++id);
+            return value;
+        };
+        foreach (int codec in new[] { 0, 1, 2, 3, 0 })
+        {
+            for (int pass = 0; pass < 2; pass++)
+            {
+                loop.Publish(packet(32));
+                loop.Decode();
+                var warm = Drain(loop);
+                while (warm.MoveNext()) yield return warm.Current;
+            }
+            int before = loop.AppliedCount;
+            int skipped = (int)loop.ReadDecoder("skippedBusyDecodeCount");
+            byte[] first = packet(33);
+            loop.Publish(first);
+            loop.Decode();
+            loop.SelectCodec(codec);
+            loop.SetSample(codec % 2 == 0 ? 1 : 4);
+            byte[] second = packet(4096);
+            loop.Publish(second);
+            loop.Decode();
+            loop.Publish(packet(32));
+            loop.Decode();
+            if ((int)loop.ReadDecoder("pendingDecodeCount") != 2 || (int)loop.ReadDecoder("skippedBusyDecodeCount") != skipped + 1)
+                throw new InvalidOperationException("Two-slot capacity limit failed");
+            var wait = Drain(loop);
+            while (wait.MoveNext()) yield return wait.Current;
+            if (loop.AppliedCount != before + 2 || loop.AppliedIds[before] != id - 2 || loop.AppliedIds[before + 1] != id - 1 ||
+                !second.SequenceEqual(loop.ReceivedPacket) || loop.CorruptCount != 0)
+                throw new InvalidOperationException("Slot source/configuration isolation failed: " + loop.Diagnostics);
+        }
+        results.Add("PASS two simultaneous captures, third rejected at capacity, ordered application across codec/sample/length changes and source overwrite");
+
+        for (int scenario = 0; scenario < 3; scenario++)
+        {
+            int before = loop.AppliedCount;
+            bool previousDebugLog = (bool)loop.ReadDecoder("debugLog");
+            loop.Publish(packet(32));
+            loop.Decode();
+            byte[] second = packet(32);
+            loop.Publish(second);
+            loop.Decode();
+            loop.WriteDecoder("_processingReadbacks", true);
+            double deadline = Time.realtimeSinceStartupAsDouble + 10;
+            int[] states = (int[])loop.ReadDecoder("_slotStates");
+            while ((states[0] != 2 || states[1] != 2) && Time.realtimeSinceStartupAsDouble < deadline) yield return null;
+            if (states[0] != 2 || states[1] != 2) throw new InvalidOperationException("Both real readbacks did not finish");
+            int head = (int)loop.ReadDecoder("_slotHead");
+            if (scenario == 0)
+            {
+                states[head] = 1;
+                loop.WriteDecoder("_processingReadbacks", false);
+                loop.TickAutomatic();
+                yield return null;
+                if (loop.AppliedCount != before) throw new InvalidOperationException("Younger ready frame overtook older pending frame");
+                states[head] = 2;
+            }
+            else
+            {
+                if (scenario == 1)
+                    ((bool[])loop.ReadDecoder("_slotDiscarded"))[head] = true;
+                else
+                {
+                    loop.WriteDecoder("debugLog", false);
+                    ((string[])loop.ReadDecoder("_slotErrors"))[head] = "Injected completed-slot error for regression validation.";
+                }
+                loop.WriteDecoder("_processingReadbacks", false);
+            }
+            loop.TickAutomatic();
+            var wait = Drain(loop);
+            while (wait.MoveNext()) yield return wait.Current;
+            loop.WriteDecoder("debugLog", previousDebugLog);
+            int expected = scenario == 0 ? 2 : 1;
+            if (loop.AppliedCount != before + expected || !second.SequenceEqual(loop.ReceivedPacket))
+                throw new InvalidOperationException("Ordered readiness/discard drain failed: " + loop.Diagnostics);
+        }
+        results.Add("PASS controlled readiness reordering after real GPU completion; younger result held until head ready; discarded/failed head does not stall younger result");
+
+        int beforeDisable = loop.AppliedCount;
+        loop.Publish(packet(32));
+        loop.Decode();
+        loop.Publish(packet(32));
+        loop.Decode();
+        loop.Stop();
+        loop.Resume();
+        var disableWait = Drain(loop);
+        while (disableWait.MoveNext()) yield return disableWait.Current;
+        if (loop.AppliedCount != beforeDisable) throw new InvalidOperationException("Cancelled slot applied after re-enable");
+        loop.Publish(packet(32));
+        loop.Decode();
+        var resumeWait = Drain(loop);
+        while (resumeWait.MoveNext()) yield return resumeWait.Current;
+        if (loop.AppliedCount != beforeDisable + 1) throw new InvalidOperationException("Two-slot cancellation failed to recover");
+        results.Add("PASS disable/re-enable cancels both pending slots and recovers");
+
+        int expectedRpcs = loop.RpcCount;
+        for (int eventIndex = 0; eventIndex < 8; eventIndex++)
+        {
+            loop.QueueRpc();
+            expectedRpcs++;
+            for (int pair = 0; pair < 2; pair++)
+            {
+                loop.Publish(packet(32));
+                loop.Decode();
+                loop.Publish(packet(32));
+                loop.Decode();
+                var wait = Drain(loop);
+                while (wait.MoveNext()) yield return wait.Current;
+            }
+            if (loop.RpcCount != expectedRpcs) throw new InvalidOperationException("Overlapping RPC replay/loss");
+        }
+        results.Add("PASS eight RPC events with overlapping repeated copies applied exactly once");
+        File.WriteAllLines(Path.Combine(resultRoot, "overlap-regression.txt"), results);
+        loop.Stop();
+    }
+
     static void SetPacketId(byte[] packet, int id)
     {
         packet[0] = (byte)(id & 255);
@@ -628,6 +763,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             decoder = root.AddComponent<TSMPDecoder>();
             decoder.usePredictedReadback = Environment.GetEnvironmentVariable("TSMP_DISABLE_PREDICTION") != "1";
             decoder.useCombinedByteOutput = Environment.GetEnvironmentVariable("TSMP_DISABLE_COMBINED_OUTPUT") != "1";
+            decoder.overlapReadbacks = Environment.GetEnvironmentVariable("TSMP_SINGLE_SLOT") != "1";
             typeof(TSMPDecoder).GetField("retryAfterReadback")?.SetValue(decoder, Environment.GetEnvironmentVariable("TSMP_DISABLE_READBACK_RETRY") != "1");
             decoder.applyEveryFrame = false;
             decoder.sourceTexture = encoder.output;
@@ -667,7 +803,8 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         public void TickAutomatic() { }
         public void Stop() => decoder.enabled = false;
         public void Resume() => decoder.enabled = true;
-        public object ReadDecoder(string name) => typeof(TSMPDecoder).GetField(name)?.GetValue(decoder);
+        public object ReadDecoder(string name) => typeof(TSMPDecoder).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(decoder);
+        public void WriteDecoder(string name, object value) => typeof(TSMPDecoder).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).SetValue(decoder, value);
         public RenderTexture Output => encoder.output;
         public byte[] ReceivedPacket => receiver.packet;
         public void SetSample(int sample) => encoder.sampleSize = sample;

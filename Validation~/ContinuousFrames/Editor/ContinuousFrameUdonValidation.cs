@@ -113,6 +113,11 @@ public static class ContinuousFrameUdonValidation
         public void Set<T>(string name, T value) => code.Heap.SetHeapVariable(code.SymbolTable.GetAddressFromSymbol(name), value, typeof(T));
         public T Get<T>(string name) => (T)code.Heap.GetHeapVariable(code.SymbolTable.GetAddressFromSymbol(name));
         public object GetOptional(string name) => code.SymbolTable.TryGetAddressFromSymbol(name, out uint address) ? code.Heap.GetHeapVariable(address) : null;
+        public void SetAny(string name, object value)
+        {
+            uint address = code.SymbolTable.GetAddressFromSymbol(name);
+            code.Heap.SetHeapVariable(address, value, code.Heap.GetHeapVariableType(address));
+        }
         public void SetOptional<T>(string name, T value)
         {
             if (code.SymbolTable.TryGetAddressFromSymbol(name, out uint address)) code.Heap.SetHeapVariable(address, value, typeof(T));
@@ -180,6 +185,7 @@ public static class ContinuousFrameUdonValidation
             decoder.Set("readbackPackMaterial", Resources.Load<Material>("TSMPReadbackPack"));
             decoder.Set("usePredictedReadback", Environment.GetEnvironmentVariable("TSMP_DISABLE_PREDICTION") != "1");
             decoder.Set("useCombinedByteOutput", Environment.GetEnvironmentVariable("TSMP_DISABLE_COMBINED_OUTPUT") != "1");
+            decoder.Set("overlapReadbacks", Environment.GetEnvironmentVariable("TSMP_SINGLE_SLOT") != "1");
             decoder.SetOptional("retryAfterReadback", Environment.GetEnvironmentVariable("TSMP_DISABLE_READBACK_RETRY") != "1");
             decoder.Set("codecHandlers", test.Codec == 0 ? new[] { luma.Backing } : new[] { luma.Backing, codec.Backing });
             decoder.Set("applyEveryFrame", false);
@@ -231,6 +237,7 @@ public static class ContinuousFrameUdonValidation
         public void Stop() => decoder.Call("_onDisable");
         public void Resume() => decoder.Call("_onEnable");
         public object ReadDecoder(string name) => decoder.GetOptional(name);
+        public void WriteDecoder(string name, object value) => decoder.SetAny(name, value);
         public RenderTexture Output => source;
         public byte[] ReceivedPacket => receiver.Get<byte[]>("packet");
         public void SetSample(int sample) => encoder.Set("sampleSize", sample);
