@@ -95,7 +95,7 @@ Core はシーンランタイムとセットアップを、別のコーデック
 
 [最新の正式リリース](https://github.com/kibalab/TSMP-Core/releases/latest) · [すべてのリリース](https://github.com/kibalab/TSMP-Core/releases)
 
-リリースタグは `v0.x.y` 形式を使用します。1.0 より前は公開 API が変更される場合があります。
+TSMP Core 1.0.0 は正式リリースです。0.2.0 以降のベータで追加された機能・修正・最適化を含みます。Luma4 1.0.0 と組み合わせて使用してください。
 
 不具合や改善案は [Issues](https://github.com/kibalab/TSMP-Core/issues) にお寄せください。コード・ドキュメントへの貢献は[貢献ガイド](CONTRIBUTING.md)を参照してください。
 

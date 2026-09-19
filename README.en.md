@@ -95,7 +95,7 @@ Core provides the scene runtime and setup workflow. Separate codec packages prov
 
 [Latest stable release](https://github.com/kibalab/TSMP-Core/releases/latest) · [All releases](https://github.com/kibalab/TSMP-Core/releases)
 
-Release tags use the `v0.x.y` format. Public APIs may still evolve before 1.0.
+TSMP Core 1.0.0 is a stable release incorporating the features, fixes and optimizations from the betas since 0.2.0. Use it with Luma4 1.0.0.
 
 Report bugs and suggest improvements in [Issues](https://github.com/kibalab/TSMP-Core/issues). For code and documentation contributions, see the [contributing guide](CONTRIBUTING.md).
 

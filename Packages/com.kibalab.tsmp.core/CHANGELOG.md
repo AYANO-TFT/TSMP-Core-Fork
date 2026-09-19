@@ -1,5 +1,75 @@
 # Changelog
 
+## 1.0.0
+
+Stable promotion of all 0.3.0-beta.1 through 0.3.0-beta.3 changes since stable 0.2.0. Runtime, shaders and asset GUIDs are unchanged from beta.3.
+
+### TransSync Sending and Component Controls
+
+- Implement per-field `Priority`, `SendOnChange` and `MinSendInterval` in both native Unity and Udon. Compare serialized contents, including mutations to existing arrays, and measure intervals from successful output.
+- Send higher-priority fields first, rotate equal-priority fields after successful output, reserve queued RPC capacity before automatic variables and defer fields that do not fit without truncating them.
+- Add unchanged-value refresh, defaulting to one second. A zero `transSyncRefreshInterval` disables refresh. Preserve pending state on failure; when no data is eligible, preserve the last output and frame index.
+- Add the shared Inspector **Send Mode** dropdown: Default uses each field's attribute, On Change enables filtering with refresh, and Always also sends unchanged values. Changes apply live without rebuilding bindings. Eligibility, minimum intervals, priority and capacity still apply; RPCs and manual Writer calls are unaffected.
+- Add opt-in `TransSync.SentEvent` so avatar root delta and keepalive state commit only after successful output. Guard against encoder reentry during callbacks.
+
+### Timeline, Animator, BlendShapes and Avatars
+
+- Apply the first Timeline position independently of the drift threshold, prepare paused graphs before evaluating, and avoid rebuilding stopped graphs for repeated packets.
+- Implement Continuous Timeline drift correction, including the shortest correction across loop boundaries. Clear pending corrections when reception is disabled, the component is disabled or the Director changes.
+- Reject malformed Timeline packets, unknown states and invalid times before applying them; clear outgoing data when the source is unavailable.
+- Fix Play/Resume after Stop without restarting an already playing Director. Add `Seek(float)` with playback-state preservation and local duration bounds.
+- Respect receiver Animator layer selection, correct drift across looping/non-looping states, and read negative state hashes without Udon conversion failures.
+- Invalidate stale BlendShape interpolation targets when selections, Renderer, mesh or receive state changes.
+- Ignore TransSync reception before decoding field values for Receive Interpolation None. Clear pending Rigidbody velocities when physics reception is disabled.
+- Deactivate avatar pool slots above a reduced Max Players limit and clear retired assignments. Retain their objects/rigs for reuse; do not destroy supplied pool objects. Pool Size includes retained inactive objects.
+
+### Decoder Consistency, Ordering and Throughput
+
+- Capture a private image so header, calibration and payload use the same source even when the live input changes during readback. Cancel pending results after disable and release owned resources.
+- Filter duplicate and older frames with wrap-aware UInt32 ordering. Add receiver-local **Window Size**, default 256: frame zero may restart ordering when the previous applied index reaches one window.
+- Reuse payload capacity across shorter frames while bounding parsing and diagnostics to valid bytes. Reject empty/truncated NetworkFrame payloads before payload readback. Keep exact-length plugin arguments and independent received field arrays.
+- Add the default-enabled predicted path: use the previous validated configuration to decode the **current** header and payload in one GPU readback. Always validate the current header CRC. Equal length never means reusing old payload contents.
+- Fall back on the same frozen image when codec, options, stream, layout, sample size or payload length changes. Require an exact payload-length match; custom codecs are not assumed to support arbitrary prefix decoding.
+- Keep manual layout and safety modes on the sequential path; retain sequential fallback when prediction resources are unavailable. Add advanced opt-outs and prediction/fallback diagnostics.
+- Overlap at most two independent captures and apply results in capture order. Full slots skip new captures instead of building an unbounded queue; cancellation drains outstanding requests before buffer reuse. Add an overlap opt-out and pending/busy-capture diagnostics.
+- Let opted-in codec shaders write header and payload bytes directly to the readback texture, removing a payload intermediate and packing draw. Existing third-party shaders retain the legacy path.
+
+### CPU, GPU and Memory
+
+- Replace same-type Udon image/payload loops with guarded bulk copies, preserving receiver and in-flight buffer isolation.
+- Read GPU output into slot-owned byte arrays and bulk-copy validated ranges without retaining request-owned native views.
+- Reuse encoder-owned native raster storage through an optional codec API, keeping the original writer fallback.
+- Match known 8-bit/half-float snapshot formats and linear/sRGB interpretation. Keep Float32 for unknown/high-precision inputs and non-RenderTexture Udon sources.
+- Encode Luma4 bytes into a small GPU symbol image before block expansion. Prepare materials automatically, retain CPU fallback, defer unused CPU image allocation and release owned GPU resources. Native codecs explicitly opt in.
+- Add `TSMPCodec.PrepareDecode(Texture, Material)`, `GetDecodeSampleSize`, calibration-LUT helpers and the optional `calibrationMaterial`. Codecs own Float32 LUT allocation, per-pass refresh and cleanup; Core does not select codec-specific algorithms.
+- Remove Setup's redundant Editor output Blit. Only successful Encoder output is presented.
+- Preserve integer pixel blocks during expansion and clear right/bottom remainders when dimensions are not divisible by block size.
+
+### RPC and Desktop Streaming
+
+- Preserve RPC queue accounting under reentrant sends and reject events that can never fit the configured payload. Repeats remain a finite attempt budget, not acknowledged delivery.
+- Reject FFmpeg source/output dimension mismatches before startup and stop publishing when source dimensions change. Validate RGBA32 readbacks before flipping/writing; do not silently resize TSMP pixels.
+- Isolate processes, buffers, callbacks and diagnostics per FFmpeg session so stopped sessions cannot submit into restarted sessions.
+- Use cooperative writer shutdown and terminate blocked processes, dispose resources after the writer finishes, detect unexpected exits and restore background execution on failure/shutdown.
+- Pace FFmpeg output independently of texture updates while retaining the latest frame.
+
+### Documentation and Regression Coverage
+
+- Update English, Korean and Japanese sending, decoding, codec API, shader integration and installation guides.
+- Add reusable English issue templates and contribution guidance across the repositories.
+- Add native/Udon scheduling and Timeline regression tests, FFmpeg lifecycle cases, changing-source decoder tests, GPU pixel comparisons and repeatable Player/Udon performance and delivery measurements.
+
+### Upgrade and Measurements
+
+- Install Core 1.0.0 with Luma4 1.0.0 and, if used, RGB16/RGB20/Color256 2.0.0. Codec UPM dependencies use Core 1.0.0; VPM uses >=1.0.0. No prerelease selection is required. SDK remains optional in ordinary Unity and VPM-only for VRChat.
+- SendOnChange now controls actual traffic compared with 0.2.0. Select Send Mode Always for continuous resend, subject to field intervals and capacity. RPC repeats remain finite.
+- Protocol version, the 56-byte header, packet layouts and codec IDs are unchanged. Window Size is receiver-local, not a new wire field or a reliable session identifier.
+- Included resource measurements: Udon sender 11.27 -> 0.457 ms (24.7x), receiver submission/callback 3.904 -> 0.791 ms (4.9x), paired CPU means 15.17 -> 1.248 ms. The baseline already had predicted/two-slot decoding; these are not direct 0.2.0-versus-1.0.0 measurements.
+- Two known 8-bit snapshots use 75% less texel storage. Native whole-Player median frame GC allocation fell from 3,686,964 B to 612 B in the measured 720p case. This does not imply zero allocations or a 75% total-memory reduction.
+- Finite native/Udon delivery tests passed at 30/60 Hz; the separate 30-FPS two-slot test received 1799/1799, with median application latency about 66.6 ms versus 33.3 ms with one slot. GPU Luma4 adds a small measured conversion-draw cost.
+- Native Windows Mono Player, full UdonSharp compile and SDK VM tests passed during the beta validation. Live VRChat, Quest and IL2CPP remain unverified; the legacy Linear harness limitation remains documented.
+- See [1.0.0 release notes](https://github.com/kibalab/TSMP-Core/releases/tag/v1.0.0) for complete cumulative changes, datagram fields, methodology, compatibility and validation limits.
+
 ## 0.3.0-beta.3
 
 ### Performance
@@ -176,6 +246,6 @@ Native Unity scheduling, Gamma GPU loopback and a Windows x64 Mono Player passed
 
 - Initial beta package release.
 
-## 1.0.0
+## Initial Package Split (Historical Entry)
 
 - Initial package split with encoder and decoder runtime included in core.
