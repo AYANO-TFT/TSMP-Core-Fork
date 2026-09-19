@@ -32,6 +32,7 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _decodeSafetyMode;
         private SerializedProperty _usePredictedReadback;
         private SerializedProperty _useCombinedByteOutput;
+        private SerializedProperty _overlapReadbacks;
         private SerializedProperty _debugLog;
         private SerializedProperty _debugErrorLogBudget;
 
@@ -55,6 +56,7 @@ namespace K13A.TSMP.Editor
             _decodeSafetyMode = serializedObject.FindProperty("decodeSafetyMode");
             _usePredictedReadback = serializedObject.FindProperty("usePredictedReadback");
             _useCombinedByteOutput = serializedObject.FindProperty("useCombinedByteOutput");
+            _overlapReadbacks = serializedObject.FindProperty("overlapReadbacks");
             _debugLog = serializedObject.FindProperty("debugLog");
             _debugErrorLogBudget = serializedObject.FindProperty("debugErrorLogBudget");
         }
@@ -153,6 +155,7 @@ namespace K13A.TSMP.Editor
         {
             InspectorUI.Property(_usePredictedReadback);
             InspectorUI.Property(_useCombinedByteOutput);
+            InspectorUI.Property(_overlapReadbacks);
             InspectorUI.Property(_payloadBytesOverride);
             if (_decodeSafetyMode != null)
                 EditorGUILayout.IntPopup(_decodeSafetyMode, DecodeSafetyLabels, DecodeSafetyValues);
@@ -162,6 +165,8 @@ namespace K13A.TSMP.Editor
         {
             InspectorUI.ReadOnlyInt("Predicted Readbacks", decoder.predictedReadbackCount);
             InspectorUI.ReadOnlyInt("Combined Byte Outputs", decoder.combinedByteOutputCount);
+            InspectorUI.ReadOnlyInt("Pending Frames", decoder.pendingDecodeCount);
+            InspectorUI.ReadOnlyInt("Skipped Busy Captures", decoder.skippedBusyDecodeCount);
             InspectorUI.ReadOnlyInt("Prediction Fallbacks", decoder.predictionFallbackCount);
             InspectorUI.ReadOnlyBool("Readback In Flight", decoder.readbackInFlight);
             InspectorUI.ReadOnlyInt("Payload Bytes", decoder.lastPayloadSizeFromHeader);
