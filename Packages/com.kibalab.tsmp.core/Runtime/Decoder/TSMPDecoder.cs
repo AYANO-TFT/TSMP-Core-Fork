@@ -71,9 +71,11 @@ namespace K13A.TSMP.Udon
         public int payloadBytesOverride;
         public int decodeSafetyMode;
         public bool usePredictedReadback = true;
+        public bool useCombinedByteOutput = true;
         [HideInInspector] public Material readbackPackMaterial;
         [HideInInspector] public int predictedReadbackCount;
         [HideInInspector] public int predictionFallbackCount;
+        [HideInInspector] public int combinedByteOutputCount;
 
         public bool debugLog = true;
         public int debugErrorLogBudget = 32;
@@ -256,6 +258,7 @@ namespace K13A.TSMP.Udon
             ResetTSMPLogBudget(debugErrorLogBudget);
             predictedReadbackCount = 0;
             predictionFallbackCount = 0;
+            combinedByteOutputCount = 0;
         }
 
         public void DecodeNow()
@@ -519,10 +522,10 @@ namespace K13A.TSMP.Udon
 
         private void RunByteDecodePass(int startBlock, int byteCount, int symbolMode)
         {
-            RunByteDecodeTo(startBlock, byteCount, symbolMode, payloadByteTexture);
+            RunByteDecodeTo(startBlock, byteCount, symbolMode, payloadByteTexture, false);
         }
 
-        private bool RunByteDecodeTo(int startBlock, int byteCount, int symbolMode, RenderTexture destination)
+        private bool RunByteDecodeTo(int startBlock, int byteCount, int symbolMode, RenderTexture destination, bool combined)
         {
             int codecId = _payloadCodecId;
             if (symbolMode == 0)
@@ -545,6 +548,11 @@ namespace K13A.TSMP.Udon
             material.SetFloat(ShaderProperties.OutputWidth, destination.width);
             material.SetFloat(ShaderProperties.OutputHeight, destination.height);
             material.SetFloat(ShaderProperties.FlipY, _decodeFlipY ? 1f : 0f);
+            if (material.HasProperty("_TSMPHeaderPixels"))
+            {
+                material.SetFloat("_TSMPHeaderPixels", combined ? FrameHeader.Size / 4 : 0);
+                material.SetTexture("_TSMPHeaderTex", combined ? _headerByteTexture : null);
+            }
 
             handler.PrepareDecode(decodeSource, material);
             GraphicsBridge.Blit(decodeSource, destination, material);
@@ -584,23 +592,34 @@ namespace K13A.TSMP.Udon
 #endif
 
             _decodeStage = 1;
-            if (!RunByteDecodeTo(_currentHeaderRow * _activeWidthBlocks, FrameHeader.Size, 0, _headerByteTexture))
+            if (!RunByteDecodeTo(_currentHeaderRow * _activeWidthBlocks, FrameHeader.Size, 0, _headerByteTexture, false))
                 return false;
             _decodeStage = 2;
             TSMPCodec handler = PrepareDecodeHandler(_payloadCodecId, _predictionByteCount);
             if (handler == null)
                 return false;
             _predictionStartBlock = handler.payloadStartRow * _activeWidthBlocks;
-            if (!RunByteDecodeTo(_predictionStartBlock, _predictionByteCount, _payloadSymbolMode, payloadByteTexture))
-                return false;
-
-            _readbackPackInstance.SetTexture("_HeaderTex", _headerByteTexture);
-            _readbackPackInstance.SetFloat("_OutputWidth", width);
-            _readbackPackInstance.SetFloat("_OutputHeight", height);
-            _readbackPackInstance.SetFloat("_PayloadWidth", payloadByteTexture.width);
-            _readbackPackInstance.SetFloat("_HeaderPixels", FrameHeader.Size / 4);
-            _readbackPackInstance.SetFloat("_PayloadPixels", ByteTextureReader.GetRequiredPixelCount(_predictionByteCount));
-            GraphicsBridge.Blit(payloadByteTexture, _combinedByteTexture, _readbackPackInstance);
+            Material payloadMaterial = handler.selectedDecodeMaterial;
+            bool combined = useCombinedByteOutput && payloadMaterial != null &&
+                            payloadMaterial.HasProperty("_TSMPHeaderPixels") && payloadMaterial.HasProperty("_TSMPHeaderTex");
+            if (combined)
+            {
+                if (!RunByteDecodeTo(_predictionStartBlock, _predictionByteCount, _payloadSymbolMode, _combinedByteTexture, true))
+                    return false;
+                combinedByteOutputCount++;
+            }
+            else
+            {
+                if (!RunByteDecodeTo(_predictionStartBlock, _predictionByteCount, _payloadSymbolMode, payloadByteTexture, false))
+                    return false;
+                _readbackPackInstance.SetTexture("_HeaderTex", _headerByteTexture);
+                _readbackPackInstance.SetFloat("_OutputWidth", width);
+                _readbackPackInstance.SetFloat("_OutputHeight", height);
+                _readbackPackInstance.SetFloat("_PayloadWidth", payloadByteTexture.width);
+                _readbackPackInstance.SetFloat("_HeaderPixels", FrameHeader.Size / 4);
+                _readbackPackInstance.SetFloat("_PayloadPixels", ByteTextureReader.GetRequiredPixelCount(_predictionByteCount));
+                GraphicsBridge.Blit(payloadByteTexture, _combinedByteTexture, _readbackPackInstance);
+            }
             _decodeStage = 3;
             lastRequestedByteCount = FrameHeader.Size + _predictionByteCount;
             RequestTextureReadback(_combinedByteTexture, lastRequestedByteCount);
