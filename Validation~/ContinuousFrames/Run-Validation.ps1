@@ -37,4 +37,7 @@ if ($Mode -eq 'Player') {
     if ($process.ExitCode -ne 0) { throw "Player exit $($process.ExitCode): $log" }
 }
 Get-Content -LiteralPath (Join-Path $results 'status.txt')
-Get-Content -LiteralPath (Join-Path $results 'summary.csv')
+foreach ($name in @('summary.csv', 'regression.txt')) {
+    $path = Join-Path $results $name
+    if (Test-Path -LiteralPath $path) { Get-Content -LiteralPath $path }
+}

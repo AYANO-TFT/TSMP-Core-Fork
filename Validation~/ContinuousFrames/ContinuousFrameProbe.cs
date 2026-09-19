@@ -11,6 +11,17 @@ public sealed class ContinuousFrameProbe : TSMPNetworkBehaviour
     public float[] appliedTimes;
     public int appliedCount;
     public int corruptCount;
+    public int rpcCount;
+
+    public void ReceiveProbeRpc()
+    {
+        rpcCount++;
+    }
+
+    public void QueueProbeRpc()
+    {
+        SendTransRPC(nameof(ReceiveProbeRpc), RPCTarget.Remote);
+    }
 
     public override void OnTSMPVariableReceived()
     {

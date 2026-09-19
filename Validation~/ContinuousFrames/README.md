@@ -1,6 +1,6 @@
 # Continuous frame delivery measurement
 
-This harness measures the current, unmodified Encoder and Decoder under a continuously changing source. It does not wait for a decode to finish before publishing another frame. `PASS` means that the measurement completed without invalid application data, not that all frames were delivered.
+This harness measures the production Encoder and Decoder under a continuously changing source. It does not wait for a decode to finish before publishing another frame. `PASS` means that the measurement completed without invalid application data, not that all frames were delivered. See [the original sequential-path measurements](RESULTS.md) and [the predicted-readback comparison](PREDICTED-READBACK.md).
 
 ## Method
 
@@ -32,6 +32,8 @@ Use isolated Unity 2022.3.22f1 projects with file dependencies referencing the a
 ```
 
 `-Mode Play` runs the native path in Editor. `-Filter small-60-at-60,small-60-at-120` selects cases. Every run writes `environment.txt`, `summary.csv`, per-case application traces, and `status.txt`; the wrapper also records Editor/Player logs and the Player BuildReport summary.
+
+For a sequential-path A/B control, set `$env:TSMP_DISABLE_PREDICTION = '1'` before starting the wrapper, then remove that environment variable before the enabled run. The final summary columns count accepted predictions and fallbacks. Use `-Filter prediction-regression` to check codec switches, changing payload lengths, multi-row packing, source overwrites, header option changes, CRC rejection, disable/enable cancellation, repeated RPC deduplication and two concurrent decoders in either native or compiled Udon execution. That case writes `regression.txt`; it is not a throughput measurement and requires prediction enabled. The Udon adapter additionally verifies automatic material assignment and serialization to a backing behaviour before entering Play Mode (`preparation.txt`).
 
 The Udon adapter performs a full client-target UdonSharp compilation, loads the actual Encoder, Decoder, codec and probe programs into the SDK VM, and uses real VRC GPU readback callbacks. It does not manually synthesize or complete readbacks. It constructs backing behaviours explicitly for instrumentation and therefore is not a production scene serialization test or a live VRChat client test.
 

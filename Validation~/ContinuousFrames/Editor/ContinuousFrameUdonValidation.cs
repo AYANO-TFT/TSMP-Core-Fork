@@ -1,11 +1,13 @@
 #if UNITY_EDITOR && UDONSHARP && !COMPILER_UDONSHARP
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using K13A.TSMP;
 using UdonSharp;
 using UdonSharp.Compiler;
+using UdonSharpEditor;
 using UnityEditor;
 using UnityEngine;
 using VRC.Udon;
@@ -37,10 +39,30 @@ public static class ContinuousFrameUdonValidation
         try { UdonSharpCompilerV1.CompileSync(new UdonSharpCompileOptions { IsEditorBuild = false }); }
         finally { Application.logMessageReceived -= listener; }
         if (failed) throw new InvalidOperationException("Full client UdonSharp compilation failed");
+        ValidateMaterialPreparation();
         AssetDatabase.SaveAssets();
         SessionState.SetBool("TSMP.ContinuousUdon", true);
         Attach();
         EditorApplication.EnterPlaymode();
+    }
+
+    static void ValidateMaterialPreparation()
+    {
+        var root = new GameObject("Decoder preparation validation");
+        try
+        {
+            var decoder = (K13A.TSMP.Udon.TSMPDecoder)UdonSharpUndo.AddComponent(root, typeof(K13A.TSMP.Udon.TSMPDecoder));
+            decoder.readbackPackMaterial = null;
+            K13A.TSMP.Editor.SetupPreparation.PrepareAll();
+            var backing = UdonSharpEditorUtility.GetBackingUdonBehaviour(decoder);
+            if (decoder.readbackPackMaterial == null || backing == null ||
+                !backing.publicVariables.TryGetVariableValue("readbackPackMaterial", out Material serialized) ||
+                serialized != decoder.readbackPackMaterial)
+                throw new InvalidOperationException("Decoder packing material was not automatically serialized to Udon");
+            File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_RESULTS"), "preparation.txt"),
+                "PASS missing decoder packing material automatically assigned and serialized to backing UdonBehaviour");
+        }
+        finally { Object.DestroyImmediate(root); }
     }
 
     [InitializeOnLoadMethod]
@@ -107,13 +129,19 @@ public static class ContinuousFrameUdonValidation
         readonly Program decoder;
         readonly Program sender;
         readonly Program receiver;
+        readonly ContinuousFrameValidation runner;
+        readonly Dictionary<int, Program> codecs = new Dictionary<int, Program>();
+        readonly RenderTexture source;
 
         public Loopback(ContinuousFrameValidation runner, ContinuousFrameValidation.Case test)
         {
+            this.runner = runner;
             string[] names = { "Luma4", "RGB16", "RGB20", "Color256" };
             TSMPCodec native = runner.CloneCodec(test.Codec, owned);
             var codec = Add("Packages/com.kibalab.tsmp.codec." + names[test.Codec].ToLowerInvariant() + "/Runtime/Scripts/TSMPCodec" + names[test.Codec] + ".asset", native);
             Program luma = test.Codec == 0 ? codec : Add("Packages/com.kibalab.tsmp.codec.luma4/Runtime/Scripts/TSMPCodecLuma4.asset", runner.CloneCodec(0, owned));
+            codecs[0] = luma;
+            codecs[test.Codec] = codec;
             sender = Add(ProbePath);
             receiver = Add(ProbePath);
             sender.Set("networkId", (ushort)1);
@@ -121,7 +149,7 @@ public static class ContinuousFrameUdonValidation
             receiver.Set("appliedIds", new int[ContinuousFrameValidation.Capacity]);
             receiver.Set("appliedTimes", new float[ContinuousFrameValidation.Capacity]);
 
-            var source = ContinuousFrameValidation.Texture(test.Width, test.Height);
+            source = ContinuousFrameValidation.Texture(test.Width, test.Height);
             var bytes = ContinuousFrameValidation.Texture(512, Math.Max(1, (test.Bytes + 64 + 2047) / 2048));
             owned.Add(source);
             owned.Add(bytes);
@@ -136,6 +164,7 @@ public static class ContinuousFrameUdonValidation
             encoder.Set("selectedCodecUdonTarget", codec.Backing);
             encoder.Set("debugLog", false);
             Bind(encoder, sender);
+            sender.Set("transRpcEncoder", encoder.Backing);
             encoder.Set("bindingSendOnChange", new[] { false });
             encoder.Set("bindingMinSendIntervals", new[] { 0f });
             encoder.Call("_onEnable");
@@ -143,6 +172,8 @@ public static class ContinuousFrameUdonValidation
             decoder = Add("Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.asset");
             decoder.Set<Texture>("sourceTexture", source);
             decoder.Set("payloadByteTexture", bytes);
+            decoder.Set("readbackPackMaterial", Resources.Load<Material>("TSMPReadbackPack"));
+            decoder.Set("usePredictedReadback", Environment.GetEnvironmentVariable("TSMP_DISABLE_PREDICTION") != "1");
             decoder.Set("codecHandlers", test.Codec == 0 ? new[] { luma.Backing } : new[] { luma.Backing, codec.Backing });
             decoder.Set("applyEveryFrame", false);
             decoder.Set("flipY", true);
@@ -189,6 +220,23 @@ public static class ContinuousFrameUdonValidation
         }
         public void Decode() => decoder.Call("DecodeNow");
         public void Stop() => decoder.Call("_onDisable");
+        public void Resume() => decoder.Call("_onEnable");
+        public object ReadDecoder(string name) => decoder.Get<object>(name);
+        public RenderTexture Output => source;
+        public byte[] ReceivedPacket => receiver.Get<byte[]>("packet");
+        public void SetSample(int sample) => encoder.Set("sampleSize", sample);
+        public int RpcCount => receiver.Get<int>("rpcCount");
+        public void QueueRpc() => sender.Call("QueueProbeRpc");
+        public void SelectCodec(int index)
+        {
+            if (!codecs.TryGetValue(index, out var codec))
+            {
+                string name = new[] { "Luma4", "RGB16", "RGB20", "Color256" }[index];
+                codecs[index] = codec = Add("Packages/com.kibalab.tsmp.codec." + name.ToLowerInvariant() + "/Runtime/Scripts/TSMPCodec" + name + ".asset", runner.CloneCodec(index, owned));
+            }
+            encoder.Set("selectedCodecUdonTarget", codec.Backing);
+            decoder.Set("codecHandlers", codecs.Values.Select(c => c.Backing).ToArray());
+        }
         public void Dispose()
         {
             RenderTexture.active = null;

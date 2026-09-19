@@ -22,7 +22,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
     public Material expandMaterial;
     public static Func<ContinuousFrameValidation, Case, ILoopback> UdonFactory;
     public const int Capacity = 32768;
-    public const string CsvHeader = "case,path,codec,width,height,valueBytes,payloadBytes,sample,sendTarget,loopTarget,seconds,loopHz,published,txHz,appliedInWindow,applyHz,receivedAfterDrain,missPercent,schedulerMisses,captureCount,busyPercent,encodeP95ms,latencyP50ms,latencyP95ms,latencyP99ms,latencyMaxMs,snapshotP95ms,applyGapP95ms,applyGapMaxMs,latencyFirstThirdMs,latencyLastThirdMs,sourceAgeP95ms,decoderErrorObservations,corrupt,outOfOrder";
+    public const string CsvHeader = "case,path,codec,width,height,valueBytes,payloadBytes,sample,sendTarget,loopTarget,seconds,loopHz,published,txHz,appliedInWindow,applyHz,receivedAfterDrain,missPercent,schedulerMisses,captureCount,busyPercent,encodeP95ms,latencyP50ms,latencyP95ms,latencyP99ms,latencyMaxMs,snapshotP95ms,applyGapP95ms,applyGapMaxMs,latencyFirstThirdMs,latencyLastThirdMs,sourceAgeP95ms,decoderErrorObservations,corrupt,outOfOrder,predictedReadbacks,predictionFallbacks";
 
     public sealed class Case
     {
@@ -52,6 +52,14 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         void Publish(byte[] packet);
         void Decode();
         void Stop();
+        object ReadDecoder(string name);
+        void SelectCodec(int index);
+        void SetSample(int sample);
+        void Resume();
+        void QueueRpc();
+        int RpcCount { get; }
+        RenderTexture Output { get; }
+        byte[] ReceivedPacket { get; }
     }
 
     readonly List<string> rows = new List<string>();
@@ -150,6 +158,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
 
     static IEnumerable<Case> Cases()
     {
+        yield return new Case { Name = "prediction-regression", Width = 1280, Height = 720, Bytes = 4096 };
         yield return new Case { Name = "sender-only-60", Baseline = true };
         foreach (int loop in new[] { 60, 90, 120, 144, 180, 240, -1 })
             yield return new Case { Name = "small-60-at-" + loop, LoopHz = loop };
@@ -176,7 +185,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             using (ILoopback loop = UdonFactory != null ? UdonFactory(this, test) : CreateNative(test))
             {
                 yield return null;
-                var run = Measure(test, loop);
+                var run = test.Name == "prediction-regression" ? Regression(loop) : Measure(test, loop);
                 while (run.MoveNext()) yield return run.Current;
             }
             yield return null;
@@ -301,7 +310,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             N(sends == 0 ? 0 : 100.0 * (sends - received) / sends), missed, captures, N(updates == 0 ? 0 : 100.0 * busy / updates),
             N(P(encodes, .95)), N(P(latencies, .5)), N(P(latencies, .95)), N(P(latencies, .99)), N(P(latencies, 1)),
             N(P(snapshotLatency, .95)), N(P(gaps, .95)), N(P(gaps, 1)), N(Average(first)), N(Average(last)), N(P(ages, .95)),
-            decodeErrors, loop.CorruptCount, outOfOrder);
+            decodeErrors, loop.CorruptCount, outOfOrder, loop.ReadDecoder("predictedReadbackCount"), loop.ReadDecoder("predictionFallbackCount"));
         rows.Add(row);
         File.WriteAllLines(Path.Combine(resultRoot, "summary.csv"), rows);
         File.WriteAllLines(Path.Combine(resultRoot, test.Name + "-applications.csv"), trace);
@@ -315,6 +324,148 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
     }
 
     static double Average(List<double> values) => values.Count == 0 ? 0 : values.Average();
+
+    IEnumerator Drain(ILoopback loop)
+    {
+        double deadline = Time.realtimeSinceStartupAsDouble + 10;
+        while (loop.Busy && Time.realtimeSinceStartupAsDouble < deadline) yield return null;
+        if (loop.Busy) throw new InvalidOperationException("Regression readback timeout");
+    }
+
+    IEnumerator Regression(ILoopback loop)
+    {
+        var results = new List<string>();
+        int id = 0;
+        Func<int, byte[]> packet = size =>
+        {
+            var bytes = Enumerable.Range(0, size).Select(i => (byte)(i * 37)).ToArray();
+            SetPacketId(bytes, ++id);
+            return bytes;
+        };
+        foreach (int codec in new[] { 0, 1, 2, 3, 0 })
+        {
+            loop.SelectCodec(codec);
+            foreach (int size in new[] { 32, 32, 33, 1024, 32, 4096, 32 })
+            {
+                int count = loop.AppliedCount;
+                byte[] expected = packet(size);
+                loop.Publish(expected);
+                loop.Decode();
+                loop.Publish(packet(size));
+                var wait = Drain(loop);
+                while (wait.MoveNext()) yield return wait.Current;
+                if (loop.AppliedCount != count + 1 || loop.AppliedIds[count] != id - 1 || loop.CorruptCount != 0 || !expected.SequenceEqual(loop.ReceivedPacket))
+                    throw new InvalidOperationException("Prediction source isolation failed: codec=" + codec + ", size=" + size + "; " + loop.Diagnostics);
+            }
+        }
+        results.Add("PASS codec switches, growth/shrink, multi-row readback, source overwritten during prediction/fallback");
+        foreach (int sample in new[] { 4, 1, 4, 1 })
+        {
+            loop.SetSample(sample);
+            int count = loop.AppliedCount;
+            loop.Publish(packet(32));
+            loop.Decode();
+            var wait = Drain(loop);
+            while (wait.MoveNext()) yield return wait.Current;
+            if (loop.AppliedCount != count + 1 || loop.AppliedIds[count] != id)
+                throw new InvalidOperationException("Header option fallback failed: " + loop.Diagnostics);
+        }
+        results.Add("PASS header sample-size changes");
+
+        int beforeCrc = loop.AppliedCount;
+        loop.Publish(packet(32));
+        RenderTexture previous = RenderTexture.active;
+        RenderTexture.active = loop.Output;
+        var damaged = new Texture2D(loop.Output.width, loop.Output.height, TextureFormat.RGBA32, false, true);
+        damaged.ReadPixels(new Rect(0, 0, damaged.width, damaged.height), 0, 0);
+        int block = 2 * (damaged.width / 8) + FrameHeader.CrcOffset * 2;
+        int x0 = (block % (damaged.width / 8)) * 8;
+        int y0 = (block / (damaged.width / 8)) * 8;
+        for (int y = y0; y < y0 + 8; y++)
+        for (int x = x0; x < x0 + 8; x++)
+        {
+            Color c = damaged.GetPixel(x, damaged.height - 1 - y);
+            damaged.SetPixel(x, damaged.height - 1 - y, c.r > .5f ? Color.black : Color.white);
+        }
+        damaged.Apply(false, false);
+        Graphics.Blit(damaged, loop.Output);
+        RenderTexture.active = previous;
+        Destroy(damaged);
+        loop.Decode();
+        var crcWait = Drain(loop);
+        while (crcWait.MoveNext()) yield return crcWait.Current;
+        if (loop.AppliedCount != beforeCrc || !((string)loop.ReadDecoder("lastError")).Contains("Header CRC mismatch"))
+            throw new InvalidOperationException("CRC rejection failed: " + loop.Diagnostics);
+        results.Add("PASS corrupt current header discarded without applying speculative payload");
+
+        for (int pass = 0; pass < 2; pass++)
+        {
+            loop.Publish(packet(32));
+            loop.Decode();
+            var wait = Drain(loop);
+            while (wait.MoveNext()) yield return wait.Current;
+        }
+        int beforeDisable = loop.AppliedCount;
+        loop.Publish(packet(32));
+        loop.Decode();
+        loop.Stop();
+        loop.Resume();
+        var disableWait = Drain(loop);
+        while (disableWait.MoveNext()) yield return disableWait.Current;
+        if (loop.AppliedCount != beforeDisable) throw new InvalidOperationException("Disabled pending frame applied");
+        loop.Publish(packet(32));
+        loop.Decode();
+        var restartWait = Drain(loop);
+        while (restartWait.MoveNext()) yield return restartWait.Current;
+        if (loop.AppliedCount != beforeDisable + 1) throw new InvalidOperationException("Resume failed: " + loop.Diagnostics);
+        results.Add("PASS disable/enable discards pending combined readback and recovers");
+
+        int expectedRpcs = loop.RpcCount;
+        for (int eventIndex = 0; eventIndex < 12; eventIndex++)
+        {
+            loop.QueueRpc();
+            expectedRpcs++;
+            for (int repeat = 0; repeat < 4; repeat++)
+            {
+                loop.Publish(packet(32));
+                if (repeat == 0 || repeat == 2) continue;
+                loop.Decode();
+                var wait = Drain(loop);
+                while (wait.MoveNext()) yield return wait.Current;
+            }
+            if (loop.RpcCount != expectedRpcs) throw new InvalidOperationException("RPC replay/loss: " + loop.RpcCount + " != " + expectedRpcs);
+        }
+        results.Add("PASS 12 RPC events: two of four copies deliberately skipped; each executed once");
+        var otherCase = new Case { Codec = 1, Bytes = 1024 };
+        using (ILoopback other = UdonFactory != null ? UdonFactory(this, otherCase) : CreateNative(otherCase))
+        {
+            for (int pass = 0; pass < 8; pass++)
+            {
+                byte[] firstPacket = packet(32);
+                byte[] secondPacket = packet(1024);
+                int firstCount = loop.AppliedCount;
+                int secondCount = other.AppliedCount;
+                loop.Publish(firstPacket);
+                other.Publish(secondPacket);
+                loop.Decode();
+                other.Decode();
+                var firstWait = Drain(loop);
+                while (firstWait.MoveNext()) yield return firstWait.Current;
+                var secondWait = Drain(other);
+                while (secondWait.MoveNext()) yield return secondWait.Current;
+                if (loop.AppliedCount != firstCount + 1 || other.AppliedCount != secondCount + 1 ||
+                    !loop.ReceivedPacket.SequenceEqual(firstPacket) || !other.ReceivedPacket.SequenceEqual(secondPacket))
+                    throw new InvalidOperationException("Concurrent decoder material isolation failed");
+            }
+            other.Stop();
+        }
+        results.Add("PASS two concurrent decoders with different codecs, image sizes and payload lengths");
+        if ((int)loop.ReadDecoder("predictedReadbackCount") == 0 || (int)loop.ReadDecoder("predictionFallbackCount") == 0)
+            throw new InvalidOperationException("Prediction and fallback paths must both run");
+        results.Add("Predicted=" + loop.ReadDecoder("predictedReadbackCount") + "; Fallback=" + loop.ReadDecoder("predictionFallbackCount"));
+        File.WriteAllLines(Path.Combine(resultRoot, "regression.txt"), results);
+        loop.Stop();
+    }
     static void SetPacketId(byte[] packet, int id)
     {
         packet[0] = (byte)(id & 255);
@@ -380,8 +531,11 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         readonly TSMPDecoder decoder;
         readonly ContinuousFrameProbe sender;
         readonly ContinuousFrameProbe receiver;
+        readonly ContinuousFrameValidation runner;
+        readonly Dictionary<int, TSMPCodec> codecs = new Dictionary<int, TSMPCodec>();
         public NativeLoopback(ContinuousFrameValidation runner, Case test)
         {
+            this.runner = runner;
             var root = new GameObject("Continuous native loopback");
             root.SetActive(false);
             owned.Add(root);
@@ -392,6 +546,8 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             receiver.appliedTimes = new float[Capacity];
             TSMPCodec codec = runner.CloneCodec(test.Codec, owned);
             TSMPCodec luma = test.Codec == 0 ? codec : runner.CloneCodec(0, owned);
+            codecs[0] = luma;
+            codecs[test.Codec] = codec;
             encoder = root.AddComponent<TSMPEncoder>();
             encoder.autoEncode = false;
             encoder.output = Texture(test.Width, test.Height);
@@ -402,6 +558,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             encoder.networkBehaviours = new TSMPNetworkBehaviour[] { sender };
             encoder.debugLog = false;
             decoder = root.AddComponent<TSMPDecoder>();
+            decoder.usePredictedReadback = Environment.GetEnvironmentVariable("TSMP_DISABLE_PREDICTION") != "1";
             decoder.applyEveryFrame = false;
             decoder.sourceTexture = encoder.output;
             decoder.payloadByteTexture = Texture(512, Math.Max(1, (test.Bytes + 64 + 2047) / 2048));
@@ -437,6 +594,23 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         }
         public void Decode() => decoder.DecodeNow();
         public void Stop() => decoder.enabled = false;
+        public void Resume() => decoder.enabled = true;
+        public object ReadDecoder(string name) => typeof(TSMPDecoder).GetField(name).GetValue(decoder);
+        public RenderTexture Output => encoder.output;
+        public byte[] ReceivedPacket => receiver.packet;
+        public void SetSample(int sample) => encoder.sampleSize = sample;
+        public int RpcCount => receiver.rpcCount;
+        public void QueueRpc()
+        {
+            if (!encoder.QueueTransRpc(1, StableHash.Fnv1A32(nameof(ContinuousFrameProbe.ReceiveProbeRpc)), nameof(ContinuousFrameProbe.ReceiveProbeRpc)))
+                throw new InvalidOperationException("RPC enqueue failed");
+        }
+        public void SelectCodec(int index)
+        {
+            if (!codecs.TryGetValue(index, out var codec)) codecs[index] = codec = runner.CloneCodec(index, owned);
+            encoder.selectedCodec = codec;
+            decoder.codecHandlers = codecs.Values.ToArray();
+        }
         public void Dispose()
         {
             RenderTexture.active = null;
