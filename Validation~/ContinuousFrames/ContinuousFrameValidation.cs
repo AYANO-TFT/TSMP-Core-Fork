@@ -65,6 +65,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         byte[] ReceivedPacket { get; }
         void SetAutomatic(bool enabled);
         void TickAutomatic();
+        Dictionary<string, Action> ProfileHelpers(int size, int width, int height);
     }
 
     readonly List<string> rows = new List<string>();
@@ -180,6 +181,13 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
 
     static IEnumerable<Case> Cases()
     {
+        yield return new Case { Name = "profile-small30", SendHz = 30, LoopHz = 30 };
+        yield return new Case { Name = "profile-small60" };
+        yield return new Case { Name = "profile-large30", Width = 1280, Height = 720, Bytes = 4096, SendHz = 30, LoopHz = 30 };
+        yield return new Case { Name = "profile-large60", Width = 1280, Height = 720, Bytes = 4096 };
+        yield return new Case { Name = "profile-1080-small60", Width = 1920, Height = 1080 };
+        yield return new Case { Name = "profile-4k-small30", Width = 3840, Height = 2160, SendHz = 30, LoopHz = 30 };
+        yield return new Case { Name = "profile-luma4-sample4", Width = 1280, Height = 720, Bytes = 4096, Sample = 4 };
         yield return new Case { Name = "prediction-regression", Width = 1280, Height = 720, Bytes = 4096 };
         yield return new Case { Name = "overlap-regression", Width = 1280, Height = 720, Bytes = 4096 };
         yield return new Case { Name = "sender-only-60", Baseline = true };
@@ -208,18 +216,26 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         string filter = Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_FILTER");
         foreach (Case test in Cases())
         {
+            if (test.Name.StartsWith("profile-") && string.IsNullOrEmpty(filter)) continue;
             if (!string.IsNullOrEmpty(filter) && !filter.Split(',').Contains(test.Name)) continue;
             Application.targetFrameRate = test.LoopHz;
             using (ILoopback loop = UdonFactory != null ? UdonFactory(this, test) : CreateNative(test))
             {
                 yield return null;
-                var run = test.Name == "prediction-regression" ? Regression(loop) :
+                var run = test.Name.StartsWith("profile-") ? Profile(test, loop) :
+                    test.Name == "prediction-regression" ? Regression(loop) :
                     test.Name == "overlap-regression" ? OverlapRegression(loop) : Measure(test, loop);
                 while (run.MoveNext()) yield return run.Current;
             }
             yield return null;
             GC.Collect();
         }
+    }
+
+    IEnumerator Profile(Case test, ILoopback loop)
+    {
+        var profile = ResourceProfile.Measure(test, loop, step => scheduledStep = step, resultRoot);
+        while (profile.MoveNext()) yield return profile.Current;
     }
 
     IEnumerator Measure(Case test, ILoopback loop)
@@ -810,6 +826,25 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         public void Decode() => decoder.DecodeNow();
         public void SetAutomatic(bool enabled) => decoder.applyEveryFrame = enabled;
         public void TickAutomatic() { }
+        public Dictionary<string, Action> ProfileHelpers(int size, int width, int height)
+        {
+            receiver.profilePixels = new Color32[(size + 3) / 4];
+            receiver.profileBuffer = new byte[size];
+            receiver.profileValue = new byte[size];
+            receiver.profileCrcTable = Crc32Runtime.EnsureTable(null);
+            receiver.profileWidthBlocks = width / 8;
+            receiver.profileHeightBlocks = height / 8;
+            receiver.profileBasePixels = new Color32[width / 8 * (height / 8)];
+            receiver.profileFramePixels = new Color32[receiver.profileBasePixels.Length];
+            receiver.profileColors = SymbolCodec.CreateLuma4Colors();
+            return new Dictionary<string, Action>
+            {
+                { "CopyPixels", receiver.ProfileCopyPixels }, { "CopyRawBytes", receiver.ProfileCopyRawBytes },
+                { "WriteRawBytes", receiver.ProfileWriteRawBytes }, { "HeaderCrc", receiver.ProfileHeaderCrc },
+                { "Control", receiver.ProfileControl }, { "BasePixelCopy", receiver.ProfileBasePixelCopy },
+                { "LumaPayload", receiver.ProfileLumaPayload }
+            };
+        }
         public void Stop() => decoder.enabled = false;
         public void Resume() => decoder.enabled = true;
         public object ReadDecoder(string name) => typeof(TSMPDecoder).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(decoder);

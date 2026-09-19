@@ -13,6 +13,53 @@ public sealed class ContinuousFrameProbe : TSMPNetworkBehaviour
     public int corruptCount;
     public int rpcCount;
 
+    public Color32[] profilePixels;
+    public byte[] profileBuffer;
+    public byte[] profileValue;
+    public uint[] profileCrcTable;
+    public uint profileResult;
+    public Color32[] profileBasePixels;
+    public Color32[] profileFramePixels;
+    public Color32[] profileColors;
+    public int profileWidthBlocks;
+    public int profileHeightBlocks;
+
+    public void ProfileBasePixelCopy()
+    {
+        EncoderUdonTextureRuntime.CopyPixelBuffer(profileBasePixels, profileFramePixels);
+    }
+
+    public void ProfileLumaPayload()
+    {
+        FrameRaster.WriteLuma4BytesToBlockTexture(profileFramePixels, profileWidthBlocks, profileHeightBlocks,
+            profileWidthBlocks * 5, profileWidthBlocks * (profileHeightBlocks - 6), profileBuffer, 0, profileBuffer.Length, profileColors);
+    }
+
+    public void ProfileCopyPixels()
+    {
+        ByteTextureReader.CopyBytesAtPixel(profilePixels, 0, profileBuffer, profileBuffer.Length);
+    }
+
+    public void ProfileCopyRawBytes()
+    {
+        profileValue = NetworkValueReader.CopyRawBytes(profileBuffer, 0, profileBuffer.Length, profileValue);
+    }
+
+    public void ProfileWriteRawBytes()
+    {
+        NetworkValueWriter.WriteRawBytes(profileBuffer, 0, profileValue);
+    }
+
+    public void ProfileHeaderCrc()
+    {
+        profileResult = Crc32Runtime.Compute(profileBuffer, 0, FrameHeader.BytesBeforeCrc, profileCrcTable);
+    }
+
+    public void ProfileControl()
+    {
+        profileResult++;
+    }
+
     public void ReceiveProbeRpc()
     {
         rpcCount++;

@@ -97,7 +97,8 @@ public static class ContinuousFrameUdonValidation
             if (!(bool)type.GetMethod("ResolveUdonHeapReferences", Private).Invoke(Backing, new object[] { code.SymbolTable, code.Heap }))
                 throw new InvalidOperationException("Unresolved Udon heap");
             type.GetField("_program", Private).SetValue(Backing, code);
-            type.GetField("_udonVM", Private).SetValue(Backing, vm);
+            bool profiling = (Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_FILTER") ?? "").Contains("profile-");
+            type.GetField("_udonVM", Private).SetValue(Backing, profiling ? new TimedVm(vm, code, asset.name) : vm);
             type.GetField("_udonManager", Private).SetValue(Backing, UdonManager.Instance);
             type.GetField("_isReady", Private).SetValue(Backing, true);
             type.GetField("_hasDoneStart", Private).SetValue(Backing, true);
@@ -129,6 +130,32 @@ public static class ContinuousFrameUdonValidation
                 throw new InvalidOperationException("Udon VM failed: " + name);
         }
         public void Dispose() => Object.DestroyImmediate(Backing.gameObject);
+    }
+
+    sealed class TimedVm : IUdonVM
+    {
+        readonly IUdonVM inner;
+        readonly Dictionary<uint, string> labels = new Dictionary<uint, string>();
+
+        public TimedVm(IUdonVM vm, IUdonProgram program, string owner)
+        {
+            inner = vm;
+            foreach (string name in program.EntryPoints.GetExportedSymbols())
+                labels[program.EntryPoints.GetAddressFromSymbol(name)] = owner + "." + name;
+        }
+
+        public bool DebugLogging { get => inner.DebugLogging; set => inner.DebugLogging = value; }
+        public bool LoadProgram(IUdonProgram program) => inner.LoadProgram(program);
+        public IUdonProgram RetrieveProgram() => inner.RetrieveProgram();
+        public void SetProgramCounter(uint counter) => inner.SetProgramCounter(counter);
+        public uint GetProgramCounter() => inner.GetProgramCounter();
+        public IUdonHeap InspectHeap() => inner.InspectHeap();
+        public uint Interpret()
+        {
+            string label;
+            if (!labels.TryGetValue(inner.GetProgramCounter(), out label)) label = "VM.other";
+            using (ResourceProfile.Time(label)) return inner.Interpret();
+        }
     }
 
     sealed class Loopback : ContinuousFrameValidation.ILoopback
@@ -234,6 +261,25 @@ public static class ContinuousFrameUdonValidation
         public void Decode() => decoder.Call("DecodeNow");
         public void SetAutomatic(bool enabled) => decoder.Set("applyEveryFrame", enabled);
         public void TickAutomatic() => decoder.Call("_update");
+        public Dictionary<string, Action> ProfileHelpers(int size, int width, int height)
+        {
+            receiver.Set("profilePixels", new Color32[(size + 3) / 4]);
+            receiver.Set("profileBuffer", new byte[size]);
+            receiver.Set("profileValue", new byte[size]);
+            receiver.Set("profileCrcTable", Crc32Runtime.EnsureTable(null));
+            receiver.Set("profileWidthBlocks", width / 8);
+            receiver.Set("profileHeightBlocks", height / 8);
+            receiver.Set("profileBasePixels", new Color32[width / 8 * (height / 8)]);
+            receiver.Set("profileFramePixels", new Color32[width / 8 * (height / 8)]);
+            receiver.Set("profileColors", SymbolCodec.CreateLuma4Colors());
+            return new Dictionary<string, Action>
+            {
+                { "CopyPixels", () => receiver.Call("ProfileCopyPixels") }, { "CopyRawBytes", () => receiver.Call("ProfileCopyRawBytes") },
+                { "WriteRawBytes", () => receiver.Call("ProfileWriteRawBytes") }, { "HeaderCrc", () => receiver.Call("ProfileHeaderCrc") },
+                { "Control", () => receiver.Call("ProfileControl") }, { "BasePixelCopy", () => receiver.Call("ProfileBasePixelCopy") },
+                { "LumaPayload", () => receiver.Call("ProfileLumaPayload") }
+            };
+        }
         public void Stop() => decoder.Call("_onDisable");
         public void Resume() => decoder.Call("_onEnable");
         public object ReadDecoder(string name) => decoder.GetOptional(name);

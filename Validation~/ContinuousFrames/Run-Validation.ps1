@@ -14,6 +14,7 @@ $scripts = Join-Path $project 'Assets/ContinuousFrames'
 $results = (Resolve-Path -LiteralPath $ResultsDirectory).Path
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ContinuousFrameProbe.cs') -Destination $scripts
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ContinuousFrameValidation.cs') -Destination $scripts
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ResourceProfile.cs') -Destination $scripts
 $env:TSMP_CONTINUOUS_RESULTS = $results
 $env:TSMP_CONTINUOUS_FILTER = $Filter
 $env:TSMP_CONTINUOUS_REVISION = git -C (Join-Path $PSScriptRoot '../..') rev-parse HEAD
