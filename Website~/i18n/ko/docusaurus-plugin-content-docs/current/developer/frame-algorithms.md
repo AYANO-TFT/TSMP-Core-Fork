@@ -113,6 +113,8 @@ CRC는 header bytes `0..51`에 대해 계산됩니다. Stored CRC는 bytes `52..
 
 ## Decode flow
 
+아래는 최초·폴백 경로입니다. 기본 예측 경로는 두 바이트 패스를 먼저 실행한 뒤 한 번 readback하고, 현재 헤더를 검증한 뒤에만 payload를 채택합니다. 메타데이터나 정확한 payload 길이가 달라지면 같은 스냅샷으로 기존 payload 디코딩을 수행하며, CRC 실패 시 프레임을 폐기합니다. 사용자 정의 코덱과 송신 포맷은 바뀌지 않습니다. 비교 필드·버퍼 배치·소유권은 [예측 readback](../scripting-api/decoder.md#predicted-readback)을 참고하세요.
+
 ```text
 Update / decode tick
   -> 입력을 디코더 소유 스냅샷에 캡처
@@ -140,7 +142,7 @@ ApplyDecodeOptions
        -> 선택적으로 기준 심볼을 float LUT에 기록
        -> LUT 연결 및 바이트 셰이더 variant 활성화
   -> 준비 패스와 같은 스냅샷에서 바이트 Blit
-  -> 복원 바이트의 GPU readback
+  -> 개별 readback 또는 헤더/payload를 묶어 예측 readback 1회
 ```
 
 LUT가 없으면 바이트 셰이더는 payload 심볼 판정 중 기준 블록을 반복해서 읽습니다. LUT가 있으면 활성 패스마다 기준값을 한 번 계산하고, payload 샘플링과 판정은 그대로 수행합니다. 추가 패스 비용이 제거한 반복 작업보다 작을 때만 이득입니다. 작은 payload와 큰 payload 모두 준비와 디코드를 합쳐 측정하세요.

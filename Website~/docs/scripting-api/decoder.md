@@ -22,12 +22,13 @@ Use this page when wiring a custom receiver, reading diagnostics, or debugging w
 | `useHeaderPayloadLayout` | Uses header payload metadata to size readback. Keep enabled for normal use. |
 | `payloadBytesOverride` | Manual payload byte count for test paths. |
 | `decodeSafetyMode` | Extra guards for malformed or partial frames. |
+| `usePredictedReadback` | Default true. Use the previous validated configuration to attempt a combined header/payload readback. Manual layout and safety modes bypass it. |
 
 `TSMPSetup` normally assigns `sourceTexture`, byte textures, codec handlers, and binding arrays.
 
 ## Header validation
 
-The decoder rejects a frame before payload decode when:
+The decoder rejects a frame before applying payload messages when:
 
 - Magic bytes are not TSMP.
 - Header size is not supported.
@@ -45,7 +46,7 @@ public void DecodeNow()
 
 Starts decoding one captured frame asynchronously. It is safe to call with `applyEveryFrame` disabled, but the component must remain enabled. Calls while a readback is pending do not start another operation.
 
-The method performs this order:
+The initial/fallback path performs this order:
 
 1. Copy the current input image into the decoder's snapshot.
 2. Read the header pixels from that snapshot.
@@ -54,6 +55,18 @@ The method performs this order:
 5. Decode payload bytes from the same snapshot.
 6. Parse network messages.
 7. Apply variables and dispatch RPC calls.
+
+## Predicted readback {#predicted-readback}
+
+After learning a valid header, the decoder can submit a Luma4 header pass and a payload pass using the previous configuration without waiting for the header on the CPU. It packs the decoded bytes into a private linear RGBA8 target and submits one readback. The original snapshot remains Float32; only already-decoded integer bytes use RGBA8.
+
+The current header must pass magic, version, size and CRC validation, then the normal frame-order filter. All header bytes before CRC must match the cached header except frame index, timestamp and payload length. Payload length is then checked separately for **exact equality**, and resolved block/sample/start-block settings must match. A length change in either direction, codec/option/stream/layout change or other mismatch discards the speculative payload and requests the actual payload from the **same snapshot**. No second source capture occurs. CRC failure rejects the frame instead of falling back to unchecked data.
+
+Exact-length prediction avoids assuming custom codecs produce the same prefix when asked to decode more bytes. Existing codec interfaces and shaders are unchanged; each pass still calls `PrepareDecode` with its current snapshot. A header must be learned again after disable, source dimension/orientation changes, or use of manual layout/safety modes. Missing packing resources retain the sequential path. The serialized packing material is populated automatically in the Editor/build preparation; ordinary Unity runtime creation also loads the package resource.
+
+The internal readback buffer contains header bytes `0..55`, then the predicted payload at offset `56`, followed only by row padding. This is **not a wire-format change**. Extra GPU storage is a 14x1 header target and a packed target with width `min(256, ceil((56 + payloadBytes)/4))` and enough rows, four bytes per pixel. Owned targets are reused and released on disable/destruction. Only one captured image remains in flight.
+
+`predictedReadbackCount` counts accepted speculative payloads, not successful RPC executions. `predictionFallbackCount` counts valid-header prediction mismatches that trigger fallback. Both appear in Runtime Status. Duplicate/older frames may already have incurred speculative GPU work, but their payload is not parsed or dispatched. This optimization does not guarantee 60 Hz delivery; measure applications, latency and RPC events independently.
 
 ## Input snapshot {#input-snapshot}
 
@@ -73,7 +86,7 @@ With filtering enabled, compare the incoming index `N` with the last successfull
 4. Otherwise, accept `N == 0` when `P >= W` as an inferred restart.
 5. Skip other candidates as older/ambiguous. Exactly half the UInt32 range is ambiguous unless the zero restart exception applies.
 
-Acceptance here allows payload decoding, not unconditional application. Only a successful network-frame application advances the remembered stream/index. A corrupt payload, cancelled operation or header/readback-only safety test does not establish a new baseline. Duplicate and older frames retain the existing `lastFrameValid=true` skip convention; they are counted separately by `skippedDuplicateFrameCount` and `skippedOutOfOrderFrameCount` and have a descriptive `lastError` status. They do not read or dispatch payload messages.
+Acceptance here permits payload processing, not unconditional application. Only a successful network-frame application advances the remembered stream/index. A corrupt payload, cancelled operation or header/readback-only safety test does not establish a new baseline. Duplicate and older frames retain the existing `lastFrameValid=true` skip convention; they are counted separately by `skippedDuplicateFrameCount` and `skippedOutOfOrderFrameCount` and have a descriptive `lastError` status. They do not parse or dispatch payload messages, even if speculative byte decoding/readback has already completed.
 
 For `W=256`: `100 -> 101 -> 100` skips the final 100; `255 -> 0` skips zero; `256 -> 0 -> 1` accepts the restart and continuation. `4294967295 -> 0` is a normal forward wrap regardless of the window. With `W=512`, `256 -> 0` is skipped. The window is a frame-count threshold, not a time interval, a sliding replay cache or a group of stored textures.
 
@@ -89,7 +102,7 @@ The datagram and protocol version are **unchanged**. The header is still 56 byte
 public void ResetDecodeDiagnostics()
 ```
 
-Resets the error-log budget. It does not clear counters or the last-applied stream/frame used by the ordering rules.
+Resets the error-log budget and the predicted-readback/fallback counters. It does not reset the existing frame/RPC counters or the last-applied stream/frame used by the ordering rules.
 
 ## Diagnostics
 

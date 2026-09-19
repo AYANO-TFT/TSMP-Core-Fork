@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- Add a default-enabled predicted decoder readback path: decode the current header and payload with the previous validated configuration, pack both byte outputs, and request one GPU readback instead of two sequential requests.
+- Validate the current header CRC before accepting any speculative payload. Changes to codec, options, stream, layout, sample size or payload length use the existing payload path on the same frozen image. Payload length must match exactly; custom codec implementations are not assumed to support decoding a longer prefix.
+- Keep manual layout and safety modes on the sequential path. Assign the packing material automatically for existing/new decoders and retain sequential operation if it is unavailable. Add prediction/fallback diagnostics and an advanced opt-out.
+- The transmitted datagram, codec API, RPC repeat budget and event deduplication are unchanged. This is still a single-image decoder, not a frame queue or guaranteed-delivery mechanism.
+
 ## 0.3.0-beta.2
 
 ### Added

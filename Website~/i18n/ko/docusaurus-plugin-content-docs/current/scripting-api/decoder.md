@@ -22,12 +22,13 @@ Custom receiver wiring, diagnostics 확인, frame이 무시된 이유를 debug�
 | `useHeaderPayloadLayout` | Header payload metadata로 readback size를 결정합니다. 일반적으로 켜둡니다. |
 | `payloadBytesOverride` | Test path용 manual payload byte count. |
 | `decodeSafetyMode` | Malformed 또는 partial frame에 대한 추가 guard. |
+| `usePredictedReadback` | 기본 true. 이전에 검증한 설정으로 헤더와 payload를 한 번에 읽습니다. 수동 레이아웃과 안전 모드에서는 사용하지 않습니다. |
 
 `TSMPSetup`이 보통 source texture, byte texture, codec handlers, binding arrays를 할당합니다.
 
 ## Header validation
 
-Decoder는 다음 경우 payload decode 전에 frame을 버립니다.
+Decoder는 다음 경우 payload 메시지를 적용하기 전에 frame을 버립니다.
 
 - Magic bytes가 TSMP가 아님.
 - Header size가 지원되지 않음.
@@ -45,7 +46,7 @@ public void DecodeNow()
 
 현재 이미지를 캡처하고 비동기 디코딩을 시작합니다. `applyEveryFrame`이 꺼져 있어도 호출할 수 있지만 컴포넌트는 활성화되어 있어야 합니다. readback이 대기 중이면 새 작업을 시작하지 않습니다.
 
-실행 순서:
+최초 디코딩과 폴백 경로의 실행 순서:
 
 1. 현재 입력 이미지를 디코더의 스냅샷에 복사합니다.
 2. 스냅샷에서 헤더 픽셀을 읽습니다.
@@ -54,6 +55,18 @@ public void DecodeNow()
 5. 같은 스냅샷에서 payload bytes를 디코딩합니다.
 6. Network messages를 파싱합니다.
 7. 변수를 적용하고 RPC를 호출합니다.
+
+## 예측 readback {#predicted-readback}
+
+유효한 헤더를 학습한 뒤에는 CPU가 헤더를 기다리지 않고, 이전 설정으로 현재 이미지의 Luma4 헤더 패스와 payload 패스를 실행합니다. 복원된 바이트를 별도의 linear RGBA8 타깃으로 묶어 한 번만 readback합니다. 원본 스냅샷은 계속 Float32이며, 이미 정수로 복원된 바이트만 RGBA8에 저장합니다.
+
+현재 헤더의 magic, version, size, CRC와 기존 프레임 순서 검사를 통과해야 합니다. CRC 이전 바이트 중 프레임 번호·타임스탬프·payload 길이를 제외한 값은 캐시와 같아야 합니다. payload 길이는 별도로 **정확히 같은지** 검사하고, 해석된 block/sample/start-block 설정도 비교합니다. 길이가 늘거나 줄거나, 코덱·옵션·스트림·레이아웃이 달라지면 추측한 payload를 버리고 **같은 스냅샷**에서 실제 payload를 다시 요청합니다. 원본은 다시 캡처하지 않습니다. CRC 실패 시에는 검증되지 않은 데이터로 재시도하지 않고 프레임을 폐기합니다.
+
+정확한 길이만 허용하므로 사용자 정의 코덱이 더 많은 바이트를 요청받았을 때 같은 접두 데이터를 반환한다고 가정하지 않습니다. 코덱 API와 기존 셰이더는 바뀌지 않으며 각 패스의 `PrepareDecode`도 계속 호출합니다. 비활성화, 입력 크기·방향 변경, 수동 레이아웃·안전 모드 사용 뒤에는 헤더를 다시 학습합니다. 결합 리소스가 없으면 기존 순차 경로를 사용합니다. 머티리얼 참조는 Editor와 빌드 준비 단계에서 자동 지정하고, 일반 Unity 런타임 생성 시에는 패키지 리소스에서 불러옵니다.
+
+내부 readback 버퍼의 `0..55`는 헤더, `56`부터는 예상 payload이며 나머지는 행 패딩입니다. **송신 데이터그램 변경은 아닙니다.** 추가 GPU 타깃은 14x1 헤더 텍스처와 너비 `min(256, ceil((56 + payloadBytes)/4))`에 필요한 행 수를 가진 결합 텍스처이며 픽셀당 4바이트입니다. 재사용하고 비활성화·제거 시 해제합니다. 동시에 처리하는 캡처 이미지는 여전히 하나입니다.
+
+`predictedReadbackCount`는 채택한 예측 payload 수로, RPC 실행 성공 횟수가 아닙니다. `predictionFallbackCount`는 유효한 헤더에서 예측 불일치로 폴백한 횟수입니다. Runtime Status에서 확인할 수 있습니다. 중복·역순 프레임에서도 이미 추측한 GPU 작업이 실행됐을 수 있지만 메시지를 파싱하거나 적용하지 않습니다. 60Hz 전달을 보장하지 않으므로 적용률·지연·RPC 실행률을 따로 측정해야 합니다.
 
 ## 입력 스냅샷 {#input-snapshot}
 
@@ -73,7 +86,7 @@ Inspector에 추가 참조나 모드를 설정할 필요가 없습니다. 디코
 4. 그 외에도 `N == 0`이고 `P >= W`이면 재시작으로 추정해 허용합니다.
 5. 나머지는 역순 또는 순서가 불분명한 프레임으로 건너뜁니다. UInt32 범위의 정확히 절반만큼 차이나는 경우도 0번 재시작 예외가 아니면 거부합니다.
 
-허용은 payload 디코딩을 진행한다는 뜻입니다. 네트워크 프레임 적용에 성공해야 기준 스트림과 번호가 갱신됩니다. 손상된 payload, 취소된 요청, 헤더/readback 전용 안전 모드는 기준을 갱신하지 않습니다. 중복·역순으로 건너뛴 프레임은 기존 중복 처리처럼 `lastFrameValid=true`이며, 각각 `skippedDuplicateFrameCount`와 `skippedOutOfOrderFrameCount`에 집계되고 `lastError`에 상태가 표시됩니다. payload를 읽거나 메시지를 실행하지 않습니다.
+허용은 payload 처리를 진행한다는 뜻이지 무조건 적용한다는 뜻은 아닙니다. 네트워크 프레임 적용에 성공해야 기준 스트림과 번호가 갱신됩니다. 손상된 payload, 취소된 요청, 헤더/readback 전용 안전 모드는 기준을 갱신하지 않습니다. 중복·역순으로 건너뛴 프레임은 기존 중복 처리처럼 `lastFrameValid=true`이며, 각각 `skippedDuplicateFrameCount`와 `skippedOutOfOrderFrameCount`에 집계되고 `lastError`에 상태가 표시됩니다. 추측한 바이트 디코딩·readback이 이미 완료됐어도 payload 메시지를 파싱하거나 실행하지 않습니다.
 
 `W=256`이면 `100 -> 101 -> 100`의 마지막 100은 무시하고, `255 -> 0`은 거부하며, `256 -> 0 -> 1`은 재시작과 후속 프레임으로 허용합니다. `4294967295 -> 0`은 윈도우 크기와 관계없이 정상 순환입니다. `W=512`이면 `256 -> 0`은 거부합니다. 윈도우는 프레임 수 기준이지 시간, 슬라이딩 재생 기록, 텍스처 저장 묶음이 아닙니다.
 
@@ -89,7 +102,7 @@ Inspector에 추가 참조나 모드를 설정할 필요가 없습니다. 디코
 public void ResetDecodeDiagnostics()
 ```
 
-오류 로그 출력 예산을 초기화합니다. 카운터나 순서 판정에 쓰는 마지막 적용 스트림·프레임은 초기화하지 않습니다.
+오류 로그 출력 예산과 예측 readback·폴백 카운터를 초기화합니다. 기존 프레임·RPC 카운터와 순서 판정에 쓰는 마지막 적용 스트림·프레임은 초기화하지 않습니다.
 
 ## Diagnostics
 

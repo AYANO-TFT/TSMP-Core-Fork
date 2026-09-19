@@ -48,7 +48,7 @@ If the frame is valid but objects do not move, check network IDs, receive interp
 
 ## Decode order
 
-The decoder works in stages:
+The first frame and the fallback path work in stages:
 
 1. Read the header area from the input texture.
 2. Validate magic, version, header size, and CRC.
@@ -57,7 +57,9 @@ The decoder works in stages:
 5. Read payload bytes.
 6. Dispatch variable state messages and RPC messages.
 
-When a stage fails, later stages are skipped. For example, a CRC failure means payload decoding does not start.
+After a valid frame, **Use Predicted Readback** is enabled by default. The decoder can recover the current header and payload together using the previous configuration, reducing two sequential GPU readback waits to one. It still checks the current header before applying any values or RPCs. Changed settings or payload length cause the same captured image to be processed through the fallback path.
+
+No extra material assignment is required. You can disable the optimization under **Diagnostics > Advanced Decode** for comparison. Manual layout and safety modes retain sequential decoding. CRC failures discard the frame even when speculative GPU decoding has already run. This improves processing opportunities, not guaranteed delivery or a fixed receive frame rate.
 
 ## Receive interpolation
 

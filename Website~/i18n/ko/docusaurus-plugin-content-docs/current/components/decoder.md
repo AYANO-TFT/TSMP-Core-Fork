@@ -57,7 +57,9 @@ Decoder는 단계적으로 동작합니다.
 5. Payload bytes를 읽습니다.
 6. Variable state messages와 RPC messages를 dispatch합니다.
 
-어떤 단계가 실패하면 뒤 단계는 건너뜁니다. 예를 들어 CRC failure가 있으면 payload decoding은 시작되지 않습니다.
+위 순서는 첫 프레임과 폴백 경로에 해당합니다. 기본으로 켜진 **Use Predicted Readback**은 이전에 검증한 설정으로 현재 헤더와 payload를 함께 복원해, 순차 GPU readback 대기 두 번을 한 번으로 줄입니다. 현재 헤더를 검증하기 전에는 변수나 RPC를 적용하지 않으며, 설정이나 payload 길이가 달라지면 같은 스냅샷을 기존 경로로 다시 처리합니다.
+
+추가 머티리얼 지정은 필요하지 않습니다. 비교 테스트 시 **Diagnostics > Advanced Decode**에서 끌 수 있습니다. 수동 레이아웃과 안전 모드는 기존 순차 경로를 사용합니다. 추측한 GPU 디코딩이 이미 실행됐어도 CRC가 틀리면 프레임을 폐기합니다. 처리 기회를 늘리는 최적화이지, 전달 보장이나 일정한 수신 프레임레이트를 보장하는 기능은 아닙니다.
 
 ## Receive interpolation
 

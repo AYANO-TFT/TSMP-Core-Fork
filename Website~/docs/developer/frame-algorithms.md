@@ -113,6 +113,8 @@ CRC is calculated over header bytes `0..51`. The stored CRC is at bytes `52..55`
 
 ## Decode flow
 
+The following is the cold/fallback path. The default predicted path runs both byte passes before a single readback and validates the current header before accepting its payload. A metadata or exact payload-length mismatch reuses the frozen image for ordinary payload decoding; a CRC failure discards the frame. No custom codec change or wire-format change is required. See [predicted readback](../scripting-api/decoder.md#predicted-readback) for comparison fields, buffer layout and ownership.
+
 ```text
 Update / decode tick
   -> capture input into the decoder-owned snapshot
@@ -140,7 +142,7 @@ ApplyDecodeOptions
        -> optionally sample reference symbols into a float LUT
        -> bind the LUT and enable its byte-shader variant
   -> byte Blit from the same snapshot as preparation
-  -> GPU readback of recovered bytes
+  -> read back separately, or pack header/payload for one predicted readback
 ```
 
 Without a LUT, the byte shader repeatedly samples reference blocks while classifying payload symbols. With a LUT, those reference samples are calculated once per enabled pass; payload sampling and classification remain unchanged. The extra pass is useful only when its cost is lower than the repeated work it removes. Measure preparation plus decoding for both small and large payloads.
