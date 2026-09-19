@@ -23,6 +23,8 @@ The [two-slot overlap](TWO-SLOTS.md) comparison uses `TSMP_SINGLE_SLOT=1` for si
 
 `overlap-regression` checks simultaneous captures, full-capacity rejection, codec/sample/length changes, source overwrite, disable/re-enable cancellation and repeated RPC deduplication. Its ordering test first lets real GPU requests complete while the consumer is paused, then temporarily holds the older slot pending via test-only private state access. This tests ordered draining without claiming the hardware naturally completed out of order or synthesizing readback bytes. It also checks that a discarded or error-injected head does not stall its successor; diagnostic logging is disabled only around the intentional error. Results are written to `overlap-regression.txt`. `sustained-60-at-120` measures sixty seconds of 60-Hz publication with a 120-Hz target render loop.
 
+The [30-FPS measurements](THIRTY-FPS.md) use `small-30-at-30`, `small-60-at-30`, `hd-large-every-frame-at-30` and `sustained-every-frame-at-30`. The first two retain wall-clock pacing. The latter two publish once every Unity update, regardless of a separate send deadline, to avoid under-driving the receiver when scheduling jitter skips wall-clock slots. They still never publish more than one image per update. `publicationMode` identifies these modes in the CSV; `schedulerMisses` is not applicable and stays zero in `every-update` mode. Use measured `loopHz`/`txHz` to establish the achieved rate. A 60-Hz sender setting in the same 30-FPS process is not an independent 60-FPS source test.
+
 Use isolated Unity 2022.3.22f1 projects with file dependencies referencing the actual Core and four codec repositories. Do not use `-nographics`. Only run one benchmark process at a time.
 
 ```powershell
