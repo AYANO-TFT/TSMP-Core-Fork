@@ -112,6 +112,11 @@ public static class ContinuousFrameUdonValidation
 
         public void Set<T>(string name, T value) => code.Heap.SetHeapVariable(code.SymbolTable.GetAddressFromSymbol(name), value, typeof(T));
         public T Get<T>(string name) => (T)code.Heap.GetHeapVariable(code.SymbolTable.GetAddressFromSymbol(name));
+        public object GetOptional(string name) => code.SymbolTable.TryGetAddressFromSymbol(name, out uint address) ? code.Heap.GetHeapVariable(address) : null;
+        public void SetOptional<T>(string name, T value)
+        {
+            if (code.SymbolTable.TryGetAddressFromSymbol(name, out uint address)) code.Heap.SetHeapVariable(address, value, typeof(T));
+        }
         public void Call(string name)
         {
             Backing.SendCustomEvent(name);
@@ -174,6 +179,7 @@ public static class ContinuousFrameUdonValidation
             decoder.Set("payloadByteTexture", bytes);
             decoder.Set("readbackPackMaterial", Resources.Load<Material>("TSMPReadbackPack"));
             decoder.Set("usePredictedReadback", Environment.GetEnvironmentVariable("TSMP_DISABLE_PREDICTION") != "1");
+            decoder.SetOptional("retryAfterReadback", Environment.GetEnvironmentVariable("TSMP_DISABLE_READBACK_RETRY") != "1");
             decoder.Set("codecHandlers", test.Codec == 0 ? new[] { luma.Backing } : new[] { luma.Backing, codec.Backing });
             decoder.Set("applyEveryFrame", false);
             decoder.Set("flipY", true);
@@ -219,9 +225,11 @@ public static class ContinuousFrameUdonValidation
                 throw new InvalidOperationException("Encoder output failure: " + Error);
         }
         public void Decode() => decoder.Call("DecodeNow");
+        public void SetAutomatic(bool enabled) => decoder.Set("applyEveryFrame", enabled);
+        public void TickAutomatic() => decoder.Call("_update");
         public void Stop() => decoder.Call("_onDisable");
         public void Resume() => decoder.Call("_onEnable");
-        public object ReadDecoder(string name) => decoder.Get<object>(name);
+        public object ReadDecoder(string name) => decoder.GetOptional(name);
         public RenderTexture Output => source;
         public byte[] ReceivedPacket => receiver.Get<byte[]>("packet");
         public void SetSample(int sample) => encoder.Set("sampleSize", sample);

@@ -16,6 +16,7 @@ using UnityEditor.SceneManagement;
 #endif
 using Object = UnityEngine.Object;
 
+[DefaultExecutionOrder(-10000)]
 public sealed class ContinuousFrameValidation : MonoBehaviour
 {
     public TSMPCodec[] codecPrefabs;
@@ -60,6 +61,8 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         int RpcCount { get; }
         RenderTexture Output { get; }
         byte[] ReceivedPacket { get; }
+        void SetAutomatic(bool enabled);
+        void TickAutomatic();
     }
 
     readonly List<string> rows = new List<string>();
@@ -68,6 +71,19 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
     readonly double[] sent = new double[Capacity];
     string resultRoot;
     string failure;
+    Action scheduledStep;
+    Action<string> scheduledObservation;
+
+    void Update()
+    {
+        scheduledStep?.Invoke();
+        scheduledObservation?.Invoke("Update");
+    }
+
+    void LateUpdate()
+    {
+        scheduledObservation?.Invoke("LateUpdate");
+    }
 
 #if UNITY_EDITOR
     public static void CreateScene()
@@ -117,7 +133,9 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             "\nGPU=" + SystemInfo.graphicsDeviceName + "\nAPI=" + SystemInfo.graphicsDeviceType +
             "\nColorSpace=" + QualitySettings.activeColorSpace + "\nEditor=" + Application.isEditor +
             "\nPath=" + (UdonFactory == null ? "Native" : "Compiled Udon VM") +
-            "\nManaged source=" + Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_REVISION"));
+            "\nManaged source=" + Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_REVISION") +
+            "\nAutomatic scheduling=" + Environment.GetEnvironmentVariable("TSMP_AUTOMATIC_SCHEDULING") +
+            "\nRetry disabled=" + Environment.GetEnvironmentVariable("TSMP_DISABLE_READBACK_RETRY"));
         rows.Add(CsvHeader);
         var work = Run();
         while (true)
@@ -221,7 +239,33 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         var encodes = new List<double>();
         var ages = new List<double>();
         int latestApplied = 0;
-        while (Time.realtimeSinceStartupAsDouble < end + 1)
+        bool automatic = Environment.GetEnvironmentVariable("TSMP_AUTOMATIC_SCHEDULING") == "1" && !test.Baseline;
+        var timing = new List<string> { "phase,frame,time,captures,captureFrame,captureTime,completionFrame,completionTime,retries,busy,publishedId,appliedCount" };
+        bool instrumented = loop.ReadDecoder("decodeCaptureCount") != null;
+        int observedCaptures = instrumented ? (int)loop.ReadDecoder("decodeCaptureCount") : 0;
+        var idleTimes = new List<double>();
+        Action<string> observe = phase =>
+        {
+            int total = (int)loop.ReadDecoder("decodeCaptureCount");
+            float captured = (float)loop.ReadDecoder("lastDecodeCaptureTime");
+            float completed = (float)loop.ReadDecoder("lastReadbackCompletionTime");
+            if (total != observedCaptures)
+            {
+                int capturedId = id;
+                while (capturedId > 1 && published[capturedId] > captured + .0001) capturedId--;
+                if (captureTimes[capturedId] == 0) captureTimes[capturedId] = captured;
+                if (captured >= begin && captured < end)
+                {
+                    captures += total - observedCaptures;
+                    if (completed > 0 && captured >= completed) idleTimes.Add((captured - completed) * 1000);
+                }
+                observedCaptures = total;
+            }
+            timing.Add(string.Join(",", phase, Time.frameCount, N(Time.realtimeSinceStartupAsDouble), total,
+                loop.ReadDecoder("lastDecodeCaptureFrame"), N(captured), loop.ReadDecoder("lastReadbackCompletionFrame"), N(completed),
+                loop.ReadDecoder("automaticReadbackRetryCount"), loop.Busy, id, loop.AppliedCount));
+        };
+        Action step = () =>
         {
             double now = Time.realtimeSinceStartupAsDouble;
             bool measured = now >= begin && now < end;
@@ -251,18 +295,33 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
                 {
                     if (measured) busy++;
                 }
-                else
+                else if (!automatic || !instrumented)
                 {
                     if (captureTimes[id] == 0) captureTimes[id] = Time.realtimeSinceStartupAsDouble;
                     if (measured) captures++;
                 }
-                loop.Decode();
+                if (automatic) loop.TickAutomatic();
+                else loop.Decode();
                 int count = loop.AppliedCount;
                 if (count > 0) latestApplied = loop.AppliedIds[count - 1];
                 if (measured && latestApplied > 0) ages.Add((Time.realtimeSinceStartupAsDouble - sent[latestApplied]) * 1000);
             }
+        };
+        if (automatic)
+        {
+            loop.SetAutomatic(true);
+            scheduledStep = step;
+            if (instrumented) scheduledObservation = observe;
+        }
+        while (Time.realtimeSinceStartupAsDouble < end + 1)
+        {
+            if (!automatic) step();
             yield return null;
         }
+
+        scheduledStep = null;
+        scheduledObservation = null;
+        loop.SetAutomatic(false);
 
         double stop = Time.realtimeSinceStartupAsDouble;
         while (loop.Busy && Time.realtimeSinceStartupAsDouble < stop + 5) yield return null;
@@ -318,6 +377,13 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         for (int i = 1; i <= id; i++)
             publications.Add(string.Join(",", i, N(sent[i]), N(published[i]), N(captureTimes[i]), sent[i] >= begin && sent[i] < end));
         File.WriteAllLines(Path.Combine(resultRoot, test.Name + "-publications.csv"), publications);
+        if (automatic && instrumented)
+        {
+            File.WriteAllLines(Path.Combine(resultRoot, test.Name + "-timing.csv"), timing);
+            File.WriteAllText(Path.Combine(resultRoot, test.Name + "-scheduling.txt"),
+                "Automatic retries=" + loop.ReadDecoder("automaticReadbackRetryCount") + "\nObserved idle p50 ms=" + N(P(idleTimes, .5)) +
+                "\nObserved idle p95 ms=" + N(P(idleTimes, .95)) + "\nObserved idle samples=" + idleTimes.Count);
+        }
         File.WriteAllText(Path.Combine(resultRoot, "progress.txt"), row);
         Debug.Log("CONTINUOUS " + row);
         loop.Stop();
@@ -559,6 +625,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             encoder.debugLog = false;
             decoder = root.AddComponent<TSMPDecoder>();
             decoder.usePredictedReadback = Environment.GetEnvironmentVariable("TSMP_DISABLE_PREDICTION") != "1";
+            typeof(TSMPDecoder).GetField("retryAfterReadback")?.SetValue(decoder, Environment.GetEnvironmentVariable("TSMP_DISABLE_READBACK_RETRY") != "1");
             decoder.applyEveryFrame = false;
             decoder.sourceTexture = encoder.output;
             decoder.payloadByteTexture = Texture(512, Math.Max(1, (test.Bytes + 64 + 2047) / 2048));
@@ -593,9 +660,11 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             if (encoder.frameIndex != before + 1) throw new InvalidOperationException("Encoder output failure: " + encoder.lastError);
         }
         public void Decode() => decoder.DecodeNow();
+        public void SetAutomatic(bool enabled) => decoder.applyEveryFrame = enabled;
+        public void TickAutomatic() { }
         public void Stop() => decoder.enabled = false;
         public void Resume() => decoder.enabled = true;
-        public object ReadDecoder(string name) => typeof(TSMPDecoder).GetField(name).GetValue(decoder);
+        public object ReadDecoder(string name) => typeof(TSMPDecoder).GetField(name)?.GetValue(decoder);
         public RenderTexture Output => encoder.output;
         public byte[] ReceivedPacket => receiver.packet;
         public void SetSample(int sample) => encoder.sampleSize = sample;
