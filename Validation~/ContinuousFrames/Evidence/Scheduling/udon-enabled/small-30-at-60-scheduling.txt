@@ -1,0 +1,4 @@
+Automatic retries=0
+Observed idle p50 ms=0.1831
+Observed idle p95 ms=2.0218
+Observed idle samples=720
