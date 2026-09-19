@@ -259,7 +259,7 @@ public static class ResourceProfile
                 }
             }
         };
-        foreach (string name in new[] { "_slotSnapshots", "_slotHeaderTextures", "_slotCombinedTextures", "_slotByteTextures", "_slotPixels", "_slotHeaders", "_slotPayloads", "_slotOptions", "_slotPredictedHeaders", "_rawByteValueArrays", "_crc32Table", "_predictionHeader" })
+        foreach (string name in new[] { "_slotSnapshots", "_slotHeaderTextures", "_slotCombinedTextures", "_slotByteTextures", "_slotReadbackBytes", "_slotHeaders", "_slotPayloads", "_slotOptions", "_slotPredictedHeaders", "_rawByteValueArrays", "_crc32Table", "_predictionHeader" })
             visit(name, loop.ReadDecoder(name));
         visit("encoder.output", loop.Output);
         File.WriteAllLines(Path.Combine(root, "memory-" + phase + ".csv"), rows);

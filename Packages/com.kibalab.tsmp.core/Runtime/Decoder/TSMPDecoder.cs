@@ -122,7 +122,7 @@ namespace K13A.TSMP.Udon
         private const int DecodeSafetyParseOnly = 3;
         private const string LogPrefix = "[TSMP] ";
 
-        private Color32[] _readbackPixels;
+        private byte[] _readbackBytes;
         private RenderTexture _decodeSourceTexture;
         private bool _decodeSuspended;
         private bool _processingReadbacks;
@@ -140,7 +140,7 @@ namespace K13A.TSMP.Udon
         private RenderTexture[] _slotHeaderTextures = new RenderTexture[2];
         private RenderTexture[] _slotCombinedTextures = new RenderTexture[2];
         private RenderTexture[] _slotByteTextures = new RenderTexture[2];
-        private Color32[][] _slotPixels = new Color32[2][];
+        private byte[][] _slotReadbackBytes = new byte[2][];
         private byte[][] _slotHeaders = new byte[2][];
         private byte[][] _slotPayloads = new byte[2][];
         private byte[][] _slotOptions = new byte[2][];
@@ -398,7 +398,7 @@ namespace K13A.TSMP.Udon
             {
                 if (request.hasError)
                     _slotErrors[slot] = "Async GPU readback failed.";
-                else if (!request.TryGetData(_slotPixels[slot]))
+                else if (!request.TryGetData(_slotReadbackBytes[slot]))
                     _slotErrors[slot] = "TryGetData failed.";
             }
             _slotStates[slot] = 2;
@@ -426,13 +426,12 @@ namespace K13A.TSMP.Udon
                     _slotErrors[slot] = "Async GPU readback failed.";
                 else
                 {
-                    var pixels = request.GetData<Color32>();
-                    int count = _slotReadCounts[slot];
-                    if (pixels.Length < count)
+                    var bytes = request.GetData<byte>();
+                    int count = _slotReadCounts[slot] * 4;
+                    if (bytes.Length < count)
                         _slotErrors[slot] = "Async GPU readback data is smaller than requested.";
                     else
-                        for (int i = 0; i < count; i++)
-                            _slotPixels[slot][i] = pixels[i];
+                        Unity.Collections.NativeArray<byte>.Copy(bytes, 0, _slotReadbackBytes[slot], 0, count);
                 }
             }
             _slotStates[slot] = 2;
@@ -484,7 +483,7 @@ namespace K13A.TSMP.Udon
             _headerByteTexture = _slotHeaderTextures[slot];
             _combinedByteTexture = _slotCombinedTextures[slot];
             _requestByteTexture = _slotByteTextures[slot];
-            _readbackPixels = _slotPixels[slot];
+            _readbackBytes = _slotReadbackBytes[slot];
             _headerBytes = _slotHeaders[slot];
             _payloadBytes = _slotPayloads[slot];
             _codecOptionBytes = _slotOptions[slot];
@@ -497,7 +496,7 @@ namespace K13A.TSMP.Udon
             _slotHeaderTextures[slot] = _headerByteTexture;
             _slotCombinedTextures[slot] = _combinedByteTexture;
             _slotByteTextures[slot] = _requestByteTexture;
-            _slotPixels[slot] = _readbackPixels;
+            _slotReadbackBytes[slot] = _readbackBytes;
             _slotHeaders[slot] = _headerBytes;
             _slotPayloads[slot] = _payloadBytes;
             _slotOptions[slot] = _codecOptionBytes;
@@ -631,7 +630,7 @@ namespace K13A.TSMP.Udon
 
             if (_decodeStage == 1)
             {
-                if (!CopyBytesFromPixels(_headerBytes, FrameHeader.Size))
+                if (!CopyBytesFromReadback(_headerBytes, FrameHeader.Size))
                     return;
 
                 if (!ReadHeader())
@@ -651,7 +650,7 @@ namespace K13A.TSMP.Udon
                 return;
             }
 
-            if (!CopyBytesFromPixels(_payloadBytes, _payloadDataBytes))
+            if (!CopyBytesFromReadback(_payloadBytes, _payloadDataBytes))
                 return;
 
             CompletePayload();
@@ -762,7 +761,7 @@ namespace K13A.TSMP.Udon
                 return;
             }
 
-            _readbackPixels = DecoderReadbackRuntime.EnsurePixelBuffer(_readbackPixels, readbackPixelCount);
+            _readbackBytes = DecoderReadbackRuntime.EnsureByteBuffer(_readbackBytes, readbackPixelCount * 4);
 
             lastReadbackWidth = readWidth;
             lastReadbackHeight = readHeight;
@@ -894,7 +893,7 @@ namespace K13A.TSMP.Udon
 
         private void CompletePredictedReadback()
         {
-            if (!CopyBytesFromPixels(_headerBytes, FrameHeader.Size))
+            if (!CopyBytesFromReadback(_headerBytes, FrameHeader.Size))
                 return;
             bool matches = DecoderPredictionRuntime.HeadersMatch(_slotPredictedHeaders[_activeSlot], _headerBytes);
             _predictionValid = false;
@@ -924,7 +923,8 @@ namespace K13A.TSMP.Udon
                 return;
             }
 
-            if (!ByteTextureReader.CopyBytesAtPixel(_readbackPixels, FrameHeader.Size / 4, _payloadBytes, _payloadDataBytes))
+            if (!DecoderReadbackRuntime.TryCopyRawBytes(_readbackBytes, lastReadbackPixelCount * 4, FrameHeader.Size,
+                    _payloadBytes, _payloadDataBytes, out _expectedPixels, out lastError))
             {
                 FailHeaderRead("Predicted readback is smaller than the validated payload.");
                 return;
@@ -956,9 +956,10 @@ namespace K13A.TSMP.Udon
             return CodecBridge.PrepareDecodeHandler(codecHandlers, codecId, _codecOptionBytes, _activeWidthBlocks, _decodeStage, _payloadInterleaved, byteCount);
         }
 
-        private bool CopyBytesFromPixels(byte[] destination, int byteCount)
+        private bool CopyBytesFromReadback(byte[] destination, int byteCount)
         {
-            if (!DecoderReadbackRuntime.TryCopyBytes(_readbackPixels, destination, byteCount, out _expectedPixels, out lastError))
+            if (!DecoderReadbackRuntime.TryCopyRawBytes(_readbackBytes, lastReadbackPixelCount * 4, 0,
+                    destination, byteCount, out _expectedPixels, out lastError))
             {
                 lastFrameValid = false;
                 LogDecodeError(lastError);
