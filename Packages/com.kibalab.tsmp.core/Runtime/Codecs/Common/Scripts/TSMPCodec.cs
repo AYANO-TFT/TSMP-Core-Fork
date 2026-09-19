@@ -356,6 +356,8 @@ namespace K13A.TSMP
         }
 
 #if !COMPILER_UDONSHARP
+        public virtual bool SupportsGpuLuma4Encoding => false;
+
         public virtual int SymbolMode => (int)K13A.TSMP.SymbolMode.Luma4;
 
         public virtual int GetPayloadStartRow(int width, int blockSize)

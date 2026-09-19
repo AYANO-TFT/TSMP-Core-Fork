@@ -1,5 +1,7 @@
 # Resource optimization feasibility
 
+The following is the original investigation. The five subsequent implementations and measured results are recorded in [IMPLEMENTED.md](./IMPLEMENTED.md).
+
 This investigation follows [the resource profile](../ContinuousFrames/RESOURCE-PROFILE.md). It changes validation code only. No runtime optimization, protocol change, package release or revised end-to-end performance claim is included.
 
 ## Environment and evidence

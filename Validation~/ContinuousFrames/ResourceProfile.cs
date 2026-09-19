@@ -244,10 +244,15 @@ public static class ResourceProfile
                 long bytes = (long)rt.width * rt.height * UnityEngine.Experimental.Rendering.GraphicsFormatUtility.GetBlockSize(rt.graphicsFormat);
                 rows.Add(string.Join(",", name, rt.graphicsFormat, rt.width, rt.height, bytes, Profiler.GetRuntimeMemorySizeLong(rt)));
             }
+            else if (value is Texture2D texture)
+            {
+                long bytes=(long)texture.width*texture.height*UnityEngine.Experimental.Rendering.GraphicsFormatUtility.GetBlockSize(texture.graphicsFormat);
+                rows.Add(string.Join(",",name,texture.graphicsFormat,texture.width,texture.height,bytes,Profiler.GetRuntimeMemorySizeLong(texture)));
+            }
             else if (value is Array array)
             {
                 Type element = array.GetType().GetElementType();
-                if (element.IsArray || typeof(UnityEngine.Object).IsAssignableFrom(element))
+                if (element.IsArray || element == typeof(object) || typeof(UnityEngine.Object).IsAssignableFrom(element))
                 {
                     for (int i = 0; i < array.Length; i++) visit(name + "[" + i + "]", array.GetValue(i));
                 }
@@ -262,6 +267,9 @@ public static class ResourceProfile
         foreach (string name in new[] { "_slotSnapshots", "_slotHeaderTextures", "_slotCombinedTextures", "_slotByteTextures", "_slotReadbackBytes", "_slotHeaders", "_slotPayloads", "_slotOptions", "_slotPredictedHeaders", "_rawByteValueArrays", "_crc32Table", "_predictionHeader" })
             visit(name, loop.ReadDecoder(name));
         visit("encoder.output", loop.Output);
+        foreach(string name in new[] { "_gpuUpload","_gpuUploadBytes","_gpuSymbols","_stagingTexture","_rasterPixels","outputTexture","_pixels","_basePixels" })
+            visit("encoder."+name,loop.ReadEncoder(name));
+        File.WriteAllText(Path.Combine(root,"encoder-path.txt"),"GPU Luma4="+loop.ReadEncoder("lastFrameUsedGpuLuma4"));
         File.WriteAllLines(Path.Combine(root, "memory-" + phase + ".csv"), rows);
     }
 

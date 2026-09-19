@@ -90,7 +90,7 @@ Changing or destroying `sourceTexture` after capture affects the next operation,
 
 `readbackInFlight` means at least one captured frame remains pending, including a ready result waiting for its predecessor. `pendingDecodeCount` is 0..2. `skippedBusyDecodeCount` counts capture attempts rejected at the configured capacity, not unique lost video frames, and is reset by `ResetDecodeDiagnostics()`.
 
-Snapshot memory figures above are **per allocated slot**; two-slot use can double them, plus byte targets and managed buffers. Disabling overlap while requests exist stops new admissions until capacity allows; it does not discard accepted frames or immediately free retained slot storage. Overlap trades memory and potentially latency/GPU/CPU load for more capture opportunities. It does not shorten the underlying readback delay, guarantee 60 Hz, recover frames absent from the source texture or provide unlimited buffering.
+The formula above is per slot; its numerical examples already include **two snapshots**. Byte targets and managed buffers require additional memory. Disabling overlap while requests exist stops new admissions until capacity allows; it does not discard accepted frames or immediately free retained slot storage. Overlap trades memory and potentially latency/GPU/CPU load for more capture opportunities. It does not shorten the underlying readback delay, guarantee 60 Hz, recover frames absent from the source texture or provide unlimited buffering.
 
 ## Frame window and ordering {#frame-window}
 

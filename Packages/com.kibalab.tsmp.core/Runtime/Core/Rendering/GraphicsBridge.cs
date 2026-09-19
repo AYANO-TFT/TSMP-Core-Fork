@@ -25,5 +25,14 @@ namespace K13A.TSMP
             Graphics.Blit(source, destination, material);
 #endif
         }
+
+        public static void Blit(Texture source, RenderTexture destination, Material material, int pass)
+        {
+#if COMPILER_UDONSHARP
+            VRCGraphics.Blit(source, destination, material, pass);
+#else
+            Graphics.Blit(source, destination, material, pass);
+#endif
+        }
     }
 }

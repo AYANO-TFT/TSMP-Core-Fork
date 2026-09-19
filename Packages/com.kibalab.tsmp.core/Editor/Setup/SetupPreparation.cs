@@ -60,6 +60,9 @@ namespace K13A.TSMP.Editor
             foreach (TSMPDecoder decoder in UnityEngine.Object.FindObjectsOfType<TSMPDecoder>(true))
                 if (decoder.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(decoder))
                     PrepareDecoder(decoder);
+            foreach (TSMPEncoder encoder in UnityEngine.Object.FindObjectsOfType<TSMPEncoder>(true))
+                if (encoder.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(encoder))
+                    PrepareEncoder(encoder);
         }
 
         private static void OnPlayModeChanged(PlayModeStateChange state)
@@ -95,6 +98,8 @@ namespace K13A.TSMP.Editor
                     setup.ApplyNow();
                 foreach (TSMPDecoder decoder in root.GetComponentsInChildren<TSMPDecoder>(true))
                     PrepareDecoder(decoder);
+                foreach (TSMPEncoder encoder in root.GetComponentsInChildren<TSMPEncoder>(true))
+                    PrepareEncoder(encoder);
             }
         }
 
@@ -107,6 +112,18 @@ namespace K13A.TSMP.Editor
             PrefabUtility.RecordPrefabInstancePropertyModifications(decoder);
 #if UDONSHARP
             UdonSharpEditorUtility.CopyProxyToUdon(decoder);
+#endif
+        }
+
+        private static void PrepareEncoder(TSMPEncoder encoder)
+        {
+            if (encoder.luma4EncodeMaterial != null)
+                return;
+            encoder.luma4EncodeMaterial = Resources.Load<Material>("TSMPEncodeLuma4");
+            EditorUtility.SetDirty(encoder);
+            PrefabUtility.RecordPrefabInstancePropertyModifications(encoder);
+#if UDONSHARP
+            UdonSharpEditorUtility.CopyProxyToUdon(encoder);
 #endif
         }
 

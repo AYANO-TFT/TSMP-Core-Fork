@@ -20,6 +20,44 @@ public sealed class BulkCopyProbe : TSMPBehaviour
     public bool completed;
     public bool bytesValid;
     public bool colorsValid;
+    public RenderTexture rasterOutput;
+    public Material rasterMaterial;
+    public Material expandMaterial;
+    public Texture2D rasterTexture;
+    public byte[] rasterHeader;
+    public Color32[] rasterBase;
+    public Color32[] rasterPixels;
+    public Color32[] lumaColors;
+    public bool rasterResult;
+    private Texture2D gpuUpload;
+    private byte[] gpuBytes;
+    private RenderTexture gpuSymbols;
+
+    public void CpuRaster()
+    {
+        int width=rasterOutput.width;
+        int height=rasterOutput.height;
+        EncoderUdonTextureRuntime.CopyPixelBuffer(rasterBase,rasterPixels);
+        Luma4FrameTextureWriter.WriteHeader(rasterPixels,width,height,8,width/8,height/8,true,rasterHeader,lumaColors);
+        Luma4FrameTextureWriter.WritePayload(rasterPixels,width,height,8,width/8,height/8,true,5,sourceBytes,count,lumaColors);
+        rasterTexture.SetPixels32(rasterPixels);
+        rasterTexture.Apply(false,false);
+        EncoderUdonTextureRuntime.BlitEncodedTexture(rasterTexture,rasterOutput,true,expandMaterial,width/8,height/8,8);
+    }
+
+    public void GpuRaster()
+    {
+        rasterResult=GpuLuma4Writer.TryWrite(rasterOutput,rasterMaterial,8,5,rasterHeader,sourceBytes,count,0f,ref gpuUpload,ref gpuBytes,ref gpuSymbols);
+    }
+
+    public void ReleaseRaster()
+    {
+        GpuLuma4Writer.ReleaseTexture(gpuUpload);
+        DecoderSnapshotRuntime.Release(gpuSymbols);
+        gpuUpload=null;
+        gpuBytes=null;
+        gpuSymbols=null;
+    }
 
     public void Control() { }
     public void LoopColors() { EncoderUdonTextureRuntime.CopyPixelBuffer(sourceColors, targetColors); }

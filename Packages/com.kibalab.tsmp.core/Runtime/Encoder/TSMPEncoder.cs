@@ -48,6 +48,12 @@ namespace K13A.TSMP
         [HideInInspector] public Texture2D outputTexture;
         public RenderTexture output;
         public Material blockExpandMaterial;
+        [HideInInspector] public Material luma4EncodeMaterial;
+        [HideInInspector] public bool useGpuLuma4 = true;
+        [HideInInspector] public bool lastFrameUsedGpuLuma4;
+        private Texture2D _gpuUpload;
+        private byte[] _gpuUploadBytes;
+        private RenderTexture _gpuSymbols;
         [HideInInspector]
         public int width = 640;
         [HideInInspector]
@@ -290,15 +296,18 @@ namespace K13A.TSMP
 
             BuildHeader();
 
-            bool writeOk = codec.TryWriteFrameBuffered(_stagingTexture, blockSize, _header, _encodedPayload, ref _rasterPixels, out string writeError);
-
-            if (!writeOk)
+            lastFrameUsedGpuLuma4 = codec.SupportsGpuLuma4Encoding
+                && TryWriteGpuLuma4(_header, _encodedPayload, payloadBytes, codec.GetPayloadStartRow(width, blockSize), 128f / 255f);
+            if (!lastFrameUsedGpuLuma4)
             {
-                SetLastError(writeError);
-                return;
+                EnsureStagingTexture();
+                if (!codec.TryWriteFrameBuffered(_stagingTexture, blockSize, _header, _encodedPayload, ref _rasterPixels, out string writeError))
+                {
+                    SetLastError(writeError);
+                    return;
+                }
+                Graphics.Blit(_stagingTexture, output);
             }
-
-            Graphics.Blit(_stagingTexture, output);
             _sendState.Commit(_payload, GetSendTime());
             frameIndex++;
             if (rpcMessageCount > 0)
@@ -447,6 +456,12 @@ namespace K13A.TSMP
         private void EnsureResources()
         {
             SyncOutputDimensions();
+            if (_header == null || _header.Length != FrameHeader.Size)
+                _header = new byte[FrameHeader.Size];
+        }
+
+        private void EnsureStagingTexture()
+        {
             if (_stagingTexture == null || _stagingTexture.width != width || _stagingTexture.height != height)
             {
                 if (_stagingTexture != null)
@@ -454,9 +469,6 @@ namespace K13A.TSMP
 
                 _stagingTexture = Luma4Raster.CreateTexture(width, height);
             }
-
-            if (_header == null || _header.Length != FrameHeader.Size)
-                _header = new byte[FrameHeader.Size];
         }
 
         private void SyncOutputDimensions()
@@ -470,6 +482,7 @@ namespace K13A.TSMP
 
         private void ReleaseResources()
         {
+            ReleaseGpuResources();
             _rasterPixels = null;
             if (_stagingTexture != null)
             {
@@ -1292,7 +1305,13 @@ namespace K13A.TSMP
         private bool WriteFrameTexture()
         {
             int mode = GetPayloadSymbolMode();
+            lastFrameUsedGpuLuma4 = mode == (int)K13A.TSMP.SymbolMode.Luma4
+                && TryWriteGpuLuma4(_headerBytes, _payloadBytes, payloadBytes, GetPayloadStartRow(), 0f);
+            if (lastFrameUsedGpuLuma4)
+                return true;
 
+            _pixels = EncoderUdonTextureRuntime.EnsurePixelBuffer(_pixels, symbolTextureWidth, symbolTextureHeight);
+            outputTexture = EncoderUdonTextureRuntime.EnsureOutputTexture(outputTexture, symbolTextureWidth, symbolTextureHeight);
             EnsureBasePixels();
             EncoderUdonTextureRuntime.CopyPixelBuffer(_basePixels, _pixels);
             Luma4FrameTextureWriter.WriteHeader(_pixels, width, height, blockSize, _activeWidthBlocks, _activeHeightBlocks, _usingBlockTexture, _headerBytes, _luma4Colors);
@@ -1387,9 +1406,6 @@ namespace K13A.TSMP
             int textureHeight = EncoderUdonTextureRuntime.GetSymbolTextureSize(height, _activeHeightBlocks, _usingBlockTexture);
             symbolTextureWidth = textureWidth;
             symbolTextureHeight = textureHeight;
-
-            _pixels = EncoderUdonTextureRuntime.EnsurePixelBuffer(_pixels, textureWidth, textureHeight);
-            outputTexture = EncoderUdonTextureRuntime.EnsureOutputTexture(outputTexture, textureWidth, textureHeight);
         }
 
         private void SyncOutputDimensions()
@@ -1403,6 +1419,8 @@ namespace K13A.TSMP
 
         private void BlitEncodedTexture()
         {
+            if (lastFrameUsedGpuLuma4)
+                return;
             EncoderUdonTextureRuntime.BlitEncodedTexture(outputTexture, output, _usingBlockTexture, blockExpandMaterial, _activeWidthBlocks, _activeHeightBlocks, blockSize);
         }
 
@@ -1559,6 +1577,40 @@ namespace K13A.TSMP
             ClearFrame();
         }
 
+#endif
+
+        private bool TryWriteGpuLuma4(byte[] header, byte[] payload, int count, int startRow, float background)
+        {
+            if (!useGpuLuma4 || !useBlockSymbolTexture)
+                return false;
+#if !COMPILER_UDONSHARP
+            if (luma4EncodeMaterial == null)
+                luma4EncodeMaterial = Resources.Load<Material>("TSMPEncodeLuma4");
+#endif
+            return GpuLuma4Writer.TryWrite(output, luma4EncodeMaterial, blockSize, startRow, header, payload, count, background,
+                ref _gpuUpload, ref _gpuUploadBytes, ref _gpuSymbols);
+        }
+
+        private void ReleaseGpuResources()
+        {
+            GpuLuma4Writer.ReleaseTexture(_gpuUpload);
+            DecoderSnapshotRuntime.Release(_gpuSymbols);
+            _gpuUpload = null;
+            _gpuUploadBytes = null;
+            _gpuSymbols = null;
+            lastFrameUsedGpuLuma4 = false;
+        }
+
+        private void OnDestroy()
+        {
+            ReleaseGpuResources();
+        }
+
+#if UDONSHARP || COMPILER_UDONSHARP
+        private void OnDisable()
+        {
+            ReleaseGpuResources();
+        }
 #endif
 
         [ContextMenu("Reset Frame Index")]

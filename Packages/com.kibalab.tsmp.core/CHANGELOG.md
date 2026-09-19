@@ -4,13 +4,19 @@
 
 ### Performance
 
+- Replace same-type Udon image/payload copy loops with guarded bulk copies, preserving independent receiver and in-flight buffers.
+- Read GPU results directly into slot-owned byte buffers and bulk-copy validated header/payload ranges, without retaining request-owned native views.
+- Reuse encoder-owned native raster arrays through an optional codec method; existing third-party writers keep their original fallback.
+- Automatically match known 8-bit/half-float snapshot storage to the input, preserving linear/sRGB interpretation. Keep Float32 for unknown/high-precision inputs and non-RenderTexture Udon sources.
+- Encode Luma4 bytes into a small GPU symbol image before block expansion. Automatically prepare the material, retain CPU fallback, defer unused CPU image allocation, and release owned GPU resources on disable/destruction. Native codecs explicitly opt in; other codec writers are unchanged.
+
 - Add default-enabled bounded two-slot readback overlap. Capture the next image while an older request is pending, retain independent snapshots/buffers/fallback state, and apply results in capture order. Full capacity skips new captures rather than growing a queue. Disabling cancels both slots; outstanding requests drain before their storage can be reused.
 - Add an advanced overlap opt-out and pending/busy-capture diagnostics. Overlap can reduce missed frames at the cost of more snapshot memory, GPU/CPU work and potentially higher application latency; it is not a delivery guarantee.
 - Add optional combined byte output for capable codec shaders. Write the decoded header prefix and payload directly into the private readback texture instead of rendering a payload intermediate and a separate packing pass. Preserve the legacy path for third-party shaders without the opt-in properties.
 - Add a default-enabled predicted decoder readback path: decode the current header and payload with the previous validated configuration, pack both byte outputs, and request one GPU readback instead of two sequential requests.
 - Validate the current header CRC before accepting any speculative payload. Changes to codec, options, stream, layout, sample size or payload length use the existing payload path on the same frozen image. Payload length must match exactly; custom codec implementations are not assumed to support decoding a longer prefix.
 - Keep manual layout and safety modes on the sequential path. Assign the packing material automatically for existing/new decoders and retain sequential operation if it is unavailable. Add prediction/fallback diagnostics and an advanced opt-out.
-- The transmitted datagram, codec API, RPC repeat budget and event deduplication are unchanged. At most two captured images are retained; this is not an unlimited frame queue or guaranteed-delivery mechanism.
+- The transmitted datagram, existing codec entry points, RPC repeat budget and event deduplication are unchanged. At most two captured images are retained; this is not an unlimited frame queue or guaranteed-delivery mechanism.
 
 ## 0.3.0-beta.2
 

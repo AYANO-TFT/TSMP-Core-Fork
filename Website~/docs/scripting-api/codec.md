@@ -59,6 +59,7 @@ Available outside `COMPILER_UDONSHARP`:
 | `SymbolMode` | Native symbol mode property. |
 | `TryWriteFrame(...)` | Write complete frame into a `Texture2D`. |
 | `TryWriteFrameBuffered(..., ref Color32[] pixels, out string error)` | Optional native writer that reuses an encoder-owned raster buffer. The default calls `TryWriteFrame`, so existing codecs remain compatible. |
+| `SupportsGpuLuma4Encoding` | Optional native opt-in, false by default. True lets the encoder use the standard Luma4 GPU raster writer. Only opt in when the codec uses the unchanged Luma4 palette, header layout and byte-to-nibble mapping. |
 | `GetCodecOptionBytes()` | Native codec option byte array. |
 | `DecodeMaterialCount` | Number of decode materials. |
 | `GetDecodeMaterial(index)` | Decode material lookup. |

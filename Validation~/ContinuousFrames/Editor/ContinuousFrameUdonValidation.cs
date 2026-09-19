@@ -61,6 +61,15 @@ public static class ContinuousFrameUdonValidation
                 throw new InvalidOperationException("Decoder packing material was not automatically serialized to Udon");
             File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_RESULTS"), "preparation.txt"),
                 "PASS missing decoder packing material automatically assigned and serialized to backing UdonBehaviour");
+            var encoder=(TSMPEncoder)UdonSharpUndo.AddComponent(root,typeof(TSMPEncoder));
+            encoder.luma4EncodeMaterial=null;
+            K13A.TSMP.Editor.SetupPreparation.PrepareAll();
+            backing=UdonSharpEditorUtility.GetBackingUdonBehaviour(encoder);
+            if(encoder.luma4EncodeMaterial==null || backing==null ||
+                !backing.publicVariables.TryGetVariableValue("luma4EncodeMaterial",out serialized) || serialized!=encoder.luma4EncodeMaterial)
+                throw new InvalidOperationException("Encoder GPU material was not automatically serialized to Udon");
+            File.AppendAllText(Path.Combine(Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_RESULTS"),"preparation.txt"),
+                "\nPASS missing encoder GPU material automatically assigned and serialized to backing UdonBehaviour");
         }
         finally { Object.DestroyImmediate(root); }
     }
@@ -198,6 +207,8 @@ public static class ContinuousFrameUdonValidation
             encoder.Set("sampleSize", test.Sample);
             encoder.Set("frameIndex", 1u);
             encoder.Set("blockExpandMaterial", expand);
+            encoder.Set("luma4EncodeMaterial", Resources.Load<Material>("TSMPEncodeLuma4"));
+            encoder.Set("useGpuLuma4", Environment.GetEnvironmentVariable("TSMP_DISABLE_GPU_LUMA4") != "1");
             encoder.Set("selectedCodecUdonTarget", codec.Backing);
             encoder.Set("debugLog", false);
             Bind(encoder, sender);
@@ -283,6 +294,9 @@ public static class ContinuousFrameUdonValidation
         public void Stop() => decoder.Call("_onDisable");
         public void Resume() => decoder.Call("_onEnable");
         public object ReadDecoder(string name) => decoder.GetOptional(name);
+        public object ReadEncoder(string name) => encoder.GetOptional(name);
+        public void SetGpuEncoding(bool enabled) => encoder.Set("useGpuLuma4",enabled);
+        public void RestartEncoder() { encoder.Call("_onDisable"); encoder.Call("_onEnable"); }
         public void WriteDecoder(string name, object value) => decoder.SetAny(name, value);
         public RenderTexture Output => source;
         public byte[] ReceivedPacket => receiver.Get<byte[]>("packet");

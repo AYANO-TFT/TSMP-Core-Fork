@@ -55,6 +55,9 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         void Decode();
         void Stop();
         object ReadDecoder(string name);
+        object ReadEncoder(string name);
+        void SetGpuEncoding(bool enabled);
+        void RestartEncoder();
         void WriteDecoder(string name, object value);
         void SelectCodec(int index);
         void SetSample(int sample);
@@ -473,6 +476,25 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         }
         results.Add("PASS header sample-size changes");
 
+        foreach(bool gpu in new[] { false,true })
+        {
+            loop.SetGpuEncoding(gpu);
+            loop.RestartEncoder();
+            if(loop.ReadEncoder("_gpuUpload")!=null || loop.ReadEncoder("_gpuSymbols")!=null)
+                throw new InvalidOperationException("Encoder retained GPU textures after disable");
+            int count=loop.AppliedCount;
+            byte[] expected=packet(32);
+            loop.Publish(expected);
+            if((bool)loop.ReadEncoder("lastFrameUsedGpuLuma4")!=gpu)
+                throw new InvalidOperationException("Encoder did not use expected CPU/GPU path");
+            loop.Decode();
+            var wait=Drain(loop);
+            while(wait.MoveNext()) yield return wait.Current;
+            if(loop.AppliedCount!=count+1 || !expected.SequenceEqual(loop.ReceivedPacket))
+                throw new InvalidOperationException("CPU/GPU switch or encoder restart changed payload");
+        }
+        results.Add("PASS encoder CPU/GPU switch, disable releases GPU resources, re-enable recovers");
+
         int beforeCrc = loop.AppliedCount;
         loop.Publish(packet(32));
         RenderTexture previous = RenderTexture.active;
@@ -778,6 +800,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             codecs[test.Codec] = codec;
             encoder = root.AddComponent<TSMPEncoder>();
             encoder.autoEncode = false;
+            encoder.useGpuLuma4 = Environment.GetEnvironmentVariable("TSMP_DISABLE_GPU_LUMA4") != "1";
             encoder.output = Texture(test.Width, test.Height);
             owned.Add(encoder.output);
             encoder.sampleSize = test.Sample;
@@ -848,6 +871,9 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         public void Stop() => decoder.enabled = false;
         public void Resume() => decoder.enabled = true;
         public object ReadDecoder(string name) => typeof(TSMPDecoder).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(decoder);
+        public object ReadEncoder(string name) => typeof(TSMPEncoder).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(encoder);
+        public void SetGpuEncoding(bool enabled) => encoder.useGpuLuma4=enabled;
+        public void RestartEncoder() { encoder.enabled=false; encoder.enabled=true; }
         public void WriteDecoder(string name, object value) => typeof(TSMPDecoder).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).SetValue(decoder, value);
         public RenderTexture Output => encoder.output;
         public byte[] ReceivedPacket => receiver.packet;

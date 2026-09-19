@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using K13A.TSMP;
 using UdonSharp;
 using UdonSharp.Compiler;
 using UnityEditor;
@@ -87,6 +88,7 @@ public static class BulkCopyValidation
             lines.Add("Mode=Client-target Udon bytecode in SDK Editor VM, not VRChat client");
             timings.Add("case,count,event,mean_us,p95_us,samples");
             Benchmark();
+            BenchmarkRaster();
             BeginReadback();
             EditorApplication.update += Poll;
         }
@@ -184,6 +186,43 @@ public static class BulkCopyValidation
         Set("targetColors", colors); Call("LoopColors");
         Require(colors[0].r == 1 && colors[1].r == 9, "Minimum color length");
         lines.Add("PASS production null/empty writes, invalid-range rejection, receiver ownership/reuse/resize and unequal color-buffer lengths");
+    }
+
+    static void BenchmarkRaster()
+    {
+        var material=new Material(Resources.Load<Material>("TSMPEncodeLuma4"));
+        var expand=new Material(AssetDatabase.LoadAssetAtPath<Material>("Packages/com.kibalab.tsmp.core/Shaders/TSMPEncoderBlockExpand.mat"));
+        Set("rasterMaterial",material); Set("expandMaterial",expand);
+        Set("rasterHeader",Enumerable.Range(0,56).Select(i=>(byte)(i*71)).ToArray());
+        Set("lumaColors",SymbolCodec.CreateLuma4Colors());
+        foreach(var size in new[] { new Vector2Int(640,360),new Vector2Int(1280,720),new Vector2Int(3840,2160) })
+        {
+            var output=new RenderTexture(size.x,size.y,0,RenderTextureFormat.ARGB32,RenderTextureReadWrite.Linear);
+            output.Create();
+            var symbols=new Texture2D(size.x/8,size.y/8,TextureFormat.RGBA32,false,false) { filterMode=FilterMode.Point };
+            var pixels=new Color32[size.x/8*(size.y/8)];
+            EncoderUdonTextureRuntime.ClearPixelBuffer(pixels);
+            Luma4FrameTextureWriter.WriteStaticRegions(pixels,size.x,size.y,8,size.x/8,size.y/8,true);
+            Set("rasterOutput",output); Set("rasterTexture",symbols); Set("rasterBase",pixels); Set("rasterPixels",new Color32[pixels.Length]);
+            int capacity=Luma4Raster.GetPayloadCapacityBytes(size.x,size.y,8);
+            foreach(int count in new[] { 0,32,256,Math.Min(4096,capacity),capacity,32 })
+            {
+                Set("sourceBytes",Enumerable.Range(0,count).Select(i=>(byte)(i*73)).ToArray()); Set("count",count);
+                Time("raster-"+size.x+"x"+size.y,count,"CpuRaster");
+                var request=UnityEngine.Rendering.AsyncGPUReadback.Request(output,0);
+                request.WaitForCompletion(); Require(!request.hasError,"CPU raster readback");
+                var expected=request.GetData<Color32>().ToArray();
+                Time("raster-"+size.x+"x"+size.y,count,"GpuRaster");
+                Require(Get<bool>("rasterResult"),"GPU raster failed");
+                request=UnityEngine.Rendering.AsyncGPUReadback.Request(output,0);
+                request.WaitForCompletion(); Require(!request.hasError,"GPU raster readback");
+                Require(expected.SequenceEqual(request.GetData<Color32>().ToArray()),"Udon CPU/GPU raster differs: "+size+" bytes="+count);
+            }
+            output.Release(); Object.Destroy(output); Object.Destroy(symbols);
+        }
+        Call("ReleaseRaster");
+        Object.Destroy(material); Object.Destroy(expand);
+        lines.Add("PASS Udon CPU/GPU full-image equality: 360p/720p/4K, empty/small/large/capacity/shrinking payloads");
     }
 
     static void BeginReadback()
