@@ -57,6 +57,9 @@ namespace K13A.TSMP.Editor
             foreach (TSMPSetup setup in UnityEngine.Object.FindObjectsOfType<TSMPSetup>(true))
                 if (setup.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(setup))
                     setup.ApplyNow();
+            foreach (TSMPDecoder decoder in UnityEngine.Object.FindObjectsOfType<TSMPDecoder>(true))
+                if (decoder.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(decoder))
+                    PrepareDecoder(decoder);
         }
 
         private static void OnPlayModeChanged(PlayModeStateChange state)
@@ -87,8 +90,24 @@ namespace K13A.TSMP.Editor
         private static void PrepareScene(Scene scene)
         {
             foreach (GameObject root in scene.GetRootGameObjects())
+            {
                 foreach (TSMPSetup setup in root.GetComponentsInChildren<TSMPSetup>(true))
                     setup.ApplyNow();
+                foreach (TSMPDecoder decoder in root.GetComponentsInChildren<TSMPDecoder>(true))
+                    PrepareDecoder(decoder);
+            }
+        }
+
+        private static void PrepareDecoder(TSMPDecoder decoder)
+        {
+            if (decoder.readbackPackMaterial != null)
+                return;
+            decoder.readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+            EditorUtility.SetDirty(decoder);
+            PrefabUtility.RecordPrefabInstancePropertyModifications(decoder);
+#if UDONSHARP
+            UdonSharpEditorUtility.CopyProxyToUdon(decoder);
+#endif
         }
 
         private static void Prepare(TSMPSetup setup)

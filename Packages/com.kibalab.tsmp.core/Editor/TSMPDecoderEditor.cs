@@ -30,6 +30,7 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _useHeaderPayloadLayout;
         private SerializedProperty _payloadBytesOverride;
         private SerializedProperty _decodeSafetyMode;
+        private SerializedProperty _usePredictedReadback;
         private SerializedProperty _debugLog;
         private SerializedProperty _debugErrorLogBudget;
 
@@ -51,6 +52,7 @@ namespace K13A.TSMP.Editor
             _useHeaderPayloadLayout = serializedObject.FindProperty("useHeaderPayloadLayout");
             _payloadBytesOverride = serializedObject.FindProperty("payloadBytesOverride");
             _decodeSafetyMode = serializedObject.FindProperty("decodeSafetyMode");
+            _usePredictedReadback = serializedObject.FindProperty("usePredictedReadback");
             _debugLog = serializedObject.FindProperty("debugLog");
             _debugErrorLogBudget = serializedObject.FindProperty("debugErrorLogBudget");
         }
@@ -147,6 +149,7 @@ namespace K13A.TSMP.Editor
 
         private void DrawAdvancedDecode()
         {
+            InspectorUI.Property(_usePredictedReadback);
             InspectorUI.Property(_payloadBytesOverride);
             if (_decodeSafetyMode != null)
                 EditorGUILayout.IntPopup(_decodeSafetyMode, DecodeSafetyLabels, DecodeSafetyValues);
@@ -154,6 +157,8 @@ namespace K13A.TSMP.Editor
 
         private static void DrawRuntimeStatus(TSMPDecoder decoder)
         {
+            InspectorUI.ReadOnlyInt("Predicted Readbacks", decoder.predictedReadbackCount);
+            InspectorUI.ReadOnlyInt("Prediction Fallbacks", decoder.predictionFallbackCount);
             InspectorUI.ReadOnlyBool("Readback In Flight", decoder.readbackInFlight);
             InspectorUI.ReadOnlyInt("Payload Bytes", decoder.lastPayloadSizeFromHeader);
             InspectorUI.ReadOnlyInt("Available Payload Bytes", decoder.lastPayloadAvailableBytes);

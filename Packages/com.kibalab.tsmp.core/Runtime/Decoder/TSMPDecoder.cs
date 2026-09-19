@@ -70,6 +70,10 @@ namespace K13A.TSMP.Udon
         public bool useHeaderPayloadLayout = true;
         public int payloadBytesOverride;
         public int decodeSafetyMode;
+        public bool usePredictedReadback = true;
+        [HideInInspector] public Material readbackPackMaterial;
+        [HideInInspector] public int predictedReadbackCount;
+        [HideInInspector] public int predictionFallbackCount;
 
         public bool debugLog = true;
         public int debugErrorLogBudget = 32;
@@ -160,6 +164,28 @@ namespace K13A.TSMP.Udon
         private uint[] _recentRpcHashes;
         private int[] _recentRpcEventIds;
         private int _recentRpcWriteIndex;
+        private bool _predictionValid;
+        private byte[] _predictionHeader;
+        private Texture _predictionSource;
+        private int _predictionWidth;
+        private int _predictionHeight;
+        private int _predictionBlockSize;
+        private int _predictionSampleSize;
+        private int _predictionActiveWidthBlocks;
+        private int _predictionStartBlock;
+        private bool _predictionFlipY;
+        private int _predictionByteCount;
+        private RenderTexture _headerByteTexture;
+        private RenderTexture _combinedByteTexture;
+        private Material _readbackPackInstance;
+
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+        private void OnValidate()
+        {
+            if (readbackPackMaterial == null)
+                readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+        }
+#endif
 
         private void Start()
         {
@@ -179,6 +205,10 @@ namespace K13A.TSMP.Udon
         private void OnEnable()
         {
             _decodeSuspended = false;
+#if !COMPILER_UDONSHARP
+            if (readbackPackMaterial == null)
+                readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+#endif
         }
 
         private void OnDisable()
@@ -190,17 +220,42 @@ namespace K13A.TSMP.Udon
             lastHeaderValid = false;
             DecoderSnapshotRuntime.Release(_decodeSourceTexture);
             _decodeSourceTexture = null;
+            ReleasePredictionResources();
         }
 
         private void OnDestroy()
         {
             DecoderSnapshotRuntime.Release(_decodeSourceTexture);
             _decodeSourceTexture = null;
+            ReleasePredictionResources();
+        }
+
+        private void ReleasePredictionResources()
+        {
+            _predictionValid = false;
+            DecoderSnapshotRuntime.Release(_headerByteTexture);
+            DecoderSnapshotRuntime.Release(_combinedByteTexture);
+            _headerByteTexture = null;
+            _combinedByteTexture = null;
+#if !COMPILER_UDONSHARP
+            if (_readbackPackInstance != null)
+            {
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    DestroyImmediate(_readbackPackInstance);
+                else
+#endif
+                    Destroy(_readbackPackInstance);
+            }
+#endif
+            _readbackPackInstance = null;
         }
 
         public void ResetDecodeDiagnostics()
         {
             ResetTSMPLogBudget(debugErrorLogBudget);
+            predictedReadbackCount = 0;
+            predictionFallbackCount = 0;
         }
 
         public void DecodeNow()
@@ -226,7 +281,11 @@ namespace K13A.TSMP.Udon
                 return;
             }
 
-            RequestHeaderCopy();
+            if (!TryRequestPredictedReadback())
+            {
+                _predictionValid = false;
+                RequestHeaderCopy();
+            }
         }
 
 #if COMPILER_UDONSHARP
@@ -300,6 +359,12 @@ namespace K13A.TSMP.Udon
 
         private void CompleteReadbackStage()
         {
+            if (_decodeStage == 3)
+            {
+                CompletePredictedReadback();
+                return;
+            }
+
             if (_decodeStage == 1)
             {
                 if (!CopyBytesFromPixels(_headerBytes, FrameHeader.Size))
@@ -324,6 +389,13 @@ namespace K13A.TSMP.Udon
 
             if (!CopyBytesFromPixels(_payloadBytes, _payloadDataBytes))
                 return;
+
+            CompletePayload();
+        }
+
+        private void CompletePayload()
+        {
+            CachePrediction();
 
             if (decodeSafetyMode == DecodeSafetyPayloadReadbackOnly)
             {
@@ -410,11 +482,16 @@ namespace K13A.TSMP.Udon
 
         private void RequestByteReadback(int byteCount)
         {
+            RequestTextureReadback(payloadByteTexture, byteCount);
+        }
+
+        private void RequestTextureReadback(RenderTexture texture, int byteCount)
+        {
             int pixelCount;
             int readWidth;
             int readHeight;
             int readbackPixelCount;
-            if (!DecoderReadbackRuntime.TryGetReadbackRegion(payloadByteTexture, byteCount, out pixelCount, out readWidth, out readHeight, out readbackPixelCount, out lastError))
+            if (!DecoderReadbackRuntime.TryGetReadbackRegion(texture, byteCount, out pixelCount, out readWidth, out readHeight, out readbackPixelCount, out lastError))
             {
                 lastFrameValid = false;
                 LogDecodeError(lastError);
@@ -427,20 +504,25 @@ namespace K13A.TSMP.Udon
             lastReadbackHeight = readHeight;
             lastReadbackPixelCount = readbackPixelCount;
 
-            IssueByteReadback(byteCount, readWidth, readHeight);
+            IssueByteReadback(texture, readWidth, readHeight);
         }
 
-        private void IssueByteReadback(int byteCount, int readWidth, int readHeight)
+        private void IssueByteReadback(RenderTexture texture, int readWidth, int readHeight)
         {
             readbackInFlight = true;
 #if COMPILER_UDONSHARP
-            VRCAsyncGPUReadback.Request(payloadByteTexture, 0, 0, readWidth, 0, readHeight, 0, 1, (IUdonEventReceiver)this);
+            VRCAsyncGPUReadback.Request(texture, 0, 0, readWidth, 0, readHeight, 0, 1, (IUdonEventReceiver)this);
 #else
-            AsyncGPUReadback.Request(payloadByteTexture, 0, OnAsyncGpuReadbackComplete);
+            AsyncGPUReadback.Request(texture, 0, OnAsyncGpuReadbackComplete);
 #endif
         }
 
         private void RunByteDecodePass(int startBlock, int byteCount, int symbolMode)
+        {
+            RunByteDecodeTo(startBlock, byteCount, symbolMode, payloadByteTexture);
+        }
+
+        private bool RunByteDecodeTo(int startBlock, int byteCount, int symbolMode, RenderTexture destination)
         {
             int codecId = _payloadCodecId;
             if (symbolMode == 0)
@@ -449,7 +531,7 @@ namespace K13A.TSMP.Udon
             TSMPCodec handler = PrepareDecodeHandler(codecId, byteCount);
             Material material = handler != null ? handler.selectedDecodeMaterial : null;
             if (material == null)
-                return;
+                return false;
 
             Texture decodeSource = _decodeSourceTexture;
             material.SetTexture(ShaderProperties.MainTex, decodeSource);
@@ -460,12 +542,128 @@ namespace K13A.TSMP.Udon
             material.SetFloat(ShaderProperties.ActiveWidthBlocks, _activeWidthBlocks);
             material.SetFloat(ShaderProperties.SourceWidth, sourceWidth);
             material.SetFloat(ShaderProperties.SourceHeight, sourceHeight);
-            material.SetFloat(ShaderProperties.OutputWidth, payloadByteTexture.width);
-            material.SetFloat(ShaderProperties.OutputHeight, payloadByteTexture.height);
+            material.SetFloat(ShaderProperties.OutputWidth, destination.width);
+            material.SetFloat(ShaderProperties.OutputHeight, destination.height);
             material.SetFloat(ShaderProperties.FlipY, _decodeFlipY ? 1f : 0f);
 
             handler.PrepareDecode(decodeSource, material);
-            GraphicsBridge.Blit(decodeSource, payloadByteTexture, material);
+            GraphicsBridge.Blit(decodeSource, destination, material);
+            return true;
+        }
+
+        private bool TryRequestPredictedReadback()
+        {
+            if (!usePredictedReadback || !useHeaderPayloadLayout || decodeSafetyMode != 0)
+            {
+                _predictionValid = false;
+                return false;
+            }
+            if (!_predictionValid || readbackPackMaterial == null)
+                return false;
+            if (_predictionSource != sourceTexture || _predictionWidth != sourceWidth || _predictionHeight != sourceHeight ||
+                _predictionBlockSize != blockSize || _predictionSampleSize != sampleSize || _predictionFlipY != _decodeFlipY ||
+                _predictionActiveWidthBlocks != _activeWidthBlocks ||
+                _predictionByteCount > lastByteTextureCapacityBytes)
+            {
+                _predictionValid = false;
+                return false;
+            }
+
+            int pixelCount = ByteTextureReader.GetRequiredPixelCount(FrameHeader.Size + _predictionByteCount);
+            int width = Mathf.Min(256, pixelCount);
+            int height = (pixelCount + width - 1) / width;
+            _headerByteTexture = DecoderPredictionRuntime.EnsureTexture(_headerByteTexture, FrameHeader.Size / 4, 1);
+            _combinedByteTexture = DecoderPredictionRuntime.EnsureTexture(_combinedByteTexture, width, height);
+            if (_headerByteTexture == null || _combinedByteTexture == null)
+                return false;
+            if (_readbackPackInstance == null)
+#if COMPILER_UDONSHARP
+                _readbackPackInstance = readbackPackMaterial;
+#else
+                _readbackPackInstance = new Material(readbackPackMaterial);
+#endif
+
+            _decodeStage = 1;
+            if (!RunByteDecodeTo(_currentHeaderRow * _activeWidthBlocks, FrameHeader.Size, 0, _headerByteTexture))
+                return false;
+            _decodeStage = 2;
+            TSMPCodec handler = PrepareDecodeHandler(_payloadCodecId, _predictionByteCount);
+            if (handler == null)
+                return false;
+            _predictionStartBlock = handler.payloadStartRow * _activeWidthBlocks;
+            if (!RunByteDecodeTo(_predictionStartBlock, _predictionByteCount, _payloadSymbolMode, payloadByteTexture))
+                return false;
+
+            _readbackPackInstance.SetTexture("_HeaderTex", _headerByteTexture);
+            _readbackPackInstance.SetFloat("_OutputWidth", width);
+            _readbackPackInstance.SetFloat("_OutputHeight", height);
+            _readbackPackInstance.SetFloat("_PayloadWidth", payloadByteTexture.width);
+            _readbackPackInstance.SetFloat("_HeaderPixels", FrameHeader.Size / 4);
+            _readbackPackInstance.SetFloat("_PayloadPixels", ByteTextureReader.GetRequiredPixelCount(_predictionByteCount));
+            GraphicsBridge.Blit(payloadByteTexture, _combinedByteTexture, _readbackPackInstance);
+            _decodeStage = 3;
+            lastRequestedByteCount = FrameHeader.Size + _predictionByteCount;
+            RequestTextureReadback(_combinedByteTexture, lastRequestedByteCount);
+            return true;
+        }
+
+        private void CompletePredictedReadback()
+        {
+            if (!CopyBytesFromPixels(_headerBytes, FrameHeader.Size))
+                return;
+            bool matches = DecoderPredictionRuntime.HeadersMatch(_predictionHeader, _headerBytes);
+            _predictionValid = false;
+            _decodeStage = 1;
+            if (!ReadHeader())
+                return;
+            if (ShouldSkipFrame())
+            {
+                CachePrediction();
+                return;
+            }
+
+            _decodeStage = 2;
+            TSMPCodec handler = PrepareDecodeHandler(_payloadCodecId, _payloadDataBytes);
+            if (!matches || handler == null || !useHeaderPayloadLayout || decodeSafetyMode != 0 ||
+                _payloadDataBytes != _predictionByteCount || blockSize != _predictionBlockSize || sampleSize != _predictionSampleSize ||
+                handler.payloadStartRow * _activeWidthBlocks != _predictionStartBlock)
+            {
+                predictionFallbackCount++;
+                if (decodeSafetyMode == DecodeSafetyHeaderOnly)
+                {
+                    lastFrameValid = true;
+                    lastError = "Decode safety mode: header only.";
+                    return;
+                }
+                RequestPayloadReadback();
+                return;
+            }
+
+            if (!ByteTextureReader.CopyBytesAtPixel(_readbackPixels, FrameHeader.Size / 4, _payloadBytes, _payloadDataBytes))
+            {
+                FailHeaderRead("Predicted readback is smaller than the validated payload.");
+                return;
+            }
+            predictedReadbackCount++;
+            CompletePayload();
+        }
+
+        private void CachePrediction()
+        {
+            if (!useHeaderPayloadLayout)
+                return;
+            _predictionHeader = DecoderReadbackRuntime.EnsureByteBuffer(_predictionHeader, FrameHeader.Size);
+            for (int i = 0; i < FrameHeader.Size; i++)
+                _predictionHeader[i] = _headerBytes[i];
+            _predictionSource = sourceTexture;
+            _predictionWidth = sourceWidth;
+            _predictionHeight = sourceHeight;
+            _predictionBlockSize = blockSize;
+            _predictionSampleSize = sampleSize;
+            _predictionActiveWidthBlocks = _activeWidthBlocks;
+            _predictionFlipY = _decodeFlipY;
+            _predictionByteCount = _payloadDataBytes;
+            _predictionValid = _predictionByteCount > 0 && _predictionByteCount <= lastByteTextureCapacityBytes;
         }
 
         private TSMPCodec PrepareDecodeHandler(int codecId, int byteCount)

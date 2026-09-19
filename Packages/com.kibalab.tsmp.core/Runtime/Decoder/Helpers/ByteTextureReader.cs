@@ -75,14 +75,19 @@ namespace K13A.TSMP
 
         public static bool CopyBytes(Color32[] pixels, byte[] destination, int byteCount)
         {
-            if (!CanCopyBytes(pixels, destination, byteCount))
+            return CopyBytesAtPixel(pixels, 0, destination, byteCount);
+        }
+
+        public static bool CopyBytesAtPixel(Color32[] pixels, int pixelOffset, byte[] destination, int byteCount)
+        {
+            if (!CanCopyBytes(pixels, destination, byteCount) || pixelOffset < 0 || pixelOffset > pixels.Length - GetRequiredPixelCount(byteCount))
                 return false;
 
             int fullPixelCount = byteCount / 4;
             int byteIndex = 0;
             for (int i = 0; i < fullPixelCount; i++)
             {
-                Color32 pixel = pixels[i];
+                Color32 pixel = pixels[pixelOffset + i];
                 destination[byteIndex++] = pixel.r;
                 destination[byteIndex++] = pixel.g;
                 destination[byteIndex++] = pixel.b;
@@ -92,7 +97,7 @@ namespace K13A.TSMP
             int remaining = byteCount - byteIndex;
             if (remaining > 0)
             {
-                Color32 pixel = pixels[fullPixelCount];
+                Color32 pixel = pixels[pixelOffset + fullPixelCount];
                 destination[byteIndex++] = pixel.r;
                 if (remaining > 1)
                     destination[byteIndex++] = pixel.g;
