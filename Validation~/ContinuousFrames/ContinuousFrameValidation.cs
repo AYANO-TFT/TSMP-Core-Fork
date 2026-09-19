@@ -23,7 +23,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
     public Material expandMaterial;
     public static Func<ContinuousFrameValidation, Case, ILoopback> UdonFactory;
     public const int Capacity = 32768;
-    public const string CsvHeader = "case,path,codec,width,height,valueBytes,payloadBytes,sample,sendTarget,loopTarget,seconds,loopHz,published,txHz,appliedInWindow,applyHz,receivedAfterDrain,missPercent,schedulerMisses,captureCount,busyPercent,encodeP95ms,latencyP50ms,latencyP95ms,latencyP99ms,latencyMaxMs,snapshotP95ms,applyGapP95ms,applyGapMaxMs,latencyFirstThirdMs,latencyLastThirdMs,sourceAgeP95ms,decoderErrorObservations,corrupt,outOfOrder,predictedReadbacks,predictionFallbacks";
+    public const string CsvHeader = "case,path,codec,width,height,valueBytes,payloadBytes,sample,sendTarget,loopTarget,seconds,loopHz,published,txHz,appliedInWindow,applyHz,receivedAfterDrain,missPercent,schedulerMisses,captureCount,busyPercent,encodeP95ms,latencyP50ms,latencyP95ms,latencyP99ms,latencyMaxMs,snapshotP95ms,applyGapP95ms,applyGapMaxMs,latencyFirstThirdMs,latencyLastThirdMs,sourceAgeP95ms,decoderErrorObservations,corrupt,outOfOrder,predictedReadbacks,predictionFallbacks,publicationMode";
 
     public sealed class Case
     {
@@ -37,6 +37,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         public int LoopHz = 60;
         public double Seconds = 12;
         public bool Baseline;
+        public bool PublishEveryFrame;
     }
 
     public interface ILoopback : IDisposable
@@ -196,6 +197,10 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         yield return new Case { Name = "hd-large", Width = 1280, Height = 720, Bytes = 4096, LoopHz = 120 };
         yield return new Case { Name = "sustained-60", Seconds = 60 };
         yield return new Case { Name = "sustained-60-at-120", Seconds = 60, LoopHz = 120 };
+        yield return new Case { Name = "small-30-at-30", SendHz = 30, LoopHz = 30 };
+        yield return new Case { Name = "small-60-at-30", SendHz = 60, LoopHz = 30 };
+        yield return new Case { Name = "hd-large-every-frame-at-30", Width = 1280, Height = 720, Bytes = 4096, SendHz = 30, LoopHz = 30, PublishEveryFrame = true };
+        yield return new Case { Name = "sustained-every-frame-at-30", Seconds = 60, SendHz = 30, LoopHz = 30, PublishEveryFrame = true };
     }
 
     IEnumerator Run()
@@ -276,11 +281,14 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             double now = Time.realtimeSinceStartupAsDouble;
             bool measured = now >= begin && now < end;
             if (measured) updates++;
-            if (now >= due)
+            if (test.PublishEveryFrame || now >= due)
             {
-                int elapsedSlots = Math.Max(1, (int)Math.Floor((now - due) / interval) + 1);
-                if (measured) missed += elapsedSlots - 1;
-                due += elapsedSlots * interval;
+                if (!test.PublishEveryFrame)
+                {
+                    int elapsedSlots = Math.Max(1, (int)Math.Floor((now - due) / interval) + 1);
+                    if (measured) missed += elapsedSlots - 1;
+                    due += elapsedSlots * interval;
+                }
                 id++;
                 if (id >= Capacity) throw new InvalidOperationException("Measurement capacity exceeded");
                 SetPacketId(packet, id);
@@ -379,7 +387,8 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             N(sends == 0 ? 0 : 100.0 * (sends - received) / sends), missed, captures, N(updates == 0 ? 0 : 100.0 * busy / updates),
             N(P(encodes, .95)), N(P(latencies, .5)), N(P(latencies, .95)), N(P(latencies, .99)), N(P(latencies, 1)),
             N(P(snapshotLatency, .95)), N(P(gaps, .95)), N(P(gaps, 1)), N(Average(first)), N(Average(last)), N(P(ages, .95)),
-            decodeErrors, loop.CorruptCount, outOfOrder, loop.ReadDecoder("predictedReadbackCount"), loop.ReadDecoder("predictionFallbackCount"));
+            decodeErrors, loop.CorruptCount, outOfOrder, loop.ReadDecoder("predictedReadbackCount"), loop.ReadDecoder("predictionFallbackCount"),
+            test.PublishEveryFrame ? "every-update" : "wall-clock");
         rows.Add(row);
         File.WriteAllLines(Path.Combine(resultRoot, "summary.csv"), rows);
         File.WriteAllLines(Path.Combine(resultRoot, test.Name + "-applications.csv"), trace);
