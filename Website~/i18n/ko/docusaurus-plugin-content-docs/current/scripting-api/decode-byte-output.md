@@ -4,6 +4,19 @@ title: TSMPDecodeByteOutput.cginc
 
 # `TSMPDecodeByteOutput.cginc`
 
+## 선택적 헤더 직접 출력
+
+별도 합치기 패스를 없애려면 `TSMPDecodeCommon.cginc`를 포함하고 아래 숨김 프로퍼티를 모두 선언합니다. 기본값은 기존 본문 출력과 같습니다. 프래그먼트에서 접두부 처리를 구현한 경우에만 선언해야 합니다.
+
+`TSMPReadOutputPrefix(float2 uv, out int baseByte, out float4 prefix)`가 `true`이면 헤더 영역이므로 본문을 디코딩하지 말고 `prefix`를 반환합니다. 나머지 영역에서는 `baseByte`가 본문 기준 바이트 인덱스입니다. 접두부가 14픽셀이면 출력 픽셀 0..13에 56바이트 헤더가 들어가고, 픽셀 14부터 본문의 0..3바이트가 시작하여 행을 넘어 이어집니다. `_ByteCount`는 접두부를 제외한 본문 길이이며 패딩은 0입니다. 헤더는 정확한 텍셀을 읽으므로 원본 이미지의 `flipY`를 다시 적용하지 않습니다.
+
+공통 include가 `TSMP_COMBINED_BYTE_OUTPUT`을 정의하면 기본 `TSMPDecodeByteOutputFragment`가 자동 처리합니다. 직접 작성한 프래그먼트는 바이트/심볼 계산 전에 함수를 호출해야 합니다. 이전 Core도 지원하려면 `#if defined(TSMP_COMBINED_BYTE_OUTPUT)`으로 분기하고 `#else`에서는 기존 픽셀 계산을 유지합니다. 공통 include 없이 사용하는 독립적인 byte-output 셰이더는 기존 동작을 유지합니다.
+
+```hlsl
+[HideInInspector] _TSMPHeaderTex ("Decoded Header", 2D) = "black" {}
+[HideInInspector] _TSMPHeaderPixels ("Header Pixels", Float) = 0
+```
+
 `TSMPDecodeByteOutput.cginc`는 codec decode pass용 shader include입니다. Byte index로 한 byte를 복구하는 `DecodeByte(index)` 함수를, decoded bytes를 RGBA output texture에 쓰는 fragment shader로 연결합니다.
 
 Custom codec이 byte index 기준으로 한 byte를 복구할 수 있고, Core decoder readback path가 기대하는 표준 texture layout으로 bytes를 넘기고 싶을 때 사용하세요.

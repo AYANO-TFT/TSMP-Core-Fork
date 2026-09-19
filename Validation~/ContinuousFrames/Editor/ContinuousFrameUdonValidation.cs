@@ -179,6 +179,7 @@ public static class ContinuousFrameUdonValidation
             decoder.Set("payloadByteTexture", bytes);
             decoder.Set("readbackPackMaterial", Resources.Load<Material>("TSMPReadbackPack"));
             decoder.Set("usePredictedReadback", Environment.GetEnvironmentVariable("TSMP_DISABLE_PREDICTION") != "1");
+            decoder.Set("useCombinedByteOutput", Environment.GetEnvironmentVariable("TSMP_DISABLE_COMBINED_OUTPUT") != "1");
             decoder.SetOptional("retryAfterReadback", Environment.GetEnvironmentVariable("TSMP_DISABLE_READBACK_RETRY") != "1");
             decoder.Set("codecHandlers", test.Codec == 0 ? new[] { luma.Backing } : new[] { luma.Backing, codec.Backing });
             decoder.Set("applyEveryFrame", false);

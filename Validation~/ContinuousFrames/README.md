@@ -17,6 +17,8 @@ This harness measures the production Encoder and Decoder under a continuously ch
 
 ## Execution
 
+The optional [combined byte output](COMBINED-OUTPUT.md) comparison uses `TSMP_DISABLE_COMBINED_OUTPUT=1` for the separate-packing control and `0` for compatible direct-output shaders. It is independent of prediction enablement; the first frame and prediction fallbacks still use ordinary decode passes.
+
 Use isolated Unity 2022.3.22f1 projects with file dependencies referencing the actual Core and four codec repositories. Do not use `-nographics`. Only run one benchmark process at a time.
 
 ```powershell

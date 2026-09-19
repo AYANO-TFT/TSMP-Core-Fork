@@ -4,6 +4,12 @@ title: TSMPDecoder
 
 # TSMPDecoder
 
+## Combined byte output
+
+`useCombinedByteOutput` defaults to `true`. In the predicted path, compatible codec shaders write the 56-byte decoded header and payload directly into the private RGBA8 readback target, removing the separate packing pass and intermediate payload write. The immutable source snapshot, header CRC validation, exact-length prediction check and same-snapshot fallback are unchanged. This does not change the wire datagram or guarantee a delivery rate.
+
+Shaders opt in by implementing both `_TSMPHeaderTex` and `_TSMPHeaderPixels`. Existing codecs without these properties keep the separate packing path. The switch is in Diagnostics > Advanced Decode. `combinedByteOutputCount` counts submissions, including predictions later rejected or retried; it is not a received-frame count. `ResetDecodeDiagnostics()` resets it.
+
 Use `TSMPDecoder` on the receiver side. It reads a TSMP input texture and applies decoded messages to matching scene objects.
 
 Most decode problems are caused by the input texture not containing an unmodified TSMP image. Confirm the texture path before changing receiver components.

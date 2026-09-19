@@ -4,6 +4,12 @@ title: TSMPDecoder
 
 # TSMPDecoder
 
+## 헤더와 본문 직접 출력
+
+`useCombinedByteOutput`의 기본값은 `true`입니다. 예측 경로에서 지원 코덱은 복원한 56바이트 헤더와 본문을 전용 RGBA8 readback 텍스처에 직접 출력합니다. 별도 합치기 패스와 본문 중간 출력이 줄어듭니다. 원본 스냅샷, 헤더 CRC 검사, 정확한 길이 비교와 같은 이미지에서의 폴백은 유지됩니다. 전송 데이터그램은 바뀌지 않으며 일정 수신율을 보장하는 기능은 아닙니다.
+
+셰이더가 `_TSMPHeaderTex`와 `_TSMPHeaderPixels`를 모두 구현해야 사용됩니다. 지원하지 않는 기존 코덱은 별도 합치기 경로를 유지합니다. 비교용 스위치는 Diagnostics > Advanced Decode에 있습니다. `combinedByteOutputCount`는 제출 횟수이며 이후 거절되거나 재처리된 예측도 포함합니다. 실제 수신 프레임 수가 아닙니다. `ResetDecodeDiagnostics()`로 초기화합니다.
+
 `TSMPDecoder`는 수신자 쪽에서 사용합니다. TSMP 입력 텍스처를 읽고 디코딩된 메시지를 일치하는 씬 오브젝트에 적용합니다.
 
 대부분의 decode 문제는 입력 텍스처가 변형 없는 TSMP 이미지를 담고 있지 않아서 발생합니다. Receiver component를 바꾸기 전에 texture path를 먼저 확인하세요.

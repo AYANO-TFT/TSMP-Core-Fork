@@ -135,6 +135,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             "\nPath=" + (UdonFactory == null ? "Native" : "Compiled Udon VM") +
             "\nManaged source=" + Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_REVISION") +
             "\nAutomatic scheduling=" + Environment.GetEnvironmentVariable("TSMP_AUTOMATIC_SCHEDULING") +
+            "\nCombined output disabled=" + Environment.GetEnvironmentVariable("TSMP_DISABLE_COMBINED_OUTPUT") +
             "\nRetry disabled=" + Environment.GetEnvironmentVariable("TSMP_DISABLE_READBACK_RETRY"));
         rows.Add(CsvHeader);
         var work = Run();
@@ -529,6 +530,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         if ((int)loop.ReadDecoder("predictedReadbackCount") == 0 || (int)loop.ReadDecoder("predictionFallbackCount") == 0)
             throw new InvalidOperationException("Prediction and fallback paths must both run");
         results.Add("Predicted=" + loop.ReadDecoder("predictedReadbackCount") + "; Fallback=" + loop.ReadDecoder("predictionFallbackCount"));
+        results.Add("Combined byte outputs=" + loop.ReadDecoder("combinedByteOutputCount"));
         File.WriteAllLines(Path.Combine(resultRoot, "regression.txt"), results);
         loop.Stop();
     }
@@ -625,6 +627,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
             encoder.debugLog = false;
             decoder = root.AddComponent<TSMPDecoder>();
             decoder.usePredictedReadback = Environment.GetEnvironmentVariable("TSMP_DISABLE_PREDICTION") != "1";
+            decoder.useCombinedByteOutput = Environment.GetEnvironmentVariable("TSMP_DISABLE_COMBINED_OUTPUT") != "1";
             typeof(TSMPDecoder).GetField("retryAfterReadback")?.SetValue(decoder, Environment.GetEnvironmentVariable("TSMP_DISABLE_READBACK_RETRY") != "1");
             decoder.applyEveryFrame = false;
             decoder.sourceTexture = encoder.output;
