@@ -14,6 +14,7 @@ public sealed class BulkCopyProbe : TSMPBehaviour
     public int sourceOffset;
     public int targetOffset;
     public int count;
+    public int writeResult;
     public Texture sourceTexture;
     public Texture2D uploadTexture;
     public bool completed;
@@ -23,7 +24,8 @@ public sealed class BulkCopyProbe : TSMPBehaviour
     public void Control() { }
     public void LoopColors() { EncoderUdonTextureRuntime.CopyPixelBuffer(sourceColors, targetColors); }
     public void BulkColors() { Array.Copy(sourceColors, 0, targetColors, 0, count); }
-    public void LoopBytes() { NetworkValueWriter.WriteRawBytes(targetBytes, targetOffset, sourceBytes); }
+    public void LoopBytes() { writeResult = NetworkValueWriter.WriteRawBytes(targetBytes, targetOffset, sourceBytes); }
+    public void ReadBytes() { targetBytes = NetworkValueReader.CopyRawBytes(sourceBytes, sourceOffset, count, targetBytes); }
     public void BulkBytes() { Array.Copy(sourceBytes, sourceOffset, targetBytes, targetOffset, count); }
     public void UploadBytes()
     {

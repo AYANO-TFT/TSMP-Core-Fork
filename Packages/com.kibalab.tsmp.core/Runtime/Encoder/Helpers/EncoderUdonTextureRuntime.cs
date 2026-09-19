@@ -60,8 +60,8 @@ namespace K13A.TSMP
                 return;
 
             int count = source.Length < destination.Length ? source.Length : destination.Length;
-            for (int i = 0; i < count; i++)
-                destination[i] = source[i];
+            if (count > 0)
+                System.Array.Copy(source, 0, destination, 0, count);
         }
 
         public static Texture2D EnsureOutputTexture(Texture2D outputTexture, int width, int height)

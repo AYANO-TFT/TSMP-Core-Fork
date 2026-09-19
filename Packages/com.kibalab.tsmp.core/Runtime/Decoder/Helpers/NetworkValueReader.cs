@@ -77,8 +77,8 @@ namespace K13A.TSMP
             else if (value.Length != length)
                 value = new byte[length];
 
-            for (int i = 0; i < length; i++)
-                value[i] = source[offset + i];
+            if (length > 0)
+                System.Array.Copy(source, offset, value, 0, length);
 
             return value;
         }

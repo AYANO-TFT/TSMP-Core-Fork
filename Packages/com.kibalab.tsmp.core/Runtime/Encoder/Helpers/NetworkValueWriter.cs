@@ -72,8 +72,8 @@ namespace K13A.TSMP
             if (!CanWrite(buffer, offset, length))
                 return -1;
 
-            for (int i = 0; i < length; i++)
-                buffer[offset + i] = value[i];
+            if (length > 0)
+                System.Array.Copy(value, 0, buffer, offset, length);
 
             return offset + length;
         }

@@ -161,6 +161,29 @@ public static class BulkCopyValidation
             Require(actual.SequenceEqual(expected), "Overlap mismatch");
         }
         lines.Add("PASS byte/Color32 bulk copy, destination isolation, offset sentinels, zero count and both overlap directions");
+        byte[] buffer = { 7, 8, 9 };
+        Set("sourceBytes", (byte[])null); Set("targetBytes", buffer); Set("targetOffset", 3);
+        Call("LoopBytes");
+        Require(Get<int>("writeResult") == 3 && buffer.SequenceEqual(new byte[] { 7, 8, 9 }), "Null write semantics");
+        Set("sourceBytes", new byte[] { 1, 2 }); Set("targetOffset", 2);
+        Call("LoopBytes");
+        Require(Get<int>("writeResult") == -1 && buffer.SequenceEqual(new byte[] { 7, 8, 9 }), "Invalid write mutation");
+        Set("sourceBytes", buffer); Set("sourceOffset", 1); Set("count", 2); Set("targetBytes", (byte[])null);
+        Call("ReadBytes");
+        byte[] cache = Get<byte[]>("targetBytes");
+        Require(cache.SequenceEqual(new byte[] { 8, 9 }) && !ReferenceEquals(cache, buffer), "Receiver ownership");
+        cache[0] = 55;
+        Require(buffer[1] == 8, "Receiver mutation reached source");
+        Call("ReadBytes");
+        Require(ReferenceEquals(cache, Get<byte[]>("targetBytes")) && cache[0] == 8, "Receiver cache reuse");
+        Set("count", 0); Set("sourceBytes", (byte[])null);
+        Call("ReadBytes");
+        Require(Get<byte[]>("targetBytes").Length == 0, "Empty reader");
+        Set("sourceColors", new[] { new Color32(1, 2, 3, 4) });
+        var colors = new[] { new Color32(), new Color32(9, 8, 7, 6) };
+        Set("targetColors", colors); Call("LoopColors");
+        Require(colors[0].r == 1 && colors[1].r == 9, "Minimum color length");
+        lines.Add("PASS production null/empty writes, invalid-range rejection, receiver ownership/reuse/resize and unequal color-buffer lengths");
     }
 
     static void BeginReadback()
