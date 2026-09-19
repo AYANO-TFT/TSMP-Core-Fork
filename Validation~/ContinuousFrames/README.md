@@ -17,6 +17,8 @@ This harness measures the production Encoder and Decoder under a continuously ch
 
 ## Execution
 
+The optional [CPU, GPU and memory profile](RESOURCE-PROFILE.md) uses the `profile-*` cases. These are excluded from an unfiltered delivery run. Profiling performs separate timed calls, warmed memory inventories and GPU replay microbenchmarks; it is not a live VRChat or avatar-rig workload measurement.
+
 The optional [combined byte output](COMBINED-OUTPUT.md) comparison uses `TSMP_DISABLE_COMBINED_OUTPUT=1` for the separate-packing control and `0` for compatible direct-output shaders. It is independent of prediction enablement; the first frame and prediction fallbacks still use ordinary decode passes.
 
 The [two-slot overlap](TWO-SLOTS.md) comparison uses `TSMP_SINGLE_SLOT=1` for single-slot admission and `0` for the default bounded two-slot mode. This switch is independent of prediction and combined output. Use the same source and scheduling mode for each comparison. `overlap-regression` explicitly enables two slots for its assertions regardless of this switch.
