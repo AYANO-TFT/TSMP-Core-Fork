@@ -28,6 +28,18 @@ Use this page when you need to drive encoding from code, inspect frame counters,
 
 ## Diagnostics
 
+### Luma4 GPU encoding
+
+Luma4 uploads the header and payload as raw RGBA bytes, generates a small symbol texture on the GPU, then expands blocks into `output`. The palette, nibble order, header CRC and packet layout are unchanged. Every symbol image is redrawn, so shrinking payloads leave no old blocks.
+
+The material is assigned automatically during Editor/build preparation, or loaded from Resources in ordinary Unity. No manual setup step is required. `useGpuLuma4` is a hidden advanced opt-out; `lastFrameUsedGpuLuma4` reports the path used by the last written frame. Missing resources, unsupported native shaders or ineligible layouts retain CPU encoding. The fast path requires dimensions divisible by block size, at least 38 blocks across and sufficient header/payload/end-marker space.
+
+Native codec plugins opt in with `SupportsGpuLuma4Encoding`; the default is false. Udon uses this path only for the built-in Luma4 symbol mode. Other codec payload writers are unchanged. GPU resources belong to the encoder and are released on disable/destruction. Use `output` as the published image; the hidden `outputTexture` is CPU staging and is not refreshed by GPU encoding.
+
+Small payloads remain eligible: the tested 0/32/256-byte workloads reduced CPU time as well as large payloads. The extra GPU pass is a CPU/GPU tradeoff, not a claim of lower GPU time on every device. Desktop D3D11 was measured; profile other deployment hardware before relying on these timings.
+
+### Frame counters
+
 | Member | Meaning |
 | --- | --- |
 | `EncodedObjectCount` / `encodedObjectCount` | Number of variable source behaviours encoded in the last frame. |

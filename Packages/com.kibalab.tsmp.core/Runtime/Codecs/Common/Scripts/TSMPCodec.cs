@@ -356,6 +356,8 @@ namespace K13A.TSMP
         }
 
 #if !COMPILER_UDONSHARP
+        public virtual bool SupportsGpuLuma4Encoding => false;
+
         public virtual int SymbolMode => (int)K13A.TSMP.SymbolMode.Luma4;
 
         public virtual int GetPayloadStartRow(int width, int blockSize)
@@ -377,6 +379,11 @@ namespace K13A.TSMP
         {
             error = "Codec does not implement frame writing.";
             return false;
+        }
+
+        public virtual bool TryWriteFrameBuffered(Texture2D texture, int blockSize, byte[] headerBytes, byte[] payloadBytes, ref Color32[] pixels, out string error)
+        {
+            return TryWriteFrame(texture, blockSize, headerBytes, payloadBytes, out error);
         }
 
         protected bool ValidateRasterFrame(Texture2D texture, int blockSize, byte[] headerBytes, byte[] payloadBytes, out string error)

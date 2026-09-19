@@ -1,0 +1,2 @@
+PASS
+Pixel cases=40; Gamma; NVIDIA GeForce RTX 4090

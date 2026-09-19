@@ -4,6 +4,16 @@ title: TSMPEncoder API
 
 # `TSMPEncoder`
 
+## Luma4 GPU 인코딩
+
+Luma4는 헤더와 payload를 RGBA 바이트로 올린 뒤 GPU에서 작은 심볼 텍스처를 만들고 블록을 확장해 `output`에 기록합니다. 팔레트·니블 순서·CRC·패킷 구조는 바뀌지 않습니다. 심볼 이미지는 매번 다시 그려 payload가 줄어도 잔상이 남지 않습니다.
+
+머티리얼은 Editor/빌드 준비에서 자동 지정하며 일반 Unity에서는 Resources에서 불러옵니다. 별도 설정 작업은 없습니다. 숨겨진 `useGpuLuma4`는 고급 비활성화 옵션이고 `lastFrameUsedGpuLuma4`는 마지막 출력의 경로를 나타냅니다. 리소스 누락, native 셰이더 미지원, 지원하지 않는 레이아웃에서는 CPU 경로를 유지합니다. 출력 크기는 블록 크기의 배수이고 가로 38블록 이상이며 헤더·payload·종료 마커 공간이 충분해야 합니다.
+
+Native 코덱은 기본값이 false인 `SupportsGpuLuma4Encoding`으로 명시적으로 참여합니다. Udon에서는 기본 Luma4 심볼 모드에만 적용하며 다른 코덱의 writer는 그대로입니다. GPU 리소스는 인코더가 소유하고 비활성화·제거 시 해제합니다. 최종 영상은 `output`을 사용하세요. 숨겨진 `outputTexture`는 CPU 작업용이며 GPU 인코딩 시 갱신되지 않습니다.
+
+측정한 0·32·256바이트에서도 CPU 비용이 줄어 작은 payload를 제외하지 않습니다. GPU 패스가 늘어나는 CPU/GPU 절충이며 모든 장치에서 GPU 비용도 감소한다는 뜻은 아닙니다. 측정 환경은 데스크톱 D3D11이며 다른 배포 장치는 별도 측정이 필요합니다.
+
 `TSMPEncoder`는 synchronized behaviour, queued RPC, 선택된 codec으로 TSMP frame을 만들고 하나의 output `RenderTexture`에 기록합니다.
 
 코드에서 encode를 직접 실행하거나, frame counter를 확인하거나, TSMP RPC를 보내야 할 때 이 페이지를 보세요.

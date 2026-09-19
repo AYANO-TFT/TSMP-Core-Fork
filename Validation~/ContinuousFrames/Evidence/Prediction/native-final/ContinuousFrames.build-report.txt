@@ -1,0 +1,5 @@
+Result=Succeeded
+Errors=0
+Warnings=18
+Backend=Mono
+Stripping=Disabled

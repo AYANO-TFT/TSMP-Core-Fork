@@ -1,5 +1,7 @@
 # Preparation API Candidate Results
 
+For the later 2026-09-18 publication and public package installation checks, see [Published Results](PUBLISHED-20260918.md). This file retains the original candidate-only results.
+
 Date: 2026-09-13. These results cover **local release candidates**, not public VPM/GitHub downloads. No tag, push or release was performed for this work.
 
 Source versions/commits and reproduction commands are in [README](README.md). All package files tested were extracted from recorded Git archives. The ordinary Unity projects use those extracted folders as local UPM dependencies. The SDK project embeds the ZIP contents; it does not reference the main working checkouts. Udon-generated program assets remain inside the isolated SDK project.

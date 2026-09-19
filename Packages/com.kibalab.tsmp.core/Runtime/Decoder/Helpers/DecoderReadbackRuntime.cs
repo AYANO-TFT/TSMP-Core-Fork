@@ -117,5 +117,25 @@ namespace K13A.TSMP
 
             return true;
         }
+
+        public static bool TryCopyRawBytes(byte[] bytes, int availableBytes, int offset, byte[] destination, int byteCount, out int expectedPixels, out string error)
+        {
+            expectedPixels = ByteTextureReader.GetRequiredPixelCount(byteCount);
+            error = string.Empty;
+            if (bytes == null || destination == null)
+            {
+                error = "Readback buffers are not initialized.";
+                return false;
+            }
+            if (availableBytes < 0 || availableBytes > bytes.Length || offset < 0 || byteCount < 0 ||
+                offset > availableBytes || byteCount > availableBytes - offset || byteCount > destination.Length)
+            {
+                error = "Readback range is invalid. offset=" + offset + " byteCount=" + byteCount + " availableBytes=" + availableBytes;
+                return false;
+            }
+            if (byteCount > 0)
+                System.Array.Copy(bytes, offset, destination, 0, byteCount);
+            return true;
+        }
     }
 }

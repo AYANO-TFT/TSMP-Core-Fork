@@ -1,0 +1,126 @@
+diff --git a/Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.cs b/Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.cs
+index cbedefc..ca6a623 100644
+--- a/Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.cs
++++ b/Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.cs
+@@ -71,9 +71,16 @@ namespace K13A.TSMP.Udon
+         public int payloadBytesOverride;
+         public int decodeSafetyMode;
+         public bool usePredictedReadback = true;
++        public bool retryAfterReadback = true;
+         [HideInInspector] public Material readbackPackMaterial;
+         [HideInInspector] public int predictedReadbackCount;
+         [HideInInspector] public int predictionFallbackCount;
++        [HideInInspector] public int automaticReadbackRetryCount;
++        [HideInInspector] public int decodeCaptureCount;
++        [HideInInspector] public int lastDecodeCaptureFrame = -1;
++        [HideInInspector] public float lastDecodeCaptureTime;
++        [HideInInspector] public int lastReadbackCompletionFrame = -1;
++        [HideInInspector] public float lastReadbackCompletionTime;
+ 
+         public bool debugLog = true;
+         public int debugErrorLogBudget = 32;
+@@ -178,6 +185,8 @@ namespace K13A.TSMP.Udon
+         private RenderTexture _headerByteTexture;
+         private RenderTexture _combinedByteTexture;
+         private Material _readbackPackInstance;
++        private int _automaticRequestFrame = -1;
++        private bool _completingReadback;
+ 
+ #if UNITY_EDITOR && !COMPILER_UDONSHARP
+         private void OnValidate()
+@@ -199,6 +208,9 @@ namespace K13A.TSMP.Udon
+             if (!applyEveryFrame)
+                 return;
+ 
++            _automaticRequestFrame = Time.frameCount;
++            if (lastDecodeCaptureFrame == _automaticRequestFrame)
++                return;
+             DecodeNow();
+         }
+ 
+@@ -214,6 +226,7 @@ namespace K13A.TSMP.Udon
+         private void OnDisable()
+         {
+             _decodeSuspended = true;
++            _automaticRequestFrame = -1;
+             _discardReadback = readbackInFlight;
+             _decodeStage = 0;
+             lastFrameValid = false;
+@@ -256,15 +269,16 @@ namespace K13A.TSMP.Udon
+             ResetTSMPLogBudget(debugErrorLogBudget);
+             predictedReadbackCount = 0;
+             predictionFallbackCount = 0;
++            automaticReadbackRetryCount = 0;
++            decodeCaptureCount = 0;
+         }
+ 
+         public void DecodeNow()
+         {
+-            lastError = string.Empty;
+-
+-            if (readbackInFlight || _decodeSuspended)
++            if (readbackInFlight || _decodeSuspended || _completingReadback)
+                 return;
+ 
++            lastError = string.Empty;
+             if (!ValidateSetup())
+                 return;
+ 
+@@ -272,6 +286,7 @@ namespace K13A.TSMP.Udon
+             InitializeBuffers();
+             _currentHeaderRow = 2;
+             _decodeFlipY = flipY;
++            lastDecodeCaptureTime = Time.realtimeSinceStartup;
+             _decodeSourceTexture = DecoderSnapshotRuntime.Capture(sourceTexture, _decodeSourceTexture, out lastError);
+             if (_decodeSourceTexture == null)
+             {
+@@ -281,6 +296,8 @@ namespace K13A.TSMP.Udon
+                 return;
+             }
+ 
++            lastDecodeCaptureFrame = Time.frameCount;
++            decodeCaptureCount++;
+             if (!TryRequestPredictedReadback())
+             {
+                 _predictionValid = false;
+@@ -310,7 +327,7 @@ namespace K13A.TSMP.Udon
+                 return;
+             }
+ 
+-            CompleteReadbackStage();
++            FinishReadback();
+         }
+ #else
+         private void OnAsyncGpuReadbackComplete(AsyncGPUReadbackRequest request)
+@@ -338,10 +355,30 @@ namespace K13A.TSMP.Udon
+             for (int i = 0; i < lastReadbackPixelCount; i++)
+                 _readbackPixels[i] = pixels[i];
+ 
+-            CompleteReadbackStage();
++            FinishReadback();
+         }
+ #endif
+ 
++        private void FinishReadback()
++        {
++            _completingReadback = true;
++            CompleteReadbackStage();
++            _completingReadback = false;
++            if (readbackInFlight)
++                return;
++
++            lastReadbackCompletionFrame = Time.frameCount;
++            lastReadbackCompletionTime = Time.realtimeSinceStartup;
++            if (!retryAfterReadback || !applyEveryFrame || _decodeSuspended ||
++                _automaticRequestFrame != Time.frameCount || lastDecodeCaptureFrame == Time.frameCount)
++                return;
++
++            int previousCaptureCount = decodeCaptureCount;
++            DecodeNow();
++            if (decodeCaptureCount != previousCaptureCount)
++                automaticReadbackRetryCount++;
++        }
++
+         private bool AcceptReadback()
+         {
+             if (!readbackInFlight)

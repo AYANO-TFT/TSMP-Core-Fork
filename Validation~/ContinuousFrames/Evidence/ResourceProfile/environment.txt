@@ -1,0 +1,76 @@
+[native-v2]
+Unity=2022.3.22f1
+GPU=NVIDIA GeForce RTX 4090
+API=Direct3D11
+ColorSpace=Gamma
+Editor=False
+Path=Native
+Managed source=b80194c00874a847906c77dc102c797814f45b4d
+Automatic scheduling=
+Combined output disabled=
+Single slot=
+Retry disabled=
+[udon-v2]
+Unity=2022.3.22f1
+GPU=NVIDIA GeForce RTX 4090
+API=Direct3D11
+ColorSpace=Gamma
+Editor=True
+Path=Compiled Udon VM
+Managed source=b80194c00874a847906c77dc102c797814f45b4d
+Automatic scheduling=
+Combined output disabled=
+Single slot=
+Retry disabled=
+[native-one-slot]
+Unity=2022.3.22f1
+GPU=NVIDIA GeForce RTX 4090
+API=Direct3D11
+ColorSpace=Gamma
+Editor=False
+Path=Native
+Managed source=b80194c00874a847906c77dc102c797814f45b4d
+Automatic scheduling=
+Combined output disabled=
+Single slot=1
+Retry disabled=
+[gpu-editor-v2]
+Unity=2022.3.22f1
+GPU=NVIDIA GeForce RTX 4090
+API=Direct3D11
+ColorSpace=Gamma
+Editor=True
+Path=Native
+Managed source=b80194c00874a847906c77dc102c797814f45b4d
+Automatic scheduling=
+Combined output disabled=
+Single slot=
+Retry disabled=
+profile-1080-small60: PASS replay matches production decoded payload
+Calibration preparation included=False
+profile-4k-small30: PASS replay matches production decoded payload
+Calibration preparation included=False
+profile-large60: PASS replay matches production decoded payload
+Calibration preparation included=False
+profile-luma4-sample4: PASS replay matches production decoded payload
+Calibration preparation included=True
+profile-small30: PASS replay matches production decoded payload
+Calibration preparation included=False
+CPU=13th Gen Intel(R) Core(TM) i9-13900K
+CPUThreads=32
+SystemMemoryMB=32462
+GraphicsMemoryMB=22608
+GraphicsMultithreaded=False
+OS=Windows 11  (10.0.26200) 64bit
+AllocatedBytesForCurrentThread valid=False
+8192-byte control delta=0
+Invalid scoped allocations are reported as -1. Use Unity GC counters instead.
+Result=Succeeded
+Errors=0
+Warnings=16
+Backend=Mono
+Stripping=Disabled
+Udon compilation evidence:
+[<color=#0c824c>UdonSharp</color>] Compile of 24 scripts finished in 00:05.890
+[<color=#0c824c>UdonSharp</color>] Compile of 24 scripts finished in 00:02.534
+[<color=#0c824c>UdonSharp</color>] Compile of 24 scripts finished in 00:02.208

@@ -20,6 +20,7 @@ Shader "Hidden/TSMP/Encoder Block Expand"
 
         Pass
         {
+            Name "EXPAND"
             CGPROGRAM
             #pragma vertex vert_img
             #pragma fragment frag

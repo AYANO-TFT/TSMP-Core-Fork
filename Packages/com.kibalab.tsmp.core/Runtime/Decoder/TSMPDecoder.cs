@@ -70,6 +70,15 @@ namespace K13A.TSMP.Udon
         public bool useHeaderPayloadLayout = true;
         public int payloadBytesOverride;
         public int decodeSafetyMode;
+        public bool usePredictedReadback = true;
+        public bool useCombinedByteOutput = true;
+        public bool overlapReadbacks = true;
+        [HideInInspector] public int pendingDecodeCount;
+        [HideInInspector] public int skippedBusyDecodeCount;
+        [HideInInspector] public Material readbackPackMaterial;
+        [HideInInspector] public int predictedReadbackCount;
+        [HideInInspector] public int predictionFallbackCount;
+        [HideInInspector] public int combinedByteOutputCount;
 
         public bool debugLog = true;
         public int debugErrorLogBudget = 32;
@@ -113,10 +122,67 @@ namespace K13A.TSMP.Udon
         private const int DecodeSafetyParseOnly = 3;
         private const string LogPrefix = "[TSMP] ";
 
-        private Color32[] _readbackPixels;
+        private byte[] _readbackBytes;
         private RenderTexture _decodeSourceTexture;
         private bool _decodeSuspended;
-        private bool _discardReadback;
+        private bool _processingReadbacks;
+        private int _slotHead;
+        private int _activeSlot = -1;
+        private int[] _slotStates = new int[2];
+        private bool[] _slotDiscarded = new bool[2];
+        private string[] _slotErrors = new string[2];
+        private Texture _requestSource;
+        private RenderTexture _requestByteTexture;
+        private bool _requestUseHeaderLayout;
+        private int _requestSafetyMode;
+        private Texture[] _slotSources = new Texture[2];
+        private RenderTexture[] _slotSnapshots = new RenderTexture[2];
+        private RenderTexture[] _slotHeaderTextures = new RenderTexture[2];
+        private int[] _slotSnapshotSourceFormats = new int[2];
+        private RenderTexture[] _slotCombinedTextures = new RenderTexture[2];
+        private RenderTexture[] _slotByteTextures = new RenderTexture[2];
+        private byte[][] _slotReadbackBytes = new byte[2][];
+        private byte[][] _slotHeaders = new byte[2][];
+        private byte[][] _slotPayloads = new byte[2][];
+        private byte[][] _slotOptions = new byte[2][];
+        private byte[][] _slotPredictedHeaders = new byte[2][];
+        private int[] _slotPredictedBytes = new int[2];
+        private int[] _slotPredictedBlocks = new int[2];
+        private int[] _slotPredictedSamples = new int[2];
+        private int[] _slotPredictedStarts = new int[2];
+#if COMPILER_UDONSHARP
+        private VRCAsyncGPUReadbackRequest[] _slotRequests = new VRCAsyncGPUReadbackRequest[2];
+#endif
+        private int[] _slotWidths = new int[2];
+        private int[] _slotHeights = new int[2];
+        private int[] _slotBlockSizes = new int[2];
+        private int[] _slotSampleSizes = new int[2];
+        private int[] _slotActiveWidths = new int[2];
+        private int[] _slotPayloadCounts = new int[2];
+        private int[] _slotPayloadStarts = new int[2];
+        private int[] _slotSymbolModes = new int[2];
+        private int[] _slotCodecIds = new int[2];
+        private int[] _slotPayloadTypes = new int[2];
+        private int[] _slotHeaderRows = new int[2];
+        private bool[] _slotFlipYs = new bool[2];
+        private bool[] _slotInterleaved = new bool[2];
+        private int[] _slotStages = new int[2];
+        private int[] _slotReadWidths = new int[2];
+        private int[] _slotReadHeights = new int[2];
+        private int[] _slotReadCounts = new int[2];
+        private int[] _slotRequestedCounts = new int[2];
+        private int[] _slotCapacities = new int[2];
+        private uint[] _slotStreamIds = new uint[2];
+        private uint[] _slotFrameIndices = new uint[2];
+        private int[] _slotHeaderPayloadCounts = new int[2];
+        private int[] _slotPayloadRows = new int[2];
+        private int[] _slotLastSymbols = new int[2];
+        private bool[] _slotHeaderValid = new bool[2];
+        private bool[] _slotHeaderFlipYs = new bool[2];
+        private int[] _slotLastHeaderRows = new int[2];
+        private int[] _slotHeaderSources = new int[2];
+        private bool[] _slotHeaderLayouts = new bool[2];
+        private int[] _slotSafetyModes = new int[2];
         private byte[] _headerBytes;
         private byte[] _payloadBytes;
         private int _payloadDataBytes;
@@ -160,6 +226,28 @@ namespace K13A.TSMP.Udon
         private uint[] _recentRpcHashes;
         private int[] _recentRpcEventIds;
         private int _recentRpcWriteIndex;
+        private bool _predictionValid;
+        private byte[] _predictionHeader;
+        private Texture _predictionSource;
+        private int _predictionWidth;
+        private int _predictionHeight;
+        private int _predictionBlockSize;
+        private int _predictionSampleSize;
+        private int _predictionActiveWidthBlocks;
+        private int _predictionStartBlock;
+        private bool _predictionFlipY;
+        private int _predictionByteCount;
+        private RenderTexture _headerByteTexture;
+        private RenderTexture _combinedByteTexture;
+        private Material _readbackPackInstance;
+
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+        private void OnValidate()
+        {
+            if (readbackPackMaterial == null)
+                readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+        }
+#endif
 
         private void Start()
         {
@@ -170,6 +258,7 @@ namespace K13A.TSMP.Udon
 
         private void Update()
         {
+            ProcessReadyReadbacks();
             if (!applyEveryFrame)
                 return;
 
@@ -179,130 +268,373 @@ namespace K13A.TSMP.Udon
         private void OnEnable()
         {
             _decodeSuspended = false;
+#if !COMPILER_UDONSHARP
+            if (readbackPackMaterial == null)
+                readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+#endif
         }
 
         private void OnDisable()
         {
             _decodeSuspended = true;
-            _discardReadback = readbackInFlight;
-            _decodeStage = 0;
+            _predictionValid = false;
+            for (int i = 0; i < 2; i++)
+            {
+                _slotDiscarded[i] = true;
+                if (_slotStates[i] == 0 && !_processingReadbacks)
+                    ReleaseSlotTextures(i);
+            }
             lastFrameValid = false;
             lastHeaderValid = false;
-            DecoderSnapshotRuntime.Release(_decodeSourceTexture);
-            _decodeSourceTexture = null;
+            if (pendingDecodeCount == 0)
+                ReleasePredictionResources();
         }
 
         private void OnDestroy()
         {
-            DecoderSnapshotRuntime.Release(_decodeSourceTexture);
-            _decodeSourceTexture = null;
+            _decodeSuspended = true;
+            for (int i = 0; i < 2; i++)
+                ReleaseSlotTextures(i);
+            ReleasePredictionResources();
+        }
+
+        private void ReleasePredictionResources()
+        {
+            _predictionValid = false;
+            _headerByteTexture = null;
+            _combinedByteTexture = null;
+#if !COMPILER_UDONSHARP
+            if (_readbackPackInstance != null)
+            {
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    DestroyImmediate(_readbackPackInstance);
+                else
+#endif
+                    Destroy(_readbackPackInstance);
+            }
+#endif
+            _readbackPackInstance = null;
         }
 
         public void ResetDecodeDiagnostics()
         {
             ResetTSMPLogBudget(debugErrorLogBudget);
+            predictedReadbackCount = 0;
+            predictionFallbackCount = 0;
+            combinedByteOutputCount = 0;
+            skippedBusyDecodeCount = 0;
         }
 
         public void DecodeNow()
         {
-            lastError = string.Empty;
-
-            if (readbackInFlight || _decodeSuspended)
+            if (_decodeSuspended || _processingReadbacks)
                 return;
+            if (pendingDecodeCount >= (overlapReadbacks ? 2 : 1))
+            {
+                skippedBusyDecodeCount++;
+                return;
+            }
+
+            lastError = string.Empty;
 
             if (!ValidateSetup())
                 return;
 
             SyncSourceDimensions();
+            _activeSlot = (_slotHead + pendingDecodeCount) % 2;
+            LoadSlotBuffers(_activeSlot);
+            _slotDiscarded[_activeSlot] = false;
+            _slotErrors[_activeSlot] = null;
+            _requestSource = sourceTexture;
+            _requestUseHeaderLayout = useHeaderPayloadLayout;
+            _requestSafetyMode = decodeSafetyMode;
+            _requestByteTexture = _activeSlot == 0 ? payloadByteTexture :
+                DecoderPredictionRuntime.EnsureTexture(_slotByteTextures[_activeSlot], payloadByteTexture.width, payloadByteTexture.height);
+            pendingDecodeCount++;
+            if (_requestByteTexture == null)
+            {
+                lastFrameValid = false;
+                lastError = "Failed to create a slot byte texture.";
+                LogDecodeError(lastError);
+                CancelCapture();
+                return;
+            }
             InitializeBuffers();
+            PreparePredictionOptions();
             _currentHeaderRow = 2;
             _decodeFlipY = flipY;
-            _decodeSourceTexture = DecoderSnapshotRuntime.Capture(sourceTexture, _decodeSourceTexture, out lastError);
+            int snapshotSourceFormat;
+            _decodeSourceTexture = DecoderSnapshotRuntime.CaptureMatchingFormat(sourceTexture, _decodeSourceTexture,
+                _slotSnapshotSourceFormats[_activeSlot], out snapshotSourceFormat, out lastError);
+            _slotSnapshotSourceFormats[_activeSlot] = snapshotSourceFormat;
             if (_decodeSourceTexture == null)
             {
                 lastFrameValid = false;
                 lastHeaderValid = false;
                 LogDecodeError(lastError);
+                CancelCapture();
                 return;
             }
 
-            RequestHeaderCopy();
+            if (!TryRequestPredictedReadback())
+            {
+                _predictionValid = false;
+                RequestHeaderCopy();
+            }
+            if (_slotStates[_activeSlot] == 0)
+                CancelCapture();
+            _activeSlot = -1;
         }
 
 #if COMPILER_UDONSHARP
         public override void OnAsyncGpuReadbackComplete(VRCAsyncGPUReadbackRequest request)
         {
-            if (!AcceptReadback())
-                return;
-
-            if (request.hasError)
+            int slot = -1;
+            for (int i = 0; i < 2; i++)
             {
-                lastFrameValid = false;
-                lastError = "Async GPU readback failed.";
-                LogDecodeError(lastError);
-                return;
+                if (request.Equals(_slotRequests[i]))
+                    slot = i;
             }
-
-            if (!request.TryGetData(_readbackPixels))
+            if (slot < 0 || _slotStates[slot] != 1)
+                return;
+            if (!_slotDiscarded[slot])
             {
-                lastFrameValid = false;
-                lastError = "TryGetData failed.";
-                LogDecodeError(lastError);
-                return;
+                if (request.hasError)
+                    _slotErrors[slot] = "Async GPU readback failed.";
+                else if (!request.TryGetData(_slotReadbackBytes[slot]))
+                    _slotErrors[slot] = "TryGetData failed.";
             }
-
-            CompleteReadbackStage();
+            _slotStates[slot] = 2;
+            _slotRequests[slot] = null;
+            ProcessReadyReadbacks();
         }
 #else
-        private void OnAsyncGpuReadbackComplete(AsyncGPUReadbackRequest request)
+        private void OnSlotZeroReadback(AsyncGPUReadbackRequest request)
         {
-            if (this == null || !AcceptReadback())
-                return;
+            ReceiveNativeReadback(request, 0);
+        }
 
-            if (request.hasError)
+        private void OnSlotOneReadback(AsyncGPUReadbackRequest request)
+        {
+            ReceiveNativeReadback(request, 1);
+        }
+
+        private void ReceiveNativeReadback(AsyncGPUReadbackRequest request, int slot)
+        {
+            if (this == null || _slotStates[slot] != 1)
+                return;
+            if (!_slotDiscarded[slot])
             {
-                lastFrameValid = false;
-                lastError = "Async GPU readback failed.";
-                LogDecodeError(lastError);
-                return;
+                if (request.hasError)
+                    _slotErrors[slot] = "Async GPU readback failed.";
+                else
+                {
+                    var bytes = request.GetData<byte>();
+                    int count = _slotReadCounts[slot] * 4;
+                    if (bytes.Length < count)
+                        _slotErrors[slot] = "Async GPU readback data is smaller than requested.";
+                    else
+                        Unity.Collections.NativeArray<byte>.Copy(bytes, 0, _slotReadbackBytes[slot], 0, count);
+                }
             }
-
-            var pixels = request.GetData<Color32>();
-            if (_readbackPixels == null || pixels.Length < lastReadbackPixelCount)
-            {
-                lastFrameValid = false;
-                lastError = "Async GPU readback data is smaller than requested.";
-                LogDecodeError(lastError);
-                return;
-            }
-
-            for (int i = 0; i < lastReadbackPixelCount; i++)
-                _readbackPixels[i] = pixels[i];
-
-            CompleteReadbackStage();
+            _slotStates[slot] = 2;
+            ProcessReadyReadbacks();
         }
 #endif
 
-        private bool AcceptReadback()
+        private void ProcessReadyReadbacks()
         {
-            if (!readbackInFlight)
-                return false;
-
-            readbackInFlight = false;
-            if (_discardReadback || _decodeSuspended)
+            if (_processingReadbacks)
+                return;
+            _processingReadbacks = true;
+            while (pendingDecodeCount > 0 && _slotStates[_slotHead] == 2)
             {
-                _discardReadback = false;
-                return false;
+                int slot = _slotHead;
+                _activeSlot = slot;
+                LoadSlotContext(slot);
+                _slotStates[slot] = 0;
+                if (!_slotDiscarded[slot] && !_decodeSuspended)
+                {
+                    if (!string.IsNullOrEmpty(_slotErrors[slot]))
+                    {
+                        lastFrameValid = false;
+                        lastError = _slotErrors[slot];
+                        LogDecodeError(lastError);
+                    }
+                    else
+                        CompleteReadbackStage();
+                }
+                if (_slotStates[slot] == 1)
+                    break;
+                StoreSlotBuffers(slot);
+                if (_slotDiscarded[slot] || _decodeSuspended)
+                    ReleaseSlotTextures(slot);
+                pendingDecodeCount--;
+                _slotHead = (_slotHead + 1) % 2;
             }
+            _activeSlot = -1;
+            _processingReadbacks = false;
+            readbackInFlight = pendingDecodeCount > 0;
+            if (_decodeSuspended && !readbackInFlight)
+                ReleasePredictionResources();
+        }
 
-            return true;
+        private void LoadSlotBuffers(int slot)
+        {
+            _requestSource = _slotSources[slot];
+            _decodeSourceTexture = _slotSnapshots[slot];
+            _headerByteTexture = _slotHeaderTextures[slot];
+            _combinedByteTexture = _slotCombinedTextures[slot];
+            _requestByteTexture = _slotByteTextures[slot];
+            _readbackBytes = _slotReadbackBytes[slot];
+            _headerBytes = _slotHeaders[slot];
+            _payloadBytes = _slotPayloads[slot];
+            _codecOptionBytes = _slotOptions[slot];
+        }
+
+        private void StoreSlotBuffers(int slot)
+        {
+            _slotSources[slot] = _requestSource;
+            _slotSnapshots[slot] = _decodeSourceTexture;
+            _slotHeaderTextures[slot] = _headerByteTexture;
+            _slotCombinedTextures[slot] = _combinedByteTexture;
+            _slotByteTextures[slot] = _requestByteTexture;
+            _slotReadbackBytes[slot] = _readbackBytes;
+            _slotHeaders[slot] = _headerBytes;
+            _slotPayloads[slot] = _payloadBytes;
+            _slotOptions[slot] = _codecOptionBytes;
+        }
+
+        private void StoreSlotContext(int slot)
+        {
+            StoreSlotBuffers(slot);
+            _slotWidths[slot] = sourceWidth;
+            _slotHeights[slot] = sourceHeight;
+            _slotBlockSizes[slot] = blockSize;
+            _slotSampleSizes[slot] = sampleSize;
+            _slotActiveWidths[slot] = _activeWidthBlocks;
+            _slotPayloadCounts[slot] = _payloadDataBytes;
+            _slotPayloadStarts[slot] = _payloadStartBlock;
+            _slotSymbolModes[slot] = _payloadSymbolMode;
+            _slotCodecIds[slot] = _payloadCodecId;
+            _slotPayloadTypes[slot] = _payloadType;
+            _slotHeaderRows[slot] = _currentHeaderRow;
+            _slotFlipYs[slot] = _decodeFlipY;
+            _slotInterleaved[slot] = _payloadInterleaved;
+            _slotStages[slot] = _decodeStage;
+            _slotReadWidths[slot] = lastReadbackWidth;
+            _slotReadHeights[slot] = lastReadbackHeight;
+            _slotReadCounts[slot] = lastReadbackPixelCount;
+            _slotRequestedCounts[slot] = lastRequestedByteCount;
+            _slotCapacities[slot] = lastByteTextureCapacityBytes;
+            _slotStreamIds[slot] = lastStreamId;
+            _slotFrameIndices[slot] = lastFrameIndex;
+            _slotHeaderPayloadCounts[slot] = lastPayloadSizeFromHeader;
+            _slotPayloadRows[slot] = lastPayloadStartRow;
+            _slotLastSymbols[slot] = lastSymbolMode;
+            _slotHeaderValid[slot] = lastHeaderValid;
+            _slotHeaderFlipYs[slot] = lastHeaderFlipY;
+            _slotLastHeaderRows[slot] = lastHeaderRow;
+            _slotHeaderSources[slot] = lastHeaderSource;
+            _slotHeaderLayouts[slot] = _requestUseHeaderLayout;
+            _slotSafetyModes[slot] = _requestSafetyMode;
+            if (_decodeStage == 3)
+            {
+                _slotPredictedHeaders[slot] = DecoderReadbackRuntime.EnsureByteBuffer(_slotPredictedHeaders[slot], FrameHeader.Size);
+                for (int i = 0; i < FrameHeader.Size; i++)
+                    _slotPredictedHeaders[slot][i] = _predictionHeader[i];
+                _slotPredictedBytes[slot] = _predictionByteCount;
+                _slotPredictedBlocks[slot] = _predictionBlockSize;
+                _slotPredictedSamples[slot] = _predictionSampleSize;
+                _slotPredictedStarts[slot] = _predictionStartBlock;
+            }
+        }
+
+        private void LoadSlotContext(int slot)
+        {
+            LoadSlotBuffers(slot);
+            sourceWidth = _slotWidths[slot];
+            sourceHeight = _slotHeights[slot];
+            blockSize = _slotBlockSizes[slot];
+            sampleSize = _slotSampleSizes[slot];
+            _activeWidthBlocks = _slotActiveWidths[slot];
+            _payloadDataBytes = _slotPayloadCounts[slot];
+            _payloadStartBlock = _slotPayloadStarts[slot];
+            _payloadSymbolMode = _slotSymbolModes[slot];
+            _payloadCodecId = _slotCodecIds[slot];
+            _payloadType = _slotPayloadTypes[slot];
+            _currentHeaderRow = _slotHeaderRows[slot];
+            _decodeFlipY = _slotFlipYs[slot];
+            _payloadInterleaved = _slotInterleaved[slot];
+            _decodeStage = _slotStages[slot];
+            lastReadbackWidth = _slotReadWidths[slot];
+            lastReadbackHeight = _slotReadHeights[slot];
+            lastReadbackPixelCount = _slotReadCounts[slot];
+            lastRequestedByteCount = _slotRequestedCounts[slot];
+            lastByteTextureCapacityBytes = _slotCapacities[slot];
+            lastStreamId = _slotStreamIds[slot];
+            lastFrameIndex = _slotFrameIndices[slot];
+            lastPayloadSizeFromHeader = _slotHeaderPayloadCounts[slot];
+            lastPayloadStartRow = _slotPayloadRows[slot];
+            lastSymbolMode = _slotLastSymbols[slot];
+            lastHeaderValid = _slotHeaderValid[slot];
+            lastHeaderFlipY = _slotHeaderFlipYs[slot];
+            lastHeaderRow = _slotLastHeaderRows[slot];
+            lastHeaderSource = _slotHeaderSources[slot];
+            _requestUseHeaderLayout = _slotHeaderLayouts[slot];
+            _requestSafetyMode = _slotSafetyModes[slot];
+        }
+
+        private void ReleaseSlotTextures(int slot)
+        {
+            DecoderSnapshotRuntime.Release(_slotSnapshots[slot]);
+            DecoderSnapshotRuntime.Release(_slotHeaderTextures[slot]);
+            DecoderSnapshotRuntime.Release(_slotCombinedTextures[slot]);
+            if (slot != 0)
+                DecoderSnapshotRuntime.Release(_slotByteTextures[slot]);
+            _slotSnapshots[slot] = null;
+            _slotHeaderTextures[slot] = null;
+            _slotCombinedTextures[slot] = null;
+            _slotByteTextures[slot] = null;
+        }
+
+        private void CancelCapture()
+        {
+            StoreSlotBuffers(_activeSlot);
+            _slotStates[_activeSlot] = 0;
+            pendingDecodeCount--;
+            readbackInFlight = pendingDecodeCount > 0;
+            _activeSlot = -1;
+        }
+
+        private void PreparePredictionOptions()
+        {
+            if (!_predictionValid)
+                return;
+            ushort ignoredBlock;
+            ushort ignoredWidth;
+            ushort ignoredType;
+            ushort ignoredSize;
+            int ignoredSample;
+            uint ignoredStream;
+            uint ignoredFrame;
+            DecoderHeaderRuntime.ReadHeaderFields(_predictionHeader, _codecOptionBytes,
+                out ignoredBlock, out ignoredWidth, out ignoredType, out ignoredSize, out ignoredSample,
+                out _payloadSymbolMode, out _payloadCodecId, out ignoredStream, out ignoredFrame);
         }
 
         private void CompleteReadbackStage()
         {
+            if (_decodeStage == 3)
+            {
+                CompletePredictedReadback();
+                return;
+            }
+
             if (_decodeStage == 1)
             {
-                if (!CopyBytesFromPixels(_headerBytes, FrameHeader.Size))
+                if (!CopyBytesFromReadback(_headerBytes, FrameHeader.Size))
                     return;
 
                 if (!ReadHeader())
@@ -311,7 +643,7 @@ namespace K13A.TSMP.Udon
                 if (ShouldSkipFrame())
                     return;
 
-                if (decodeSafetyMode == DecodeSafetyHeaderOnly)
+                if (_requestSafetyMode == DecodeSafetyHeaderOnly)
                 {
                     lastFrameValid = true;
                     lastError = "Decode safety mode: header only.";
@@ -322,10 +654,17 @@ namespace K13A.TSMP.Udon
                 return;
             }
 
-            if (!CopyBytesFromPixels(_payloadBytes, _payloadDataBytes))
+            if (!CopyBytesFromReadback(_payloadBytes, _payloadDataBytes))
                 return;
 
-            if (decodeSafetyMode == DecodeSafetyPayloadReadbackOnly)
+            CompletePayload();
+        }
+
+        private void CompletePayload()
+        {
+            CachePrediction();
+
+            if (_requestSafetyMode == DecodeSafetyPayloadReadbackOnly)
             {
                 lastFrameValid = true;
                 lastError = "Decode safety mode: payload readback only.";
@@ -410,37 +749,52 @@ namespace K13A.TSMP.Udon
 
         private void RequestByteReadback(int byteCount)
         {
+            RequestTextureReadback(_requestByteTexture, byteCount);
+        }
+
+        private void RequestTextureReadback(RenderTexture texture, int byteCount)
+        {
             int pixelCount;
             int readWidth;
             int readHeight;
             int readbackPixelCount;
-            if (!DecoderReadbackRuntime.TryGetReadbackRegion(payloadByteTexture, byteCount, out pixelCount, out readWidth, out readHeight, out readbackPixelCount, out lastError))
+            if (!DecoderReadbackRuntime.TryGetReadbackRegion(texture, byteCount, out pixelCount, out readWidth, out readHeight, out readbackPixelCount, out lastError))
             {
                 lastFrameValid = false;
                 LogDecodeError(lastError);
                 return;
             }
 
-            _readbackPixels = DecoderReadbackRuntime.EnsurePixelBuffer(_readbackPixels, readbackPixelCount);
+            _readbackBytes = DecoderReadbackRuntime.EnsureByteBuffer(_readbackBytes, readbackPixelCount * 4);
 
             lastReadbackWidth = readWidth;
             lastReadbackHeight = readHeight;
             lastReadbackPixelCount = readbackPixelCount;
 
-            IssueByteReadback(byteCount, readWidth, readHeight);
+            IssueByteReadback(texture, readWidth, readHeight);
         }
 
-        private void IssueByteReadback(int byteCount, int readWidth, int readHeight)
+        private void IssueByteReadback(RenderTexture texture, int readWidth, int readHeight)
         {
+            StoreSlotContext(_activeSlot);
+            _slotStates[_activeSlot] = 1;
             readbackInFlight = true;
 #if COMPILER_UDONSHARP
-            VRCAsyncGPUReadback.Request(payloadByteTexture, 0, 0, readWidth, 0, readHeight, 0, 1, (IUdonEventReceiver)this);
+            _slotRequests[_activeSlot] = VRCAsyncGPUReadback.Request(texture, 0, 0, readWidth, 0, readHeight, 0, 1, (IUdonEventReceiver)this);
 #else
-            AsyncGPUReadback.Request(payloadByteTexture, 0, OnAsyncGpuReadbackComplete);
+            if (_activeSlot == 0)
+                AsyncGPUReadback.Request(texture, 0, OnSlotZeroReadback);
+            else
+                AsyncGPUReadback.Request(texture, 0, OnSlotOneReadback);
 #endif
         }
 
         private void RunByteDecodePass(int startBlock, int byteCount, int symbolMode)
+        {
+            RunByteDecodeTo(startBlock, byteCount, symbolMode, _requestByteTexture, false);
+        }
+
+        private bool RunByteDecodeTo(int startBlock, int byteCount, int symbolMode, RenderTexture destination, bool combined)
         {
             int codecId = _payloadCodecId;
             if (symbolMode == 0)
@@ -449,7 +803,7 @@ namespace K13A.TSMP.Udon
             TSMPCodec handler = PrepareDecodeHandler(codecId, byteCount);
             Material material = handler != null ? handler.selectedDecodeMaterial : null;
             if (material == null)
-                return;
+                return false;
 
             Texture decodeSource = _decodeSourceTexture;
             material.SetTexture(ShaderProperties.MainTex, decodeSource);
@@ -460,12 +814,145 @@ namespace K13A.TSMP.Udon
             material.SetFloat(ShaderProperties.ActiveWidthBlocks, _activeWidthBlocks);
             material.SetFloat(ShaderProperties.SourceWidth, sourceWidth);
             material.SetFloat(ShaderProperties.SourceHeight, sourceHeight);
-            material.SetFloat(ShaderProperties.OutputWidth, payloadByteTexture.width);
-            material.SetFloat(ShaderProperties.OutputHeight, payloadByteTexture.height);
+            material.SetFloat(ShaderProperties.OutputWidth, destination.width);
+            material.SetFloat(ShaderProperties.OutputHeight, destination.height);
             material.SetFloat(ShaderProperties.FlipY, _decodeFlipY ? 1f : 0f);
+            if (material.HasProperty("_TSMPHeaderPixels"))
+            {
+                material.SetFloat("_TSMPHeaderPixels", combined ? FrameHeader.Size / 4 : 0);
+                material.SetTexture("_TSMPHeaderTex", combined ? _headerByteTexture : null);
+            }
 
             handler.PrepareDecode(decodeSource, material);
-            GraphicsBridge.Blit(decodeSource, payloadByteTexture, material);
+            GraphicsBridge.Blit(decodeSource, destination, material);
+            return true;
+        }
+
+        private bool TryRequestPredictedReadback()
+        {
+            if (!usePredictedReadback || !_requestUseHeaderLayout || _requestSafetyMode != 0)
+            {
+                _predictionValid = false;
+                return false;
+            }
+            if (!_predictionValid || readbackPackMaterial == null)
+                return false;
+            if (_predictionSource != sourceTexture || _predictionWidth != sourceWidth || _predictionHeight != sourceHeight ||
+                _predictionBlockSize != blockSize || _predictionSampleSize != sampleSize || _predictionFlipY != _decodeFlipY ||
+                _predictionActiveWidthBlocks != _activeWidthBlocks ||
+                _predictionByteCount > lastByteTextureCapacityBytes)
+            {
+                _predictionValid = false;
+                return false;
+            }
+
+            int pixelCount = ByteTextureReader.GetRequiredPixelCount(FrameHeader.Size + _predictionByteCount);
+            int width = Mathf.Min(256, pixelCount);
+            int height = (pixelCount + width - 1) / width;
+            _headerByteTexture = DecoderPredictionRuntime.EnsureTexture(_headerByteTexture, FrameHeader.Size / 4, 1);
+            _combinedByteTexture = DecoderPredictionRuntime.EnsureTexture(_combinedByteTexture, width, height);
+            if (_headerByteTexture == null || _combinedByteTexture == null)
+                return false;
+            if (_readbackPackInstance == null)
+#if COMPILER_UDONSHARP
+                _readbackPackInstance = readbackPackMaterial;
+#else
+                _readbackPackInstance = new Material(readbackPackMaterial);
+#endif
+
+            _decodeStage = 1;
+            if (!RunByteDecodeTo(_currentHeaderRow * _activeWidthBlocks, FrameHeader.Size, 0, _headerByteTexture, false))
+                return false;
+            _decodeStage = 2;
+            TSMPCodec handler = PrepareDecodeHandler(_payloadCodecId, _predictionByteCount);
+            if (handler == null)
+                return false;
+            _predictionStartBlock = handler.payloadStartRow * _activeWidthBlocks;
+            Material payloadMaterial = handler.selectedDecodeMaterial;
+            bool combined = useCombinedByteOutput && payloadMaterial != null &&
+                            payloadMaterial.HasProperty("_TSMPHeaderPixels") && payloadMaterial.HasProperty("_TSMPHeaderTex");
+            if (combined)
+            {
+                if (!RunByteDecodeTo(_predictionStartBlock, _predictionByteCount, _payloadSymbolMode, _combinedByteTexture, true))
+                    return false;
+                combinedByteOutputCount++;
+            }
+            else
+            {
+                if (!RunByteDecodeTo(_predictionStartBlock, _predictionByteCount, _payloadSymbolMode, _requestByteTexture, false))
+                    return false;
+                _readbackPackInstance.SetTexture("_HeaderTex", _headerByteTexture);
+                _readbackPackInstance.SetFloat("_OutputWidth", width);
+                _readbackPackInstance.SetFloat("_OutputHeight", height);
+                _readbackPackInstance.SetFloat("_PayloadWidth", _requestByteTexture.width);
+                _readbackPackInstance.SetFloat("_HeaderPixels", FrameHeader.Size / 4);
+                _readbackPackInstance.SetFloat("_PayloadPixels", ByteTextureReader.GetRequiredPixelCount(_predictionByteCount));
+                GraphicsBridge.Blit(_requestByteTexture, _combinedByteTexture, _readbackPackInstance);
+            }
+            _decodeStage = 3;
+            lastRequestedByteCount = FrameHeader.Size + _predictionByteCount;
+            RequestTextureReadback(_combinedByteTexture, lastRequestedByteCount);
+            return true;
+        }
+
+        private void CompletePredictedReadback()
+        {
+            if (!CopyBytesFromReadback(_headerBytes, FrameHeader.Size))
+                return;
+            bool matches = DecoderPredictionRuntime.HeadersMatch(_slotPredictedHeaders[_activeSlot], _headerBytes);
+            _predictionValid = false;
+            _decodeStage = 1;
+            if (!ReadHeader())
+                return;
+            if (ShouldSkipFrame())
+            {
+                CachePrediction();
+                return;
+            }
+
+            _decodeStage = 2;
+            TSMPCodec handler = PrepareDecodeHandler(_payloadCodecId, _payloadDataBytes);
+            if (!matches || handler == null || !_requestUseHeaderLayout || _requestSafetyMode != 0 ||
+                _payloadDataBytes != _slotPredictedBytes[_activeSlot] || blockSize != _slotPredictedBlocks[_activeSlot] || sampleSize != _slotPredictedSamples[_activeSlot] ||
+                handler.payloadStartRow * _activeWidthBlocks != _slotPredictedStarts[_activeSlot])
+            {
+                predictionFallbackCount++;
+                if (_requestSafetyMode == DecodeSafetyHeaderOnly)
+                {
+                    lastFrameValid = true;
+                    lastError = "Decode safety mode: header only.";
+                    return;
+                }
+                RequestPayloadReadback();
+                return;
+            }
+
+            if (!DecoderReadbackRuntime.TryCopyRawBytes(_readbackBytes, lastReadbackPixelCount * 4, FrameHeader.Size,
+                    _payloadBytes, _payloadDataBytes, out _expectedPixels, out lastError))
+            {
+                FailHeaderRead("Predicted readback is smaller than the validated payload.");
+                return;
+            }
+            predictedReadbackCount++;
+            CompletePayload();
+        }
+
+        private void CachePrediction()
+        {
+            if (!_requestUseHeaderLayout)
+                return;
+            _predictionHeader = DecoderReadbackRuntime.EnsureByteBuffer(_predictionHeader, FrameHeader.Size);
+            for (int i = 0; i < FrameHeader.Size; i++)
+                _predictionHeader[i] = _headerBytes[i];
+            _predictionSource = _requestSource;
+            _predictionWidth = sourceWidth;
+            _predictionHeight = sourceHeight;
+            _predictionBlockSize = blockSize;
+            _predictionSampleSize = sampleSize;
+            _predictionActiveWidthBlocks = _activeWidthBlocks;
+            _predictionFlipY = _decodeFlipY;
+            _predictionByteCount = _payloadDataBytes;
+            _predictionValid = _predictionByteCount > 0 && _predictionByteCount <= lastByteTextureCapacityBytes;
         }
 
         private TSMPCodec PrepareDecodeHandler(int codecId, int byteCount)
@@ -473,9 +960,10 @@ namespace K13A.TSMP.Udon
             return CodecBridge.PrepareDecodeHandler(codecHandlers, codecId, _codecOptionBytes, _activeWidthBlocks, _decodeStage, _payloadInterleaved, byteCount);
         }
 
-        private bool CopyBytesFromPixels(byte[] destination, int byteCount)
+        private bool CopyBytesFromReadback(byte[] destination, int byteCount)
         {
-            if (!DecoderReadbackRuntime.TryCopyBytes(_readbackPixels, destination, byteCount, out _expectedPixels, out lastError))
+            if (!DecoderReadbackRuntime.TryCopyRawBytes(_readbackBytes, lastReadbackPixelCount * 4, 0,
+                    destination, byteCount, out _expectedPixels, out lastError))
             {
                 lastFrameValid = false;
                 LogDecodeError(lastError);
@@ -553,7 +1041,7 @@ namespace K13A.TSMP.Udon
                 return false;
             }
 
-            DecoderHeaderRuntime.ResolvePayloadLayout(useHeaderPayloadLayout, sourceWidth, headerBlockSize, headerActiveWidthBlocks, headerSampleSize, payloadSize, headerCodecHandler.payloadStartRow, blockSize, sampleSize, _activeWidthBlocks, _payloadDataBytes, _payloadBytes, out blockSize, out sampleSize, out _activeWidthBlocks, out _payloadDataBytes, out _payloadBytes, out _payloadStartBlock, out lastPayloadStartRow);
+            DecoderHeaderRuntime.ResolvePayloadLayout(_requestUseHeaderLayout, sourceWidth, headerBlockSize, headerActiveWidthBlocks, headerSampleSize, payloadSize, headerCodecHandler.payloadStartRow, blockSize, sampleSize, _activeWidthBlocks, _payloadDataBytes, _payloadBytes, out blockSize, out sampleSize, out _activeWidthBlocks, out _payloadDataBytes, out _payloadBytes, out _payloadStartBlock, out lastPayloadStartRow);
 
             if (_payloadDataBytes < NetworkFrameProtocol.NetworkHeaderBytes)
                 return FailHeaderRead("Payload is too small for NetworkFrame.");
@@ -640,7 +1128,7 @@ namespace K13A.TSMP.Udon
                 return FailNetworkFrame("NetworkFrame header is malformed.");
 
             lastNetworkMessageCount = messageCount;
-            if (decodeSafetyMode != DecodeSafetyParseOnly)
+            if (_requestSafetyMode != DecodeSafetyParseOnly)
                 EnsureBindingTargetCache(GetBindingTargetCount());
 
             for (int i = 0; i < messageCount; i++)
@@ -660,7 +1148,7 @@ namespace K13A.TSMP.Udon
                 }
                 else if (NetworkFrameReader.IsRpcCallMessage(messageType))
                 {
-                    if (decodeSafetyMode != DecodeSafetyParseOnly && !ReadRpcCall(networkId, bodyStart, bodyEnd))
+                    if (_requestSafetyMode != DecodeSafetyParseOnly && !ReadRpcCall(networkId, bodyStart, bodyEnd))
                         return false;
                 }
 
@@ -793,7 +1281,7 @@ namespace K13A.TSMP.Udon
                 if (!NetworkFrameReader.TryReadVariableEntry(_payloadBytes, cursor, bodyEnd, out variableHash, out valueType, out valueOffset, out valueLength, out nextEntryOffset))
                     return FailNetworkFrame("VariableState value is malformed.");
 
-                if (decodeSafetyMode != DecodeSafetyParseOnly)
+                if (_requestSafetyMode != DecodeSafetyParseOnly)
                     ApplyVariableValue(networkId, variableHash, valueType, valueOffset, valueLength);
                 cursor = nextEntryOffset;
             }

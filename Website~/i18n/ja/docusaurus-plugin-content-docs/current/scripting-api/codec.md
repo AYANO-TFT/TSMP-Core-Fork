@@ -57,6 +57,8 @@ title: TSMPCodec
 | --- | --- |
 | `SymbolMode` | ネイティブ シンボル モードのプロパティ。 |
 | `TryWriteFrame(...)` | 完全なフレームを `Texture2D` に書き込みます。 |
+| `TryWriteFrameBuffered(..., ref Color32[] pixels, out string error)` | エンコーダーが所有するラスターバッファーを再利用する任意のネイティブ writer です。既定では `TryWriteFrame` を呼ぶため、既存のコーデックもそのまま動作します。 |
+| `SupportsGpuLuma4Encoding` | 既定 false の native オプトインです。標準 Luma4 のパレット・ヘッダー配置・バイト/ニブル対応を変更しないコーデックだけが true にして GPU writer を利用できます。 |
 | `GetCodecOptionBytes()` | ネイティブ コーデック オプションのバイト配列。 |
 | `DecodeMaterialCount` | デコードマテリアルの数。 |
 | `GetDecodeMaterial(index)` | マテリアル ルックアップをデコードします。 |

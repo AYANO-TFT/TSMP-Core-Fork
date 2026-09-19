@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.3.0-beta.3
+
+### Performance
+
+- Replace same-type Udon image/payload copy loops with guarded bulk copies, preserving independent receiver and in-flight buffers.
+- Read GPU results directly into slot-owned byte buffers and bulk-copy validated header/payload ranges, without retaining request-owned native views.
+- Reuse encoder-owned native raster arrays through an optional codec method; existing third-party writers keep their original fallback.
+- Automatically match known 8-bit/half-float snapshot storage to the input, preserving linear/sRGB interpretation. Keep Float32 for unknown/high-precision inputs and non-RenderTexture Udon sources.
+- Encode Luma4 bytes into a small GPU symbol image before block expansion. Automatically prepare the material, retain CPU fallback, defer unused CPU image allocation, and release owned GPU resources on disable/destruction. Native codecs explicitly opt in; other codec writers are unchanged.
+
+- Add default-enabled bounded two-slot readback overlap. Capture the next image while an older request is pending, retain independent snapshots/buffers/fallback state, and apply results in capture order. Full capacity skips new captures rather than growing a queue. Disabling cancels both slots; outstanding requests drain before their storage can be reused.
+- Add an advanced overlap opt-out and pending/busy-capture diagnostics. Overlap can reduce missed frames at the cost of more snapshot memory, GPU/CPU work and potentially higher application latency; it is not a delivery guarantee.
+- Add optional combined byte output for capable codec shaders. Write the decoded header prefix and payload directly into the private readback texture instead of rendering a payload intermediate and a separate packing pass. Preserve the legacy path for third-party shaders without the opt-in properties.
+- Add a default-enabled predicted decoder readback path: decode the current header and payload with the previous validated configuration, pack both byte outputs, and request one GPU readback instead of two sequential requests.
+- Validate the current header CRC before accepting any speculative payload. Changes to codec, options, stream, layout, sample size or payload length use the existing payload path on the same frozen image. Payload length must match exactly; custom codec implementations are not assumed to support decoding a longer prefix.
+- Keep manual layout and safety modes on the sequential path. Assign the packing material automatically for existing/new decoders and retain sequential operation if it is unavailable. Add prediction/fallback diagnostics and an advanced opt-out.
+- The transmitted datagram, existing codec entry points, RPC repeat budget and event deduplication are unchanged. At most two captured images are retained; this is not an unlimited frame queue or guaranteed-delivery mechanism.
+
+### Measured Results
+
+Unity 2022.3.22f1, Windows 11, i9-13900K, RTX 4090, D3D11; Luma4, block size 8, sample size 1. Udon uses the SDK Editor VM (Worlds 3.10.4-beta.2); native uses a Development Mono Player. Three-second warmup, twelve-second measurement. Baseline is the pre-resource-optimization profile, already including predicted/two-slot decoding, not the previous published beta.
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Udon encoder, 720p / 4 KiB / 60 Hz, mean | 11.27 ms | 0.457 ms |
+| Udon readback callback, same workload, mean | 3.52 ms | 0.421 ms |
+| Native publish, 720p / 4 KiB, mean | 3.33 ms | 0.095 ms |
+| Native publish, 4K / 32 B, mean | 20.72 ms | 0.141 ms |
+| Native 720p, whole-Player median frame GC allocation | 3,686,964 B | 612 B |
+| Two 8-bit snapshots, 4K, texel storage | 253.13 MiB | 63.28 MiB |
+
+- Final native/Udon profiles received 361/361 published frames at 30 Hz and 721/721 at 60 Hz in the measured cases. These finite local tests are not a guarantee for video/network transport.
+- GPU Luma4 adds a conversion draw: measured Gamma conversion/expansion medians were about 16.5 us versus 8.3 us at 720p, excluding transfers/readback. CPU work is reduced at a small measured GPU draw cost on this hardware.
+- Allocation counters cover the whole test Player, not TSMP alone; collections still occur. Snapshot savings are not total memory savings. Live VRChat, Quest and IL2CPP were not verified.
+- See the [release notes](https://github.com/kibalab/TSMP-Core/releases/tag/v0.3.0-beta.3) for complete methodology, latency tradeoffs, validation and limitations.
+
+### Compatibility
+
+- Updated codec releases target Core 0.3.0-beta.3. Luma4 0.0.4-beta.2 requires the new buffered/GPU writer APIs.
+- Existing custom codec writers/shaders retain their fallback. No wire-format change or additional setup menu is required.
+- Use the output RenderTexture as the encoded result; hidden CPU staging outputTexture is not refreshed by GPU encoding.
+
 ## 0.3.0-beta.2
 
 ### Added
