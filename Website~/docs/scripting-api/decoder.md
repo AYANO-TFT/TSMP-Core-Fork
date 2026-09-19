@@ -66,7 +66,7 @@ The initial/fallback path performs this order:
 
 ## Predicted readback {#predicted-readback}
 
-After learning a valid header, the decoder can submit a Luma4 header pass and a payload pass using the previous configuration without waiting for the header on the CPU. It packs the decoded bytes into a private linear RGBA8 target and submits one readback. The original snapshot remains Float32; only already-decoded integer bytes use RGBA8.
+After learning a valid header, the decoder can submit a Luma4 header pass and a payload pass using the previous configuration without waiting for the header on the CPU. It packs the decoded bytes into a private linear RGBA8 target and submits one readback. This byte target is separate from the format-preserving input snapshot.
 
 The current header must pass magic, version, size and CRC validation, then the normal frame-order filter. All header bytes before CRC must match the cached header except frame index, timestamp and payload length. Payload length is then checked separately for **exact equality**, and resolved block/sample/start-block settings must match. A length change in either direction, codec/option/stream/layout change or other mismatch discards the speculative payload and requests the actual payload from the **same snapshot**. No second source capture occurs. CRC failure rejects the frame instead of falling back to unchecked data.
 
@@ -78,9 +78,9 @@ Each slot's internal readback buffer contains header bytes `0..55`, then the pre
 
 ## Input snapshot {#input-snapshot}
 
-No additional Inspector reference or mode is required. The decoder owns a same-size linear `ARGBFloat` RenderTexture, reuses it between operations, and releases it on disable/destruction. This preserves sampled input precision without an extra 8-bit or half-float quantization step. It requires Float32 render-target support; allocation/format failures reject the decode and report `lastError` through the decoder's error logging policy. There is no fallback to a changing source image.
+No additional Inspector reference or mode is required. Each slot owns a same-size RenderTexture and reuses it between operations. Recognized RGBA/BGRA 8-bit inputs use `ARGB32` with matching linear/sRGB interpretation; RGBA half-float inputs use linear `ARGBHalf`. Float32 and unknown inputs retain linear `ARGBFloat`. Native Unity inspects the graphics format. Udon can inspect RenderTexture format and sRGB state, but other input types conservatively retain Float32. Format changes recreate idle storage. Allocation failures reject the decode and report `lastError`; the decoder never falls back to a changing source image.
 
-The extra storage is `width * height * 16` bytes: about 3.52 MiB at 640x360, 31.64 MiB at 1920x1080, or 126.56 MiB at 3840x2160. Each accepted decode attempt copies the full input once, including attempts later rejected by CRC or duplicate checks. There is no added CPU readback. Measure the GPU copy cost on the deployment hardware.
+Snapshot texel storage per allocated slot is `width * height * bytesPerPixel`, with 4, 8 or 16 bytes for the formats above. Two 8-bit snapshots use about 7.03 MiB at 1280x720 or 63.28 MiB at 3840x2160, 75% less than two Float32 snapshots. These figures exclude other textures and driver overhead. Each accepted attempt still copies the full input once, even if CRC or duplicate checks later reject it. No CPU readback is added. Measure GPU copy cost on deployment hardware.
 
 Changing or destroying `sourceTexture` after capture affects the next operation, not the current image. Disabling cancels all occupied slots, including callbacks delivered after re-enable; a cancelled slot cannot be reused until its request completes. Header, LUT preparation and payload use the same snapshot in both native and Udon paths. Custom codecs must treat the supplied image as read-only and must not retain it as a permanent frame copy. Application is not transactional.
 

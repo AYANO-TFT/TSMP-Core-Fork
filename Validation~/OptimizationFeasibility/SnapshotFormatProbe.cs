@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using K13A.TSMP;
 using UnityEngine;
 using UnityEngine.Rendering;
 #if UNITY_EDITOR
@@ -16,6 +17,8 @@ public sealed class SnapshotFormatProbe : MonoBehaviour
 {
     readonly List<string> rows = new List<string>();
     Color[] reference;
+    RenderTexture cached;
+    int cachedSourceFormat;
 
 #if UNITY_EDITOR
     public static void Gamma() { Launch(ColorSpace.Gamma); }
@@ -32,7 +35,7 @@ public sealed class SnapshotFormatProbe : MonoBehaviour
 
     IEnumerator Start()
     {
-        rows.Add("color_space,source_format,source_linear,target_format,target_readwrite,different_channels,max_abs_error");
+        rows.Add("color_space,source_format,source_linear,source_kind,filter,policy,target_format,target_srgb,different_channels,max_abs_error");
         var work = CheckFormats();
         while (true)
         {
@@ -49,22 +52,47 @@ public sealed class SnapshotFormatProbe : MonoBehaviour
     {
         foreach (TextureFormat sourceFormat in new[] { TextureFormat.RGBA32, TextureFormat.RGBAHalf, TextureFormat.RGBAFloat })
         foreach (bool linear in new[] { false, true })
+        foreach (bool renderTexture in new[] { false, true })
+        foreach (FilterMode filter in new[] { FilterMode.Point, FilterMode.Bilinear })
         {
-            var texture = new Texture2D(256, 4, sourceFormat, false, linear) { filterMode = FilterMode.Point };
+            var texture = new Texture2D(256, 4, sourceFormat, false, linear) { filterMode = filter };
             var values = Enumerable.Range(0, 1024).Select(i =>
                 sourceFormat == TextureFormat.RGBA32
                     ? new Color((i % 256) / 255f, ((i * 73) % 256) / 255f, ((i * 37) % 256) / 255f, 1)
                     : new Color(i * 0.001337f - 0.125f, i * 0.0004637f, 0.998765f - i * 0.000123f, 1)).ToArray();
             texture.SetPixels(values); texture.Apply(false, false);
-            reference = null;
-            foreach (RenderTextureFormat targetFormat in new[] { RenderTextureFormat.ARGBFloat, RenderTextureFormat.ARGBHalf, RenderTextureFormat.ARGB32 })
-            foreach (RenderTextureReadWrite mode in new[] { RenderTextureReadWrite.Linear, RenderTextureReadWrite.sRGB })
+            Texture source = texture;
+            if (renderTexture)
             {
-                if (mode == RenderTextureReadWrite.sRGB && targetFormat != RenderTextureFormat.ARGB32) continue;
-                var target = new RenderTexture(256, 4, 0, targetFormat, mode) { filterMode = FilterMode.Point };
-                if (!target.Create()) throw new InvalidOperationException("Cannot allocate " + targetFormat);
+                var format = sourceFormat == TextureFormat.RGBA32 ? RenderTextureFormat.ARGB32 :
+                    sourceFormat == TextureFormat.RGBAHalf ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat;
+                var rt = new RenderTexture(256, 4, 0, format, linear ? RenderTextureReadWrite.Linear : RenderTextureReadWrite.sRGB) { filterMode = filter };
+                rt.Create();
+                Graphics.Blit(texture, rt);
+                source = rt;
+            }
+            reference = null;
+            for (int policy = 0; policy < 5; policy++)
+            {
+                bool automatic = policy == 4;
+                var targetFormat = policy == 0 ? RenderTextureFormat.ARGBFloat : policy == 1 ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGB32;
+                var mode = policy == 3 ? RenderTextureReadWrite.sRGB : RenderTextureReadWrite.Linear;
                 var previous = RenderTexture.active;
-                Graphics.Blit(texture, target);
+                RenderTexture target;
+                if (automatic)
+                {
+                    target = DecoderSnapshotRuntime.CaptureMatchingFormat(source, cached, cachedSourceFormat, out cachedSourceFormat, out string error);
+                    if (target == null) throw new InvalidOperationException(error);
+                    cached = target;
+                    RenderTexture repeat = DecoderSnapshotRuntime.CaptureMatchingFormat(source, cached, cachedSourceFormat, out cachedSourceFormat, out error);
+                    if (!ReferenceEquals(target, repeat)) throw new InvalidOperationException("Snapshot reallocated without a layout change");
+                }
+                else
+                {
+                    target = new RenderTexture(256, 4, 0, targetFormat, mode) { filterMode = filter };
+                    if (!target.Create()) throw new InvalidOperationException("Cannot allocate " + targetFormat);
+                    Graphics.Blit(source, target);
+                }
                 RenderTexture.active = previous;
                 var sampled = new RenderTexture(256, 4, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
                 sampled.Create();
@@ -84,13 +112,16 @@ public sealed class SnapshotFormatProbe : MonoBehaviour
                     max = Math.Max(max, difference);
                     if (difference > 0.0000001) differences++;
                 }
-                rows.Add(string.Join(",", QualitySettings.activeColorSpace, sourceFormat, linear, targetFormat, mode,
+                rows.Add(string.Join(",", QualitySettings.activeColorSpace, sourceFormat, linear, renderTexture ? "RenderTexture" : "Texture2D", filter, automatic ? "Auto" : "Manual", target.format, target.sRGB,
                     differences, max.ToString("G9", CultureInfo.InvariantCulture)));
-                target.Release(); Destroy(target);
+                if (automatic && differences != 0) throw new InvalidOperationException("Automatic snapshot changed sampled values: " + rows.Last());
+                if (!automatic) { target.Release(); Destroy(target); }
                 sampled.Release(); Destroy(sampled);
             }
+            if (source is RenderTexture sourceTarget) { sourceTarget.Release(); Destroy(sourceTarget); }
             Destroy(texture);
         }
+        DecoderSnapshotRuntime.Release(cached);
     }
 
     void Finish(Exception error)

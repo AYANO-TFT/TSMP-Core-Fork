@@ -138,6 +138,7 @@ namespace K13A.TSMP.Udon
         private Texture[] _slotSources = new Texture[2];
         private RenderTexture[] _slotSnapshots = new RenderTexture[2];
         private RenderTexture[] _slotHeaderTextures = new RenderTexture[2];
+        private int[] _slotSnapshotSourceFormats = new int[2];
         private RenderTexture[] _slotCombinedTextures = new RenderTexture[2];
         private RenderTexture[] _slotByteTextures = new RenderTexture[2];
         private byte[][] _slotReadbackBytes = new byte[2][];
@@ -363,7 +364,10 @@ namespace K13A.TSMP.Udon
             PreparePredictionOptions();
             _currentHeaderRow = 2;
             _decodeFlipY = flipY;
-            _decodeSourceTexture = DecoderSnapshotRuntime.Capture(sourceTexture, _decodeSourceTexture, out lastError);
+            int snapshotSourceFormat;
+            _decodeSourceTexture = DecoderSnapshotRuntime.CaptureMatchingFormat(sourceTexture, _decodeSourceTexture,
+                _slotSnapshotSourceFormats[_activeSlot], out snapshotSourceFormat, out lastError);
+            _slotSnapshotSourceFormats[_activeSlot] = snapshotSourceFormat;
             if (_decodeSourceTexture == null)
             {
                 lastFrameValid = false;
