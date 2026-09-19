@@ -58,6 +58,7 @@ Available outside `COMPILER_UDONSHARP`:
 | --- | --- |
 | `SymbolMode` | Native symbol mode property. |
 | `TryWriteFrame(...)` | Write complete frame into a `Texture2D`. |
+| `TryWriteFrameBuffered(..., ref Color32[] pixels, out string error)` | Optional native writer that reuses an encoder-owned raster buffer. The default calls `TryWriteFrame`, so existing codecs remain compatible. |
 | `GetCodecOptionBytes()` | Native codec option byte array. |
 | `DecodeMaterialCount` | Number of decode materials. |
 | `GetDecodeMaterial(index)` | Decode material lookup. |

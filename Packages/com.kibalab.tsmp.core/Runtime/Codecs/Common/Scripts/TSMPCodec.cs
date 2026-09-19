@@ -379,6 +379,11 @@ namespace K13A.TSMP
             return false;
         }
 
+        public virtual bool TryWriteFrameBuffered(Texture2D texture, int blockSize, byte[] headerBytes, byte[] payloadBytes, ref Color32[] pixels, out string error)
+        {
+            return TryWriteFrame(texture, blockSize, headerBytes, payloadBytes, out error);
+        }
+
         protected bool ValidateRasterFrame(Texture2D texture, int blockSize, byte[] headerBytes, byte[] payloadBytes, out string error)
         {
             if (!Luma4Raster.ValidateWrite(texture, blockSize, headerBytes, payloadBytes, out error))

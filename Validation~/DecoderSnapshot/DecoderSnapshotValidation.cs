@@ -256,7 +256,8 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
                 Upload(a, source, flip);
                 Debug.Log("BEGIN snapshot case=" + cases + "; codec=" + codec.displayName + "; variant=" + variant +
                     "; sample=" + sample + "; flip=" + flip + "; mutation=" + mutation + "; format=" + format);
-                var previous = Field<Texture>(decoder, "_decodeSourceTexture");
+                var previous = Field<RenderTexture[]>(decoder, "_slotSnapshots")[Field<int>(decoder, "_slotHead")];
+                var previousFormat = previous != null ? previous.graphicsFormat : UnityEngine.Experimental.Rendering.GraphicsFormat.None;
                 decoder.DecodeNow();
                 Check(decoder.readbackInFlight, "Header request not started");
                 Upload(b, source, flip);
@@ -266,7 +267,7 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
                 Verify(decoder, bytes, frame, label);
                 var snapshot = Field<RenderTexture>(decoder, "_decodeSourceTexture");
                 Check(snapshot != source && snapshot.IsCreated(), "Snapshot is not owned");
-                Check(previous == null || snapshot == previous, "Repeated allocation at fixed dimensions");
+                Check(previous == null || snapshot == previous || snapshot.graphicsFormat != previousFormat, "Repeated allocation at fixed dimensions/format within a slot");
                 cases++;
             }
             Drop(source);
@@ -304,7 +305,7 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
         foreach (int length in new[] { 200, 0, 400, 0, 1, 400, 0 })
         {
             byte[] bytes = NetworkPayload(length);
-            byte[] previous = Field<byte[]>(decoder, "_payloadBytes");
+            byte[] previous = Field<byte[][]>(decoder, "_slotPayloads")[Field<int>(decoder, "_slotHead")];
             Write(codec, texture, bytes, ++sequence, 1);
             Upload(texture, source, true);
             decoder.DecodeNow();
@@ -312,7 +313,7 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
             while (drain.MoveNext()) yield return drain.Current;
             Verify(decoder, bytes, sequence, "Payload capacity " + length);
             Check(decoder.lastNetworkMessageCount == 1 && decoder.lastPayloadAvailableBytes == bytes.Length, "Actual network parsing bounds");
-            if (previous.Length >= bytes.Length) Check(ReferenceEquals(previous, Field<byte[]>(decoder, "_payloadBytes")), "GPU path reallocated sufficient capacity");
+            if (previous != null && previous.Length >= bytes.Length) Check(ReferenceEquals(previous, Field<byte[]>(decoder, "_payloadBytes")), "GPU path reallocated sufficient capacity");
         }
         foreach (int length in new[] { 0, 7 })
         {
@@ -359,10 +360,9 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
             }
             var old = Field<RenderTexture>(decoder, "_decodeSourceTexture");
             if (objectDisable) decoder.gameObject.SetActive(false); else decoder.enabled = false;
-            Check(Field<Texture>(decoder, "_decodeSourceTexture") == null, "Disable did not release snapshot");
+            Check(Field<bool[]>(decoder, "_slotDiscarded").All(value => value), "Disable did not discard pending slots");
+            Check(old != null && old.IsCreated(), "Pending snapshot was released before readback completed");
             if (objectDisable) decoder.gameObject.SetActive(true); else decoder.enabled = true;
-            decoder.DecodeNow();
-            Check(Field<Texture>(decoder, "_decodeSourceTexture") == null, "Re-enable reused pending readback");
             drain = Drain(decoder);
             while (drain.MoveNext()) yield return drain.Current;
             Check(!decoder.lastFrameValid, "Cancelled callback was applied");

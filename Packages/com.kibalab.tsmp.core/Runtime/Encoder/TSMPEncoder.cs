@@ -146,6 +146,7 @@ namespace K13A.TSMP
         private uint _sendStreamId;
         private int _nextTransRpcEventId = 1;
         private Texture2D _stagingTexture;
+        private Color32[] _rasterPixels;
         private byte[] _payload;
         private byte[] _encodedPayload;
         private byte[] _header;
@@ -289,7 +290,7 @@ namespace K13A.TSMP
 
             BuildHeader();
 
-            bool writeOk = codec.TryWriteFrame(_stagingTexture, blockSize, _header, _encodedPayload, out string writeError);
+            bool writeOk = codec.TryWriteFrameBuffered(_stagingTexture, blockSize, _header, _encodedPayload, ref _rasterPixels, out string writeError);
 
             if (!writeOk)
             {
@@ -469,6 +470,7 @@ namespace K13A.TSMP
 
         private void ReleaseResources()
         {
+            _rasterPixels = null;
             if (_stagingTexture != null)
             {
                 DestroyResource(_stagingTexture);

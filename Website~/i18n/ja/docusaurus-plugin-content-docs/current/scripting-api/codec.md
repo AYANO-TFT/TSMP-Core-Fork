@@ -57,6 +57,7 @@ title: TSMPCodec
 | --- | --- |
 | `SymbolMode` | ネイティブ シンボル モードのプロパティ。 |
 | `TryWriteFrame(...)` | 完全なフレームを `Texture2D` に書き込みます。 |
+| `TryWriteFrameBuffered(..., ref Color32[] pixels, out string error)` | エンコーダーが所有するラスターバッファーを再利用する任意のネイティブ writer です。既定では `TryWriteFrame` を呼ぶため、既存のコーデックもそのまま動作します。 |
 | `GetCodecOptionBytes()` | ネイティブ コーデック オプションのバイト配列。 |
 | `DecodeMaterialCount` | デコードマテリアルの数。 |
 | `GetDecodeMaterial(index)` | マテリアル ルックアップをデコードします。 |

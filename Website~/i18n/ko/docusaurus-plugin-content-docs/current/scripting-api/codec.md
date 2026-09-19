@@ -57,6 +57,7 @@ VRChat 안에서 codec이 동작해야 한다면 이 methods는 UdonSharp-compat
 | --- | --- |
 | `SymbolMode` | Native symbol mode property. |
 | `TryWriteFrame(...)` | Complete frame을 `Texture2D`에 씁니다. |
+| `TryWriteFrameBuffered(..., ref Color32[] pixels, out string error)` | 인코더가 소유한 래스터 버퍼를 재사용하는 선택적 네이티브 writer입니다. 기본 구현은 `TryWriteFrame`을 호출하므로 기존 코덱도 그대로 동작합니다. |
 | `GetCodecOptionBytes()` | Native codec option byte array. |
 | `DecodeMaterialCount` | Decode material 수. |
 | `GetDecodeMaterial(index)` | Decode material lookup. |
