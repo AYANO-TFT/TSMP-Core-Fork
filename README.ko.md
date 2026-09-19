@@ -95,7 +95,7 @@ Core는 씬 런타임과 설정을, 별도 코덱 패키지는 픽셀 인코딩�
 
 [최신 정식 릴리즈](https://github.com/kibalab/TSMP-Core/releases/latest) · [전체 릴리즈](https://github.com/kibalab/TSMP-Core/releases)
 
-릴리즈 태그는 `v0.x.y` 형식을 사용하며, 1.0 이전에는 공개 API가 변경될 수 있습니다.
+TSMP Core 1.0.0은 0.2.0 이후 베타의 기능, 수정 및 최적화를 통합한 정식 버전입니다. Luma4 1.0.0과 함께 사용하세요.
 
 버그나 제안은 [Issues](https://github.com/kibalab/TSMP-Core/issues)에 남겨 주세요. 코드·문서 기여는 [기여 가이드](CONTRIBUTING.md)를 참고하세요.
 
