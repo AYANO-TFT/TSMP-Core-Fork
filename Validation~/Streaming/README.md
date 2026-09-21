@@ -26,7 +26,29 @@ $results = 'F:/Unity/TSMP/Validation-Results/s05-s06'
 
 Use `-Ffmpeg` and `-Ffprobe` for executables outside PATH. Close the validation project's editor before each invocation. Run `Editor` again against a separate SDK project, then use the existing `Validation~/Run-Validation.ps1 -Step Udon` for full Udon client compilation. No publisher Udon program is expected: FFmpeg process launch remains native desktop functionality.
 
-The runner copies only validation code to Assets/Validation/Streaming. Build creates a dedicated scene and a Windows x64 Development Mono Player with stripping disabled. Both Editor and Player execute the same 13 cases with graphics enabled. Real FFmpeg FLV output is decoded back to RGBA and inspected by FFprobe. RGBA row flipping is byte-exact before encoding; decoded grayscale values allow two levels of color-conversion rounding.
+The runner copies only validation code to Assets/Validation/Streaming. Build creates a dedicated scene and a Windows x64 Development Mono Player with stripping disabled. Both Editor and Player execute the same 18 cases with graphics enabled. Real FFmpeg FLV output is decoded back to RGBA and inspected by FFprobe. RGBA row flipping is byte-exact before encoding; decoded grayscale values allow two levels of color-conversion rounding.
+
+## Issue #5: Output Pacing
+
+Input signals only update the pending frame. The writer uses a monotonic `Stopwatch` deadline for output slots, coalesces pending input to the latest frame, and skips missed slots after a blocked write. Idle repetition uses the same deadline. With repetition disabled, input pauses produce no output; rawvideo timestamps consequently pause too. This option does not preserve wall-clock media time during an input outage.
+
+2026-09-13, same Unity/GPU/FFmpeg versions as below, SDK-free Editor and Windows Mono Player:
+
+| Input at 30 FPS output setting | Before, Editor | After, Editor | After, Player |
+| --- | --- | --- | --- |
+| Slow input with repetition | 39.48 FPS | 30.05 FPS | 30.18 FPS |
+| Fast input with repetition | 57.72 FPS | 30.03 FPS | 29.95 FPS |
+| Bursts with repetition | 55.95 FPS | 30.15 FPS | 29.91 FPS |
+| Fast input, then idle, no repetition | 54.73 FPS | 25.80 FPS | 25.71 FPS |
+
+Counts are measured over approximately 2.1 seconds, including 320 ms of idle time. The first output slot is immediate, so short-window averages can slightly exceed 30 FPS. The no-repeat case intentionally produces fewer frames over its idle-inclusive measurement. All 18 cases passed in Editor and Player. FFmpeg `framemd5` output confirms one sequential timestamp per written frame at time base 1/30, no partial frames, and the final coalesced input's checksum. Empty input produces no frames and shutdown interrupts a one-second deadline. Windows x64 Mono build succeeded with zero errors and warnings.
+
+Evidence root: `F:/Unity/TSMP/Validation-Results/issue5-20260913`.
+- Before: `before/20260913-125923-Streaming-Editor.log` (four pacing failures).
+- After Editor: `after/20260913-130355-Streaming-Editor.log`.
+- Build: `after/20260913-130451-Streaming-Build.log`.
+- Player: `after/20260913-130544-Streaming-Player.log`.
+- Result text and frame timestamp/checksum files are retained alongside these logs.
 
 ## Results
 

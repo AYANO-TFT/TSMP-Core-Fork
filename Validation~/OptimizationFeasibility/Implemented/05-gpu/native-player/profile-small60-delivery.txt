@@ -1,0 +1,13 @@
+seconds=12.0095
+publications=721
+received=721
+appliedInWindow=721
+loopHz=60.0360
+frameP95ms=16.8415
+busyTicks=0
+payloadBytes=57
+GCCollections=3
+managedStart=3145728
+managedEnd=3244032
+predicted=962
+fallbacks=0

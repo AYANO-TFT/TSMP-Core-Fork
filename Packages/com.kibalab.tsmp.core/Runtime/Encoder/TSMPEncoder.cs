@@ -48,6 +48,12 @@ namespace K13A.TSMP
         [HideInInspector] public Texture2D outputTexture;
         public RenderTexture output;
         public Material blockExpandMaterial;
+        [HideInInspector] public Material luma4EncodeMaterial;
+        [HideInInspector] public bool useGpuLuma4 = true;
+        [HideInInspector] public bool lastFrameUsedGpuLuma4;
+        private Texture2D _gpuUpload;
+        private byte[] _gpuUploadBytes;
+        private RenderTexture _gpuSymbols;
         [HideInInspector]
         public int width = 640;
         [HideInInspector]
@@ -89,7 +95,9 @@ namespace K13A.TSMP
         [HideInInspector] public int[] bindingPriorities;
         [HideInInspector] public bool[] bindingSendOnChange;
         [HideInInspector] public float[] bindingMinSendIntervals;
+        [HideInInspector] public string[] bindingSentEvents;
         [HideInInspector] public int deferredVariableCount;
+        private bool _isEncoding;
 
         [HideInInspector] public int encodedObjectCount;
         [HideInInspector] public int queuedRpcCount;
@@ -144,9 +152,11 @@ namespace K13A.TSMP
         private uint _sendStreamId;
         private int _nextTransRpcEventId = 1;
         private Texture2D _stagingTexture;
+        private Color32[] _rasterPixels;
         private byte[] _payload;
         private byte[] _encodedPayload;
         private byte[] _header;
+        private byte[] _rpcValidationBuffer;
         private double _nextEncodeTime;
         private int _payloadOffset;
         private int _currentMessageStartOffset = -1;
@@ -223,6 +233,15 @@ namespace K13A.TSMP
         [ContextMenu("Encode Now")]
         public void EncodeNow()
         {
+            if (_isEncoding)
+                return;
+            _isEncoding = true;
+            try { EncodeFrame(); }
+            finally { _isEncoding = false; }
+        }
+
+        private void EncodeFrame()
+        {
             lastError = string.Empty;
 
             if (output == null)
@@ -277,15 +296,18 @@ namespace K13A.TSMP
 
             BuildHeader();
 
-            bool writeOk = codec.TryWriteFrame(_stagingTexture, blockSize, _header, _encodedPayload, out string writeError);
-
-            if (!writeOk)
+            lastFrameUsedGpuLuma4 = codec.SupportsGpuLuma4Encoding
+                && TryWriteGpuLuma4(_header, _encodedPayload, payloadBytes, codec.GetPayloadStartRow(width, blockSize), 128f / 255f);
+            if (!lastFrameUsedGpuLuma4)
             {
-                SetLastError(writeError);
-                return;
+                EnsureStagingTexture();
+                if (!codec.TryWriteFrameBuffered(_stagingTexture, blockSize, _header, _encodedPayload, ref _rasterPixels, out string writeError))
+                {
+                    SetLastError(writeError);
+                    return;
+                }
+                Graphics.Blit(_stagingTexture, output);
             }
-
-            Graphics.Blit(_stagingTexture, output);
             _sendState.Commit(_payload, GetSendTime());
             frameIndex++;
             if (rpcMessageCount > 0)
@@ -318,17 +340,13 @@ namespace K13A.TSMP
 
         public bool QueueRpcHash(ushort networkId, uint rpcHash, params object[] arguments)
         {
-            if (_queuedRpcs.Count >= 32)
-                return false;
-
-            _queuedRpcs.Add(new EncoderNativeFrameBuilder.QueuedRpc
+            return QueueNativeRpc(new EncoderNativeFrameBuilder.QueuedRpc
             {
                 NetworkId = networkId,
                 RpcHash = rpcHash,
                 Arguments = arguments,
                 RepeatsRemaining = 1
             });
-            return true;
         }
 
         public bool QueueTransRpc(int networkId, uint rpcHash, string methodName)
@@ -342,17 +360,41 @@ namespace K13A.TSMP
                 return false;
             if (string.IsNullOrEmpty(methodName))
                 return false;
-            if (_queuedRpcs.Count >= 32)
-                return false;
-
             int repeats = Mathf.Clamp(transRpcRepeatFrames, 1, 16);
-            _queuedRpcs.Add(new EncoderNativeFrameBuilder.QueuedRpc
+            return QueueNativeRpc(new EncoderNativeFrameBuilder.QueuedRpc
             {
                 NetworkId = (ushort)networkId,
                 RpcHash = rpcHash,
                 Arguments = new object[] { methodName, eventId },
                 RepeatsRemaining = repeats
             });
+        }
+
+        private bool QueueNativeRpc(EncoderNativeFrameBuilder.QueuedRpc rpc)
+        {
+            if (_queuedRpcs.Count >= 32)
+            {
+                SetLastError("RPC queue is full.");
+                return false;
+            }
+
+            int capacity = NetworkFrameProtocol.MaximumPayloadBytes;
+            TSMPCodec codec = ResolveCodec();
+            if (output != null && codec != null)
+            {
+                int configuredCapacity = codec.GetPayloadCapacityBytes(output.width, output.height, blockSize);
+                if (configuredCapacity >= NetworkFrameProtocol.NetworkHeaderBytes)
+                    capacity = Mathf.Min(capacity, configuredCapacity);
+            }
+
+            if (!EncoderNativeFrameBuilder.ValidateRpc(rpc, ref _rpcValidationBuffer, capacity, out string error))
+            {
+                SetLastError("RPC rejected: networkId=" + rpc.NetworkId + ", hash=" + rpc.RpcHash + ". " + error);
+                return false;
+            }
+
+            _queuedRpcs.Add(rpc);
+            queuedRpcCount = _queuedRpcs.Count;
             return true;
         }
 
@@ -402,15 +444,24 @@ namespace K13A.TSMP
                 out error,
                 _sendState,
                 _sendTime,
-                transSyncRefreshInterval);
+                transSyncRefreshInterval,
+                SetLastError);
 
-            lastError = error;
+            queuedRpcCount = _queuedRpcs.Count;
+            if (!result)
+                lastError = error;
             return result;
         }
 
         private void EnsureResources()
         {
             SyncOutputDimensions();
+            if (_header == null || _header.Length != FrameHeader.Size)
+                _header = new byte[FrameHeader.Size];
+        }
+
+        private void EnsureStagingTexture()
+        {
             if (_stagingTexture == null || _stagingTexture.width != width || _stagingTexture.height != height)
             {
                 if (_stagingTexture != null)
@@ -418,9 +469,6 @@ namespace K13A.TSMP
 
                 _stagingTexture = Luma4Raster.CreateTexture(width, height);
             }
-
-            if (_header == null || _header.Length != FrameHeader.Size)
-                _header = new byte[FrameHeader.Size];
         }
 
         private void SyncOutputDimensions()
@@ -434,6 +482,8 @@ namespace K13A.TSMP
 
         private void ReleaseResources()
         {
+            ReleaseGpuResources();
+            _rasterPixels = null;
             if (_stagingTexture != null)
             {
                 DestroyResource(_stagingTexture);
@@ -544,6 +594,7 @@ namespace K13A.TSMP
         private int _codecQueryActiveHeightBlocksKey;
         private UdonBehaviour[] _cachedBindingUdonTargets;
         private UdonBehaviour[] _beforeEncodeTargets;
+        private int[] _beforeEncodeSendModes;
         private int _beforeEncodeTargetCount;
         private int _cachedBindingTargetCount = -1;
         private const int MaxPendingTransRpcs = 32;
@@ -574,6 +625,7 @@ namespace K13A.TSMP
         private int[] _sendPriorities;
         private bool[] _sendOnChange;
         private float[] _sendIntervals;
+        private string[] _sendEvents;
         private byte[][] _sendPrevious;
         private bool[] _sendCompleted;
         private double[] _sendLastTimes;
@@ -802,6 +854,15 @@ namespace K13A.TSMP
 
         public void EncodeNow()
         {
+            if (_isEncoding)
+                return;
+            _isEncoding = true;
+            EncodeFrame();
+            _isEncoding = false;
+        }
+
+        private void EncodeFrame()
+        {
             lastEncodeStage = 1;
             lastError = string.Empty;
             _sendTime = GetSendTime();
@@ -829,6 +890,7 @@ namespace K13A.TSMP
             if (!_frameOpen)
                 return;
 
+            bool wrotePendingRpc = _pendingRpcCount > 0;
             if (!WritePendingRpcCalls())
             {
                 AbortEncode(lastError);
@@ -885,7 +947,8 @@ namespace K13A.TSMP
 
             lastEncodeStage = 6;
             frameIndex++;
-            AdvancePendingRpcQueue();
+            if (wrotePendingRpc)
+                AdvancePendingRpcQueue();
 
             if (clearAfterEncode)
                 ClearFrame();
@@ -1020,13 +1083,13 @@ namespace K13A.TSMP
                     }
                     if (!TransSyncSendScheduler.IsDue(_sendCompleted[index], _sendLastTimes[index], _sendTime, _sendIntervals[index]))
                         continue;
-                    SendBeforeEncodeOnce(target);
+                    int sendMode = SendBeforeEncodeOnce(target);
                     object value = GetProgramVariable(target, bindingFieldNames[index]);
                     int length = NetworkValueEntryWriter.WriteVariableValue(_sendScratch, 0, bindingVariableHashes[index], _sendTypes[index], value);
                     if (length < 0)
                         return Fail("Failed to serialize TransSync field '" + bindingFieldNames[index] + "'.");
                     if (!TransSyncSendScheduler.ShouldSend(_sendCompleted[index], _sendLastTimes[index], _sendTime,
-                        _sendOnChange[index], transSyncRefreshInterval, _sendPrevious[index], _sendScratch, length))
+                        TransSyncSendScheduler.ResolveSendOnChange(sendMode, _sendOnChange[index]), transSyncRefreshInterval, _sendPrevious[index], _sendScratch, length))
                         continue;
                     int networkId = bindingNetworkIds[index];
                     bool newMessage = !_boundVariableMessageOpen || _boundVariableOpenNetworkId != networkId;
@@ -1066,6 +1129,7 @@ namespace K13A.TSMP
                         || _sendFieldNames[i] != bindingFieldNames[i]
                         || _sendPriorities[i] != TransSyncSendScheduler.GetPriority(bindingPriorities, i)
                         || _sendOnChange[i] != TransSyncSendScheduler.GetSendOnChange(bindingSendOnChange, i)
+                        || _sendEvents[i] != GetSentEvent(i)
                         || _sendIntervals[i] != TransSyncSendScheduler.GetInterval(bindingMinSendIntervals, i))
                     {
                         rebuild = true;
@@ -1085,6 +1149,7 @@ namespace K13A.TSMP
             _sendPriorities = new int[count];
             _sendOnChange = new bool[count];
             _sendIntervals = new float[count];
+            _sendEvents = new string[count];
             _sendPrevious = new byte[count][];
             _sendCompleted = new bool[count];
             _sendLastTimes = new double[count];
@@ -1103,8 +1168,14 @@ namespace K13A.TSMP
                 _sendPriorities[i] = TransSyncSendScheduler.GetPriority(bindingPriorities, i);
                 _sendOnChange[i] = TransSyncSendScheduler.GetSendOnChange(bindingSendOnChange, i);
                 _sendIntervals[i] = TransSyncSendScheduler.GetInterval(bindingMinSendIntervals, i);
+                _sendEvents[i] = GetSentEvent(i);
             }
             _sendOrder = TransSyncSendScheduler.BuildOrder(count, _sendPriorities);
+        }
+
+        private string GetSentEvent(int index)
+        {
+            return bindingSentEvents != null && index < bindingSentEvents.Length ? bindingSentEvents[index] : string.Empty;
         }
 
         private void CommitBoundVariables()
@@ -1121,6 +1192,8 @@ namespace K13A.TSMP
                 _sendCompleted[i] = true;
                 _sendLastTimes[i] = now;
                 _sendPendingLengths[i] = 0;
+                if (!string.IsNullOrEmpty(_sendEvents[i]))
+                    SendCustomEvent(_sendTargets[i], _sendEvents[i]);
             }
             _sendRotation = _sendRotation >= 2147483646 ? 0 : _sendRotation + 1;
         }
@@ -1166,11 +1239,15 @@ namespace K13A.TSMP
         private void EnsureBeforeEncodeTargetCache(int count)
         {
             _beforeEncodeTargets = EncoderUdonBindingRuntime.EnsureBeforeEncodeTargetCache(_beforeEncodeTargets, count);
+            if (_beforeEncodeSendModes == null || _beforeEncodeSendModes.Length < count)
+                _beforeEncodeSendModes = new int[count];
         }
 
-        private void SendBeforeEncodeOnce(UdonBehaviour target)
+        private int SendBeforeEncodeOnce(UdonBehaviour target)
         {
-            _beforeEncodeTargetCount = EncoderUdonBindingRuntime.SendBeforeEncodeOnce(target, _beforeEncodeTargets, _beforeEncodeTargetCount);
+            int sendMode;
+            _beforeEncodeTargetCount = EncoderUdonBindingRuntime.SendBeforeEncodeOnce(target, _beforeEncodeTargets, _beforeEncodeTargetCount, _beforeEncodeSendModes, out sendMode);
+            return sendMode;
         }
 
         private void EnsureBindingTargetCache(int count)
@@ -1228,7 +1305,13 @@ namespace K13A.TSMP
         private bool WriteFrameTexture()
         {
             int mode = GetPayloadSymbolMode();
+            lastFrameUsedGpuLuma4 = mode == (int)K13A.TSMP.SymbolMode.Luma4
+                && TryWriteGpuLuma4(_headerBytes, _payloadBytes, payloadBytes, GetPayloadStartRow(), 0f);
+            if (lastFrameUsedGpuLuma4)
+                return true;
 
+            _pixels = EncoderUdonTextureRuntime.EnsurePixelBuffer(_pixels, symbolTextureWidth, symbolTextureHeight);
+            outputTexture = EncoderUdonTextureRuntime.EnsureOutputTexture(outputTexture, symbolTextureWidth, symbolTextureHeight);
             EnsureBasePixels();
             EncoderUdonTextureRuntime.CopyPixelBuffer(_basePixels, _pixels);
             Luma4FrameTextureWriter.WriteHeader(_pixels, width, height, blockSize, _activeWidthBlocks, _activeHeightBlocks, _usingBlockTexture, _headerBytes, _luma4Colors);
@@ -1323,9 +1406,6 @@ namespace K13A.TSMP
             int textureHeight = EncoderUdonTextureRuntime.GetSymbolTextureSize(height, _activeHeightBlocks, _usingBlockTexture);
             symbolTextureWidth = textureWidth;
             symbolTextureHeight = textureHeight;
-
-            _pixels = EncoderUdonTextureRuntime.EnsurePixelBuffer(_pixels, textureWidth, textureHeight);
-            outputTexture = EncoderUdonTextureRuntime.EnsureOutputTexture(outputTexture, textureWidth, textureHeight);
         }
 
         private void SyncOutputDimensions()
@@ -1339,7 +1419,9 @@ namespace K13A.TSMP
 
         private void BlitEncodedTexture()
         {
-            EncoderUdonTextureRuntime.BlitEncodedTexture(outputTexture, output, _usingBlockTexture, blockExpandMaterial, _activeWidthBlocks, _activeHeightBlocks);
+            if (lastFrameUsedGpuLuma4)
+                return;
+            EncoderUdonTextureRuntime.BlitEncodedTexture(outputTexture, output, _usingBlockTexture, blockExpandMaterial, _activeWidthBlocks, _activeHeightBlocks, blockSize);
         }
 
         private int GetPayloadSymbolMode()
@@ -1495,6 +1577,40 @@ namespace K13A.TSMP
             ClearFrame();
         }
 
+#endif
+
+        private bool TryWriteGpuLuma4(byte[] header, byte[] payload, int count, int startRow, float background)
+        {
+            if (!useGpuLuma4 || !useBlockSymbolTexture)
+                return false;
+#if !COMPILER_UDONSHARP
+            if (luma4EncodeMaterial == null)
+                luma4EncodeMaterial = Resources.Load<Material>("TSMPEncodeLuma4");
+#endif
+            return GpuLuma4Writer.TryWrite(output, luma4EncodeMaterial, blockSize, startRow, header, payload, count, background,
+                ref _gpuUpload, ref _gpuUploadBytes, ref _gpuSymbols);
+        }
+
+        private void ReleaseGpuResources()
+        {
+            GpuLuma4Writer.ReleaseTexture(_gpuUpload);
+            DecoderSnapshotRuntime.Release(_gpuSymbols);
+            _gpuUpload = null;
+            _gpuUploadBytes = null;
+            _gpuSymbols = null;
+            lastFrameUsedGpuLuma4 = false;
+        }
+
+        private void OnDestroy()
+        {
+            ReleaseGpuResources();
+        }
+
+#if UDONSHARP || COMPILER_UDONSHARP
+        private void OnDisable()
+        {
+            ReleaseGpuResources();
+        }
 #endif
 
         [ContextMenu("Reset Frame Index")]

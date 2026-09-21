@@ -45,8 +45,10 @@ com.example.tsmp.codec.mycodec/
 The package should depend on:
 
 ```json
-"com.kibalab.tsmp.core": "0.0.3-beta.3"
+"com.kibalab.tsmp.core": "0.3.0-beta.2"
 ```
+
+This is the minimum Core version for the preparation API. See the [version and installation contract](./codec-implementation.md). Existing codecs not using the new API may keep their tested minimum version.
 
 Use VPM dependency metadata too if the package is intended for VRChat users.
 

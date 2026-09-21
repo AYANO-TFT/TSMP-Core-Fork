@@ -1,0 +1,7 @@
+PASS codec switches, growth/shrink, multi-row readback, source overwritten during prediction/fallback
+PASS header sample-size changes
+PASS corrupt current header discarded without applying speculative payload
+PASS disable/enable discards pending combined readback and recovers
+PASS 12 RPC events: two of four copies deliberately skipped; each executed once
+PASS two concurrent decoders with different codecs, image sizes and payload lengths
+Predicted=36; Fallback=35

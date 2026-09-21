@@ -224,13 +224,18 @@ namespace K13A.TSMP.Udon
                     float weight = Binary.ReadFloat32LE(animatorBytes, cursor);
                     cursor += 4;
 
-                    if (layer < 0 || layer >= animator.layerCount)
+                    if (layer < 0 || layer >= animator.layerCount || !IsSelectedLayer(layer))
                         continue;
 
                     animator.SetLayerWeight(layer, weight);
                     AnimatorStateInfo current = animator.GetCurrentAnimatorStateInfo(layer);
                     float currentTime = current.normalizedTime;
-                    float delta = Mathf.Abs((currentTime - Mathf.Floor(currentTime)) - (normalizedTime - Mathf.Floor(normalizedTime)));
+                    float delta = Mathf.Abs(currentTime - normalizedTime);
+                    if (current.loop)
+                    {
+                        delta = Mathf.Abs((currentTime - Mathf.Floor(currentTime)) - (normalizedTime - Mathf.Floor(normalizedTime)));
+                        delta = Mathf.Min(delta, 1f - delta);
+                    }
                     if (current.fullPathHash != stateHash || delta > normalizedTimeApplyThreshold)
                     {
                         if (layerFadeDuration > 0f)
@@ -240,6 +245,20 @@ namespace K13A.TSMP.Udon
                     }
                 }
             }
+        }
+
+        private bool IsSelectedLayer(int layer)
+        {
+            if (layerIndices == null)
+                return false;
+
+            for (int i = 0; i < layerIndices.Length; i++)
+            {
+                if (layerIndices[i] == layer)
+                    return true;
+            }
+
+            return false;
         }
 
         private void ResolveAnimator()

@@ -1,0 +1,42 @@
+[
+  {
+    "path": "Packages/com.kibalab.tsmp.core/Editor/Setup/SetupPreparation.cs",
+    "sha256": "30D4C0C6C8BB6B591755F28D3924BD8B8B931DC5F57E8D757B90E307B86E3807"
+  },
+  {
+    "path": "Packages/com.kibalab.tsmp.core/Editor/TSMPDecoderEditor.cs",
+    "sha256": "1E0C742F4B41F493B7B67DD8C6789357D18DA8E893DC5E5C66A9C80A1E47B233"
+  },
+  {
+    "path": "Packages/com.kibalab.tsmp.core/Runtime/Decoder/Helpers/ByteTextureReader.cs",
+    "sha256": "41432690D75E94211C435F8828311DAE214E3DB4DF718841392C3055059CC905"
+  },
+  {
+    "path": "Packages/com.kibalab.tsmp.core/Runtime/Decoder/Helpers/DecoderPredictionRuntime.cs",
+    "sha256": "38FA43414FAF42E5792C93922E06CC272E43A74C9EB081E5B8EE022B5FD7AC83"
+  },
+  {
+    "path": "Packages/com.kibalab.tsmp.core/Runtime/Decoder/Resources/TSMPReadbackPack.mat",
+    "sha256": "791494954F60D19690F04A3486AF558A9D67AA471B23A8F5A32D96B32719E103"
+  },
+  {
+    "path": "Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.cs",
+    "sha256": "C9DC857EC4D3C898FBD3D96817EA79D402EB6A258505A3BD43DE6D4ED4090776"
+  },
+  {
+    "path": "Packages/com.kibalab.tsmp.core/Shaders/TSMPReadbackPack.shader",
+    "sha256": "F924D3FF1C23D5CC883D55FB94C5722D52D69CE058E301FDF4E39AE612CEF51C"
+  },
+  {
+    "path": "Validation~/ContinuousFrames/ContinuousFrameProbe.cs",
+    "sha256": "9671A4DF567666A8E2F2EE96EF3A8693A209D47E12647340F00483EEDB0018D8"
+  },
+  {
+    "path": "Validation~/ContinuousFrames/ContinuousFrameValidation.cs",
+    "sha256": "F158275922CFA3E3D87CF351D4DD504CB737CB34CC13509515E3FDDC7B476FD0"
+  },
+  {
+    "path": "Validation~/ContinuousFrames/Editor/ContinuousFrameUdonValidation.cs",
+    "sha256": "300317B348315611233E00A3509969A3A73F9A506293B23C441528B7BB4194DB"
+  }
+]

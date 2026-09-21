@@ -113,19 +113,49 @@ CRC is calculated over header bytes `0..51`. The stored CRC is at bytes `52..55`
 
 ## Decode flow
 
+The following is the cold/fallback path. The default predicted path runs both byte passes before a single readback and validates the current header before accepting its payload. A metadata or exact payload-length mismatch reuses the frozen image for ordinary payload decoding; a CRC failure discards the frame. No custom codec change or wire-format change is required. See [predicted readback](../scripting-api/decoder.md#predicted-readback) for comparison fields, buffer layout and ownership.
+
 ```text
 Update / decode tick
-  -> read header area from texture
+  -> capture input into the decoder-owned snapshot
+  -> read header area from the snapshot
   -> validate header and CRC
   -> choose codec by codecId
-  -> request payload bytes according to PayloadSize
+  -> request payload bytes from the same snapshot according to PayloadSize
   -> decode network frame header
   -> iterate messages
   -> apply variable values or dispatch RPC calls
   -> update diagnostics
 ```
 
-The decoder should fail closed. Malformed payload data stops payload processing and records diagnostics instead of applying partial invalid state.
+Malformed payload data stops further processing and records diagnostics. This does not roll back variables or RPC effects already applied earlier in the payload; whole-frame transactional application is a separate issue.
+
+### GPU preparation within each byte pass
+
+Both the header pass (Luma4) and the selected payload codec use this sequence:
+
+```text
+ApplyDecodeOptions
+  -> configure byte material for this pass
+  -> PrepareDecode(source, byteMaterial)
+       -> disable the previous LUT keyword
+       -> optionally sample reference symbols into a float LUT
+       -> bind the LUT and enable its byte-shader variant
+  -> byte Blit from the same snapshot as preparation
+  -> read back separately, or pack header/payload for one predicted readback
+```
+
+Without a LUT, the byte shader repeatedly samples reference blocks while classifying payload symbols. With a LUT, those reference samples are calculated once per enabled pass; payload sampling and classification remain unchanged. The extra pass is useful only when its cost is lower than the repeated work it removes. Measure preparation plus decoding for both small and large payloads.
+
+Luma4 prepares 16 entries when the effective sample size exceeds one; single-sample decoding retains the original path. The generated texture is linear ARGBFloat (32-bit float per channel), point-filtered, with no mipmaps. Half/8-bit quantization can change classification at boundaries and is not part of this algorithm.
+
+The texture allocation is reused, not its values across frames: contents are redrawn for every enabled byte pass. Missing resources keep the original shader path. Each codec owns its generated LUT and releases it on disable/destruction; material ownership is handled separately.
+
+Before the header pass, `TSMPDecoder` captures the source into a reusable, same-size, format-preserving RenderTexture owned by its slot. Every header, calibration and payload pass reads this snapshot until the operation finishes. A producer may update or replace the original input during readback without mixing image generations. Each idle slot can resize its snapshot before capture. Disabling cancels occupied slots and releases idle resources; pending requests drain without application before their resources can be released or reused. Destruction releases owned textures. Capture failures reject the operation rather than falling back to a changing source.
+
+The copy adds one full-image GPU Blit per accepted decode attempt and 4, 8 or 16 bytes per pixel of snapshot storage **per allocated slot**; no extra CPU readback or wire-format field is added. Default-enabled [bounded overlap](../scripting-api/decoder.md#bounded-readback-overlap) admits up to two captured frames with independent request state and applies them in capture order. A ready successor waits for any preceding fallback. Full capacity skips new captures, so no unbounded backlog accumulates. Recognized 8-bit and half-float inputs retain their storage precision and color interpretation; Float32 and unrecognized inputs retain Float32. Udon conservatively uses Float32 for inputs other than RenderTexture. See the [decoder API](../scripting-api/decoder.md#input-snapshot) for ownership and resource requirements. This does not make a producer's already-corrupted image valid or make variable/RPC application transactional.
+
+See the [implementation guide](./codec-implementation.md), [shader guide](./codec-shaders.md), and [preparation API](../scripting-api/codec.md#runtime-decode-preparation) for the hook, material setup, lifecycle and fallback contract.
 
 ## Where to add tests
 

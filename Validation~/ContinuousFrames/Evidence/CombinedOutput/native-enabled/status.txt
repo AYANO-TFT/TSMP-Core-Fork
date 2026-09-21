@@ -1,0 +1,6 @@
+FAIL
+System.InvalidOperationException: Regression readback timeout
+  at ContinuousFrameValidation+<Drain>d__24.MoveNext () [0x00089] in F:\Unity\TSMP\Validation-Codecs-NoSDK\Assets\ContinuousFrames\ContinuousFrameValidation.cs:399 
+  at ContinuousFrameValidation+<Regression>d__25.MoveNext () [0x001d2] in F:\Unity\TSMP\Validation-Codecs-NoSDK\Assets\ContinuousFrames\ContinuousFrameValidation.cs:422 
+  at ContinuousFrameValidation+<Run>d__21.MoveNext () [0x0018d] in F:\Unity\TSMP\Validation-Codecs-NoSDK\Assets\ContinuousFrames\ContinuousFrameValidation.cs:207 
+  at ContinuousFrameValidation+<Start>d__17.MoveNext () [0x001c3] in F:\Unity\TSMP\Validation-Codecs-NoSDK\Assets\ContinuousFrames\ContinuousFrameValidation.cs:147 

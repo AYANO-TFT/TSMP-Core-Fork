@@ -29,7 +29,12 @@ public static class RpcDeliveryValidation
         Test("Native codec failure preserves single-send RPC", () => CodecFailure(false));
         Test("Native codec exception preserves single-send RPC", () => CodecFailure(true));
         Test("Native repeats and FIFO survive intermittent codec failure", RepeatsAndOrder);
-        Test("Native capacity and argument failures preserve queue", BuildFailure);
+        Test("Native unavailable frame capacity preserves queue", BuildFailure);
+        Test("Native invalid RPC arguments are rejected before enqueue", InvalidArguments);
+        Test("Native supported RPC arguments and wire-size boundaries", ArgumentBoundaries);
+        Test("Native capacity reduction drops only the unsendable head", CapacityReduction);
+        Test("Native arguments mutated after enqueue cannot block the queue", MutatedArguments);
+        Test("Native capture-time RPC enqueue preserves its full repeat budget", CaptureEnqueue);
         Test("RPC appended by codec is not consumed by variable-only frame", LateEnqueue);
 #else
         Results.Add("Native Encoder tests excluded: this project uses the Udon Encoder path");
@@ -76,6 +81,7 @@ public static class RpcDeliveryValidation
             bool wasActive = Target.activeSelf;
             Decoder.lastStreamId = stream;
             typeof(TSMPDecoder).GetField("_payloadBytes", Private).SetValue(Decoder, payload);
+            typeof(TSMPDecoder).GetField("_payloadDataBytes", Private).SetValue(Decoder, payload.Length);
             Check((bool)typeof(TSMPDecoder).GetMethod("ApplyNetworkFrame", Private).Invoke(Decoder, null), Decoder.lastError);
             Check(Decoder.lastRpcCallCount == (duplicate ? 0 : 1), "Unexpected dispatched RPC count for stream " + stream);
             Check(Decoder.skippedDuplicateRpcCount == (duplicate ? 1 : 0), "Unexpected duplicate count");
@@ -256,14 +262,138 @@ public static class RpcDeliveryValidation
             Check(sender.Queue.Count == 1 && sender.Queue[0].RepeatsRemaining == 1, "Capacity failure consumed RPC");
             sender.Codec.capacity = -1;
             sender.Encode();
-            object[] arguments = { new object() };
-            Check(sender.Encoder.QueueRpcHash(1, RpcHash, arguments), "Legacy RPC queue failed");
-            sender.Encoder.EncodeNow();
-            Check(sender.Encoder.frameIndex == 1 && !string.IsNullOrEmpty(sender.Encoder.lastError), "Invalid argument did not fail serialization");
-            Check(sender.Queue.Count == 1 && sender.Queue[0].RepeatsRemaining == 1, "Serialization failure consumed RPC");
-            arguments[0] = MethodName;
+        }
+    }
+
+    private static void InvalidArguments()
+    {
+        using (var sender = new Sender())
+        {
+            foreach (object[] arguments in new[]
+            {
+                new object[] { new object() }, new object[] { null }, new object[256],
+                new object[] { new byte[65536] }, new object[] { new string('a', 65536) },
+                new object[] { new string[65536] }
+            })
+            {
+                Check(!sender.Encoder.QueueRpcHash(1, RpcHash, arguments), "Invalid RPC was accepted");
+                Check(sender.Queue.Count == 0 && sender.Encoder.queuedRpcCount == 0, "Rejected RPC entered queue");
+                Check(sender.Encoder.lastError.StartsWith("RPC rejected: networkId=1, hash="), "Rejection identity missing");
+            }
+            Check(sender.Encoder.lastError.Contains("index 0"), "Argument index missing");
+            sender.Codec.capacity = 64;
+            Check(!sender.Encoder.QueueRpc(1, MethodName, new byte[64]), "Oversized RPC accepted");
+            Check(sender.Encoder.lastError.Contains("capacity=64"), "Capacity diagnosis missing");
+            Check(!sender.Encoder.QueueTransRpc(1, RpcHash, new string('x', 80)), "Oversized TransRPC accepted");
+            sender.Enqueue(77);
             sender.Encode();
-            Check(sender.Queue.Count == 0, "Corrected RPC did not commit");
+            Check(sender.Queue.Count == 0, "Rejected RPC stopped next valid RPC");
+        }
+    }
+
+    private static void ArgumentBoundaries()
+    {
+        using (var sender = new Sender())
+        {
+            object[] values = { true, 42, 1.5f, Vector2.one, Vector3.one, Quaternion.identity, "\U0001F441\uFE0F",
+                new byte[] { 1 }, new bool[] { true }, new int[] { 1 }, new float[] { 1 },
+                new[] { Vector2.one }, new[] { Vector3.one }, new[] { Quaternion.identity }, new[] { "hello", null } };
+            Check(sender.Encoder.QueueRpcHash(1, RpcHash, values), "Supported argument rejected");
+            sender.Encode();
+            Check(sender.Payload[20] == values.Length, "Argument count changed");
+            sender.Codec.capacity = 64;
+            Check(sender.Encoder.QueueRpcHash(1, RpcHash, new byte[40]), "Exact-capacity RPC rejected");
+            sender.Encode();
+            Check(sender.Payload.Length == 64, "Exact-capacity RPC length changed");
+            Check(!sender.Encoder.QueueRpcHash(1, RpcHash, new byte[41]), "One-byte overflow accepted");
+            Check(sender.Encoder.QueueRpcHash(1, RpcHash), "No-argument RPC rejected");
+            sender.Encode();
+        }
+    }
+
+    private static void CapacityReduction()
+    {
+        using (var sender = new Sender())
+        using (var receiver = new Receiver())
+        {
+            var source = new GameObject("Capacity source");
+            try
+            {
+                var probe = source.AddComponent<RpcQueueProbe>();
+                probe.networkId = 2;
+                sender.Encoder.networkBehaviours = new TSMPNetworkBehaviour[] { probe };
+                sender.Encoder.transRpcRepeatFrames = 4;
+                Check(sender.Encoder.QueueRpcHash(1, RpcHash, new byte[256]), "Large RPC registration failed");
+                sender.Enqueue(77);
+                sender.Codec.capacity = 96;
+                sender.Codec.fail = true;
+                sender.Encoder.EncodeNow();
+                Check(sender.Queue.Count == 1 && sender.Queue[0].RepeatsRemaining == 4, "Unsendable head retained or output failure consumed surviving RPC");
+                Check(sender.Encoder.frameIndex == 0, "Failed output advanced frame");
+                sender.Codec.fail = false;
+                for (int i = 0; i < 4; i++)
+                {
+                    sender.Encode();
+                    Check(sender.Encoder.variableMessageCount == 1 && sender.Encoder.rpcMessageCount == 1, "Valid RPC or variables blocked");
+                    receiver.Apply(sender.Payload, 1, i != 0);
+                }
+                Check(sender.Queue.Count == 0, "Repeat budget changed");
+                Check(sender.Encoder.QueueRpcHash(1, RpcHash, new byte[40]), "Final head enqueue failed");
+                sender.Codec.capacity = 40;
+                sender.Encoder.EncodeNow();
+                Check(sender.Queue.Count == 0 && sender.Encoder.rpcMessageCount == 0 && sender.Encoder.variableMessageCount == 1,
+                    "Discarded head still blocks variable-only frames");
+                Check(sender.Encoder.lastError.Contains("RPC discarded:") && sender.Encoder.lastError.Contains("capacity=40"), "Discard diagnosis missing");
+            }
+            finally { Object.DestroyImmediate(source); }
+        }
+    }
+
+    private static void MutatedArguments()
+    {
+        using (var sender = new Sender())
+        {
+            object[] arguments = { 7 };
+            Check(sender.Encoder.QueueRpcHash(1, RpcHash, arguments), "Valid argument rejected");
+            sender.Enqueue(77);
+            arguments[0] = new object();
+            sender.Encoder.debugLog = true;
+            bool warned = false;
+            Application.LogCallback callback = (message, stack, type) =>
+            {
+                if (type == LogType.Warning && message.Contains("RPC discarded: networkId=1") && message.Contains("index 0")) warned = true;
+            };
+            Application.logMessageReceived += callback;
+            try { sender.Encoder.EncodeNow(); }
+            finally { Application.logMessageReceived -= callback; }
+            Check(sender.Encoder.frameIndex == 1 && sender.Queue.Count == 0 && sender.Encoder.rpcMessageCount == 1,
+                "Mutated invalid head stopped next RPC");
+            Check(sender.Encoder.lastError.Contains("Unsupported RPC argument at index 0"), "Mutation diagnosis missing");
+            Check(warned, "Discarded RPC was not logged with its identity and reason");
+        }
+    }
+
+    private static void CaptureEnqueue()
+    {
+        foreach (int repeats in new[] { 1, 4 })
+        using (var sender = new Sender())
+        {
+            var source = new GameObject("Capture source");
+            try
+            {
+                var probe = source.AddComponent<RpcQueueProbe>();
+                probe.networkId = 1;
+                probe.transRpcEncoder = sender.Encoder;
+                probe.enqueueOnCapture = true;
+                sender.Encoder.networkBehaviours = new TSMPNetworkBehaviour[] { probe };
+                sender.Encoder.transRpcRepeatFrames = repeats;
+                sender.Encode();
+                Check(probe.accepted && sender.Encoder.rpcMessageCount == 0 && sender.Queue[0].RepeatsRemaining == repeats,
+                    "Capture-time enqueue consumed before transmission");
+                for (int i = 0; i < repeats; i++) sender.Encode();
+                Check(sender.Queue.Count == 0, "Capture-time repeat budget changed");
+            }
+            finally { Object.DestroyImmediate(source); }
         }
     }
 

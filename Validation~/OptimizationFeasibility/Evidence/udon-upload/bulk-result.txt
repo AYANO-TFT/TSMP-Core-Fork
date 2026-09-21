@@ -1,0 +1,7 @@
+PASS
+Unity=2022.3.22f1; GPU=NVIDIA GeForce RTX 4090; API=Direct3D11
+Mode=Client-target Udon bytecode in SDK Editor VM, not VRChat client
+PASS byte/Color32 bulk copy, destination isolation, offset sentinels, zero count and both overlap directions
+PASS Udon LoadRawTextureData + byte[] GPU readback: payload=32; textureBytes=1024; header=56; exact channels and payload
+PASS Udon LoadRawTextureData + byte[] GPU readback: payload=4096; textureBytes=5120; header=56; exact channels and payload
+PASS Udon LoadRawTextureData + byte[] GPU readback: payload=65535; textureBytes=66560; header=56; exact channels and payload

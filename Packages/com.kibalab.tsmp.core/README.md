@@ -22,4 +22,4 @@ https://kibalab.github.io/TSMP-Core/
 
 ## Release Status
 
-This package uses `v0.x` release tags while the public API continues to settle.
+TSMP Core 1.0.0 is a stable release incorporating all changes from the 0.3.0 betas since 0.2.0. Install Luma4 1.0.0 alongside Core. See CHANGELOG.md for the cumulative changes and compatibility notes.

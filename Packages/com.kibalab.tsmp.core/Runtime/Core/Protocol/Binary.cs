@@ -221,7 +221,10 @@ namespace K13A.TSMP
 
         public static int ReadInt32LE(byte[] buffer, int offset)
         {
-            return (int)ReadUInt32LE(buffer, offset);
+            return (int)buffer[offset]
+                | ((int)buffer[offset + 1] << 8)
+                | ((int)buffer[offset + 2] << 16)
+                | ((int)buffer[offset + 3] << 24);
         }
 
         public static float ReadFloat32LE(byte[] buffer, int offset)

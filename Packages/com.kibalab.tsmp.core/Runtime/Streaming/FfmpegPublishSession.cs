@@ -122,12 +122,14 @@ namespace K13A.TSMP
 
         private void WriterLoop()
         {
-            int waitMs = Math.Max(1, (int)Math.Round(1000.0 / FrameRate));
+            double interval = 1.0 / Math.Max(1, FrameRate);
+            int idleWaitMs = Math.Max(1, (int)Math.Ceiling(interval * 1000.0));
+            Stopwatch clock = Stopwatch.StartNew();
+            double nextFrameTime = 0;
             try
             {
                 while (true)
                 {
-                    _frameEvent.WaitOne(waitMs);
                     lock (_frameLock)
                     {
                         if (_stopRequested)
@@ -137,23 +139,43 @@ namespace K13A.TSMP
                     if (_process.HasExited)
                         throw new IOException("FFmpeg exited with code " + _process.ExitCode + ".");
 
+                    double remaining = nextFrameTime - clock.Elapsed.TotalSeconds;
+                    if (remaining > 0)
+                    {
+                        _frameEvent.WaitOne(Math.Max(1, (int)Math.Ceiling(remaining * 1000.0)));
+                        continue;
+                    }
+
+                    bool hasFrame;
                     lock (_frameLock)
                     {
                         if (_stopRequested)
                             break;
+                        hasFrame = _hasPendingFrame || (RepeatLastFrame && _hasLastFrame);
                         if (_hasPendingFrame)
                         {
                             Buffer.BlockCopy(_pendingFrame, 0, _writerFrame, 0, _writerFrame.Length);
                             _hasPendingFrame = false;
                             _hasLastFrame = true;
                         }
-                        else if (!RepeatLastFrame || !_hasLastFrame)
-                            continue;
                     }
 
+                    if (!hasFrame)
+                    {
+                        nextFrameTime = 0;
+                        _frameEvent.WaitOne(idleWaitMs);
+                        continue;
+                    }
+
+                    if (nextFrameTime == 0)
+                        nextFrameTime = clock.Elapsed.TotalSeconds;
                     _stream.Write(_writerFrame, 0, _writerFrame.Length);
                     lock (_frameLock)
                         _status.Written++;
+                    nextFrameTime += interval;
+                    double now = clock.Elapsed.TotalSeconds;
+                    if (nextFrameTime <= now)
+                        nextFrameTime = now + interval;
                 }
             }
             catch (Exception exception)

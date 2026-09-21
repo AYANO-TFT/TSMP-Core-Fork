@@ -21,7 +21,26 @@ namespace K13A.TSMP
             if (target == null)
                 return false;
 
-            return BindingTable.IsUdonTargetActive(target);
+            if (!BindingTable.IsUdonTargetActive(target))
+                return false;
+
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+            if (!Application.isPlaying)
+            {
+                TSMPNetworkBehaviour proxy = UdonProxySyncBridge.ResolveProxy(target) as TSMPNetworkBehaviour;
+                return proxy == null || proxy.receiveInterpolation != ReceiveInterpolationMode.None;
+            }
+#endif
+#if COMPILER_UDONSHARP
+            if (target.GetProgramVariableType(nameof(TSMPNetworkBehaviour.receiveInterpolation)) == null)
+                return true;
+            object receiveMode = target.GetProgramVariable(nameof(TSMPNetworkBehaviour.receiveInterpolation));
+#else
+            object receiveMode;
+            if (!target.TryGetProgramVariable(nameof(TSMPNetworkBehaviour.receiveInterpolation), out receiveMode))
+                return true;
+#endif
+            return receiveMode == null || (int)receiveMode != (int)ReceiveInterpolationMode.None;
         }
 
         public static bool Apply(UdonBehaviour[] targets, int index, string fieldName, uint variableHash, object decodedValue)
@@ -49,7 +68,11 @@ namespace K13A.TSMP
             if (target == null)
                 return false;
 
-            return BindingTable.IsComponentTargetActive(target);
+            if (!BindingTable.IsComponentTargetActive(target))
+                return false;
+
+            TSMPNetworkBehaviour behaviour = target as TSMPNetworkBehaviour;
+            return behaviour == null || behaviour.receiveInterpolation != ReceiveInterpolationMode.None;
         }
 
         public static bool Apply(Component[] targets, int index, string fieldName, uint variableHash, object decodedValue)

@@ -4,6 +4,19 @@ title: TSMPDecodeByteOutput.cginc
 
 # `TSMPDecodeByteOutput.cginc`
 
+## 任意のヘッダー直接出力
+
+別の結合パスを省くには `TSMPDecodeCommon.cginc` をインクルードし、以下の非表示プロパティを両方宣言します。既定値は従来の本文出力を維持します。フラグメントでプレフィックス処理を実装した場合のみ宣言してください。
+
+`TSMPReadOutputPrefix(float2 uv, out int baseByte, out float4 prefix)` が `true` ならヘッダー領域なので本文を復元せず `prefix` を返します。それ以外では `baseByte` が本文相対のバイト位置です。14ピクセルのプレフィックスの場合、出力ピクセル 0..13 が56バイトのヘッダー、ピクセル14が本文の 0..3 バイトとなり、以降は行をまたいで続きます。`_ByteCount` はプレフィックスを含まない本文長、パディングは0です。ヘッダーは正確なテクセルを読むため、元画像の `flipY` を再適用しません。
+
+共通 include が `TSMP_COMBINED_BYTE_OUTPUT` を定義すると標準の `TSMPDecodeByteOutputFragment` が自動処理します。独自フラグメントはバイト・シンボル計算の前にこの関数を呼びます。旧 Core もサポートする場合は `#if defined(TSMP_COMBINED_BYTE_OUTPUT)` で分岐し、`#else` では従来のピクセル計算を維持します。共通 include を使わない独立した byte-output シェーダーの動作は変わりません.
+
+```hlsl
+[HideInInspector] _TSMPHeaderTex ("Decoded Header", 2D) = "black" {}
+[HideInInspector] _TSMPHeaderPixels ("Header Pixels", Float) = 0
+```
+
 `TSMPDecodeByteOutput.cginc` は、コーデック デコード パス用のシェーダー インクルードです。これは、バイトアドレス指定された `DecodeByte(index)` 関数を、デコードされたバイトを RGBA 出力テクスチャに書き込むフラグメント シェーダーに変換します。
 
 カスタム コーデックがインデックスによって 1 バイトを回復でき、Core のデコーダ リードバック パスが標準のテクスチャ レイアウトでそれらのバイトを受信できるようにする場合に使用します。

@@ -11,6 +11,7 @@ namespace K13A.TSMP
         public bool SendOnChange { get; set; }
         public float MinSendInterval { get; set; }
         public string EnabledBy { get; set; }
+        public string SentEvent { get; set; }
 
         public TransSyncAttribute()
         {

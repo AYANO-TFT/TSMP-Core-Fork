@@ -1,0 +1,70 @@
+{
+  "dependencies": {
+    "com.vrchat.base": {
+      "version": "3.10.4-beta.2"
+    },
+    "com.vrchat.worlds": {
+      "version": "3.10.4-beta.2"
+    },
+    "com.kibalab.tsmp.core": {
+      "version": "0.3.0-beta.2"
+    },
+    "com.kibalab.tsmp.codec.luma4": {
+      "version": "0.0.4-beta.1"
+    },
+    "com.kibalab.tsmp.codec.rgb16": {
+      "version": "0.0.3-beta.3"
+    },
+    "com.kibalab.tsmp.codec.rgb20": {
+      "version": "0.0.3-beta.4"
+    },
+    "com.kibalab.tsmp.codec.color256": {
+      "version": "0.0.3-beta.3"
+    }
+  },
+  "locked": {
+    "com.vrchat.base": {
+      "version": "3.10.4-beta.2"
+    },
+    "com.vrchat.worlds": {
+      "version": "3.10.4-beta.2",
+      "dependencies": {
+        "com.vrchat.base": "3.10.4-beta.2"
+      }
+    },
+    "com.kibalab.tsmp.core": {
+      "version": "0.3.0-beta.2",
+      "dependencies": {
+        "com.vrchat.worlds": ">=3.9.0"
+      }
+    },
+    "com.kibalab.tsmp.codec.luma4": {
+      "version": "0.0.4-beta.1",
+      "dependencies": {
+        "com.kibalab.tsmp.core": ">=0.3.0-beta.2",
+        "com.vrchat.worlds": ">=3.9.0"
+      }
+    },
+    "com.kibalab.tsmp.codec.rgb16": {
+      "version": "0.0.3-beta.3",
+      "dependencies": {
+        "com.kibalab.tsmp.core": ">=0.3.0-beta.2",
+        "com.vrchat.worlds": ">=3.9.0"
+      }
+    },
+    "com.kibalab.tsmp.codec.rgb20": {
+      "version": "0.0.3-beta.4",
+      "dependencies": {
+        "com.kibalab.tsmp.core": ">=0.3.0-beta.2",
+        "com.vrchat.worlds": ">=3.9.0"
+      }
+    },
+    "com.kibalab.tsmp.codec.color256": {
+      "version": "0.0.3-beta.3",
+      "dependencies": {
+        "com.kibalab.tsmp.core": ">=0.3.0-beta.2",
+        "com.vrchat.worlds": ">=3.9.0"
+      }
+    }
+  }
+}

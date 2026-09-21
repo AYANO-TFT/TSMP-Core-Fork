@@ -529,6 +529,7 @@ namespace K13A.TSMP.Editor
             var priorities = new List<int>();
             var sendOnChange = new List<bool>();
             var minSendIntervals = new List<float>();
+            var sentEvents = new List<string>();
             var collisions = new Dictionary<BindingKey, BindingOwner>();
             TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
 
@@ -581,6 +582,7 @@ namespace K13A.TSMP.Editor
                     priorities.Add(sync.Priority);
                     sendOnChange.Add(sync.SendOnChange);
                     minSendIntervals.Add(TransSyncSendScheduler.NormalizeInterval(sync.MinSendInterval));
+                    sentEvents.Add(sync.SentEvent ?? string.Empty);
                 }
             }
 
@@ -597,6 +599,7 @@ namespace K13A.TSMP.Editor
             SetFieldValue(encoder, FieldBindingPriorities, priorities.ToArray());
             SetFieldValue(encoder, nameof(TSMPEncoder.bindingSendOnChange), sendOnChange.ToArray());
             SetFieldValue(encoder, nameof(TSMPEncoder.bindingMinSendIntervals), minSendIntervals.ToArray());
+            SetFieldValue(encoder, nameof(TSMPEncoder.bindingSentEvents), sentEvents.ToArray());
             EditorUtility.SetDirty(encoder);
             bindingCount = targets.Count;
             return true;

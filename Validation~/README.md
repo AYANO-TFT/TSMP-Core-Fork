@@ -29,6 +29,7 @@ $runner = '.\Validation~\Run-Validation.ps1'
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step EditorEncoding
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step NetworkEdges
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step RpcDelivery
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step RpcQueueVm
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step Workflow
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step World
 ```
@@ -45,7 +46,9 @@ Both array steps cover byte, bool, int, float, Vector2, Vector3, Quaternion and 
 
 `NetworkEdges` runs component-level regression tests in either project: repeated blendshape packets after an external weight change, Renderer replacement, None/disabled/Continuous transitions, and malformed packets; Animator parameter/layer packing at and above the 255-entry limit, invalid selections, exact packet sizing, value round-trips, buffer reuse and Inspector selection limits. The SDK project executes the C# proxy path here, not the Udon VM. Run `Udon` separately for client compilation. See `NetworkEdges/RESULTS.md` for results and limitations.
 
-`RpcDelivery` checks native RPC queue retention across codec failures, exceptions, capacity and serialization failures, then retries through the real Luma4 writer. It checks FIFO/repeat counts and an RPC queued during a variable-only codec write. Both projects test Decoder payload parsing and real GameObject Toggle dispatch across streams, repeated events, distinct key fields and legacy event IDs. The SDK test executes C# proxies, not Udon bytecode. Run `Udon` for client compilation and `Play` for real texture encoding, header decoding, GPU readback and cross-stream RPC delivery. See `RpcDelivery/RESULTS.md` for results and delivery limits.
+`RpcDelivery` checks native RPC retention across retryable codec failures, exceptions and unusable frame capacity, then retries through the real Luma4 writer. Invalid arguments and oversized events are rejected at enqueue; events made unsendable by later argument/capacity changes are discarded without blocking later RPCs or variables. It checks diagnostics, supported types, exact-capacity boundaries, FIFO/repeat counts and capture-time/codec-write-time enqueue. Both projects test Decoder payload parsing and real GameObject Toggle dispatch across streams, repeated events, distinct key fields and legacy event IDs. The SDK variant of this step executes C# proxies, not Udon bytecode.
+
+`RpcQueueVm` compiles all installed UdonSharp programs for the client, then executes the actual Encoder and a capture callback as separate Udon VMs in Play Mode. It verifies full 1/4-send budgets for capture-time RPCs, existing and newly queued events, failed frame output, FIFO order and manually written RPCs. Each test retrieves a fresh program heap. Client compilation is repeated after entering Play Mode because the SDK can automatically switch to editor bytecode on entry. Run `Play` separately for GPU readback and end-to-end RPC delivery. See `RpcDelivery/QUEUE-RESULTS.md` for issues #2/#4 and `RpcDelivery/RESULTS.md` for the earlier delivery run and finite-delivery limits.
 
 ## Assertions
 
