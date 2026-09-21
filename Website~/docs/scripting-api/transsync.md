@@ -19,6 +19,7 @@ The field must be discoverable by `TSMPSetup`. After adding or removing a `[Tran
 
 | Property | Type | Default | What it does |
 | --- | --- | --- | --- |
+| `SentEvent` | `string` | `null` | Public parameterless method called after successful local output of this field. Not a receiver acknowledgement. |
 | `Key` | `string` | `null` | Stable identifier used to calculate the variable hash. If omitted, TSMP uses the field name. Sender and receiver fields must use the same key, network ID, and value type to match. |
 | `Direction` | `NetworkSyncDirection` | `SendReceive` | Controls whether the setup process puts this field in the encoder binding table, the decoder binding table, or both. Use this to separate source fields from receive/display fields. |
 | `Priority` | `int` | `0` | Higher numbers are considered first across all automatic TransSync fields in this encoder. Fields that do not fit are deferred, not truncated. |
@@ -27,6 +28,8 @@ The field must be discoverable by `TSMPSetup`. After adding or removing a `[Tran
 | `EnabledBy` | `string` | `null` | Name of a `bool` field or property on the same component. When `Apply Setup` builds bindings and the member is false, this field is omitted from the generated binding table. |
 
 Use a clear, stable key such as `transform.packed`, `animator.bytes`, or `counter.value`. Do not use a key that changes at runtime.
+
+`SendOnChange` is the field author's default. A user can override it for this component in the Inspector with [Send Mode](../components/network-behaviour.md#send-mode): `Default` uses the attribute, `On Change` treats it as `true`, and `Always` treats it as `false`. This does not override `MinSendInterval` or the other properties.
 
 ### `Key`
 
@@ -59,7 +62,7 @@ For a loopback test such as `instance A encoder -> stream -> instance A decoder`
 
 ### `Priority`, `SendOnChange`, and `MinSendInterval`
 
-These options schedule automatic variable writes in both ordinary Unity and Udon. They do not change the receiver's interpolation or apply to manual Writer calls and RPCs.
+These options schedule automatic variable writes in both ordinary Unity and Udon. They do not change the receiver's interpolation or apply to manual Writer calls and RPCs. The following examples assume the component's Send Mode is `Default`.
 
 ```csharp
 [TransSync("status", Priority = 10, SendOnChange = true, MinSendInterval = 0.1f)]
@@ -81,9 +84,23 @@ public float meter;
 
 The encoder's **Trans Sync Refresh Interval** (`transSyncRefreshInterval`) defaults to **1 second**. It resends unchanged values so a lost final update or a newly connected receiver can recover. A field's `MinSendInterval` still applies; a 2-second minimum is never bypassed by a 1-second refresh.
 
-Set refresh to `0` for strict change-only sending. In that mode, a lost update or late join can leave a value unavailable until it changes again. Refresh is best-effort retransmission, not an acknowledgement or delivery guarantee.
+Set refresh to `0` for strict change-only sending on fields whose effective `SendOnChange` is `true`. In that mode, a lost update or late join can leave a value unavailable until it changes again. Refresh is best-effort retransmission, not an acknowledgement or delivery guarantee. It does not limit `Always` or `SendOnChange = false` fields.
 
-To retain the previous every-encode sending behavior for a field, use `SendOnChange = false, MinSendInterval = 0`. Use an RPC for events that must not be coalesced as state.
+To request every-encode sending for a whole component without editing its script, select **Send Mode: Always**. For a single field with Send Mode `Default`, use `SendOnChange = false, MinSendInterval = 0`. In both cases, encoder frequency, minimum intervals, priority and capacity still limit actual sending. Use an RPC for events that must not be coalesced as state.
+
+### `SentEvent`
+
+`SentEvent` is an optional `string` property (default `null`). Set it to the name of a public, parameterless `void` method on the same component. The encoder calls it only after a frame containing this automatic TransSync field has been written successfully. Deferred fields, unchanged fields and failed outputs do not trigger it. The default adds no event calls.
+
+Use it to commit a captured delta baseline, not to capture the next sample. Keep the callback short; do not call `EncodeNow` or rebuild bindings inside it. It confirms local texture output, **not delivery to a receiver**. Manual Writer calls do not trigger this event. Changes to `SentEvent` require regenerated encoder bindings, just like the scheduling options.
+
+```csharp
+[TransSync("delta.packed", SentEvent = nameof(CommitDelta))]
+public byte[] packedBytes;
+
+```
+
+The built-in VRChat avatar synchronizer uses this event to commit root-pose and player keepalive records. Capturing a pose or failing to fit it into a frame no longer consumes that state.
 
 ### `EnabledBy`
 
@@ -131,6 +148,8 @@ For high-frequency data, prefer packed `byte[]` fields.
 ## Binding rebuilds
 
 `Key`, `Direction`, value type, `EnabledBy`, `Priority`, `SendOnChange`, and `MinSendInterval` affect generated bindings. After changing any of them, run `Apply Setup` on `TSMPSetup`. In uploaded VRChat worlds, TSMP uses those generated tables instead of runtime reflection.
+
+Changing only the component's `sendMode` does not require a binding rebuild. It is read at runtime without changing the generated attribute settings.
 
 ## Payload advice
 

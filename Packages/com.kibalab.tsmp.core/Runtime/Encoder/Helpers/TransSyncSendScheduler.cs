@@ -1,3 +1,5 @@
+using K13A.TSMP.Udon;
+
 namespace K13A.TSMP
 {
     public static class TransSyncSendScheduler
@@ -17,6 +19,15 @@ namespace K13A.TSMP
         public static bool GetSendOnChange(bool[] options, int index)
         {
             return options == null || index >= options.Length || options[index];
+        }
+
+        public static bool ResolveSendOnChange(int mode, bool fieldSendOnChange)
+        {
+            if (mode == (int)SendMode.OnChange)
+                return true;
+            if (mode == (int)SendMode.Always)
+                return false;
+            return fieldSendOnChange;
         }
 
         public static float GetInterval(float[] intervals, int index)

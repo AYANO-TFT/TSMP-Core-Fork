@@ -1,0 +1,9 @@
+PASS
+Unity=2022.3.22f1, GPU=NVIDIA GeForce RTX 4090, API=Direct3D11
+PASS TSMPDecodeLuma4Bytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+PASS TSMPDecodeRgb16Bytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+PASS TSMPDecodeRgb16RefineBytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+PASS TSMPDecodeRgb16VariableBytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+PASS TSMPDecodeRgb16VariableRefineBytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+PASS TSMPDecodeRgb20Bytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+PASS TSMPDecodeColor256RobustRefineBytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions

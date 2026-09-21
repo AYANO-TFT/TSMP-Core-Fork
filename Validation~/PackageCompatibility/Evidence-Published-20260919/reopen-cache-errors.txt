@@ -1,0 +1,2 @@
+Unable to import newly created asset : Assets/SerializedUdonPrograms/e86615beb52710c49858c09c5ca7c183.asset
+UnityException: Creating asset at path Assets\SerializedUdonPrograms\e86615beb52710c49858c09c5ca7c183.asset failed.

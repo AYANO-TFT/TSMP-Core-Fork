@@ -1,0 +1,11 @@
+Unity=2022.3.22f1
+GPU=NVIDIA GeForce RTX 4090
+API=Direct3D11
+ColorSpace=Gamma
+Editor=False
+Path=Native
+Managed source=8a2417e9efb1d5b577b1d30022d53c792da94c33
+Automatic scheduling=
+Combined output disabled=
+Single slot=
+Retry disabled=

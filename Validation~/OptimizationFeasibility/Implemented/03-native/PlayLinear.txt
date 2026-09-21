@@ -1,0 +1,10 @@
+PASS
+Unity=2022.3.22f1; GPU=NVIDIA GeForce RTX 4090; API=Direct3D11; ColorSpace=Linear
+PASS 216 changing-source cases: 4 codecs/all variants, sample 1/4, both orientations, same/different payload size and codec switch, ARGB32/Float inputs; allocation reuse
+PASS GPU payload capacity: seven growing/shrinking valid NetworkFrames, dirty retained tails ignored, zero/truncated payload rejected before readback
+PASS source destruction, disable/re-enable during both stages, GameObject/component cancellation, resource cleanup, duplicate/safety modes, CRC rejection, native TransSync value=42 (later input=99)
+PASS 30 frame-window cases, duplicate/older counters, native variable application, invalid reset payload and 256 -> 0 -> 1 -> 2 -> 1 sequence
+PASS Float32 pixel precision (<1e-7), negative/HDR values and linear storage
+COPY 640x360: VRAM=3686400 bytes; median GPU us=unavailable; samples=0; batch=32; copy-only, not full decode or VRChat timing
+COPY 1920x1080: VRAM=33177600 bytes; median GPU us=unavailable; samples=0; batch=32; copy-only, not full decode or VRChat timing
+COPY 3840x2160: VRAM=132710400 bytes; median GPU us=79.680; samples=15; batch=32; copy-only, not full decode or VRChat timing

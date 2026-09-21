@@ -44,6 +44,12 @@ namespace K13A.TSMP
 
         public static bool TryWriteFrame(Texture2D texture, int blockSize, byte[] headerBytes, byte[] payloadBytes, out string error)
         {
+            Color32[] pixels = null;
+            return TryWriteFrameBuffered(texture, blockSize, headerBytes, payloadBytes, ref pixels, out error);
+        }
+
+        public static bool TryWriteFrameBuffered(Texture2D texture, int blockSize, byte[] headerBytes, byte[] payloadBytes, ref Color32[] pixels, out string error)
+        {
             error = string.Empty;
 
             if (!ValidateWrite(texture, blockSize, headerBytes, payloadBytes, out error))
@@ -65,7 +71,7 @@ namespace K13A.TSMP
                 return false;
             }
 
-            Color32[] pixels = FrameRaster.CreateClearedPixels(texture.width, texture.height);
+            pixels = FrameRaster.EnsureClearedPixels(pixels, texture.width, texture.height);
             WriteBaseRegions(pixels, texture.width, texture.height, blockSize, headerBytes);
             WritePayload(pixels, texture.width, texture.height, blockSize, payloadBytes, payloadBytes.Length);
             FrameRaster.WriteEndMarker(pixels, texture.width, texture.height, blockSize);
@@ -136,7 +142,14 @@ namespace K13A.TSMP
     {
         public static Color32[] CreateClearedPixels(int width, int height)
         {
-            var pixels = new Color32[Mathf.Max(0, width * height)];
+            return EnsureClearedPixels(null, width, height);
+        }
+
+        public static Color32[] EnsureClearedPixels(Color32[] pixels, int width, int height)
+        {
+            int count = Mathf.Max(0, width * height);
+            if (pixels == null || pixels.Length != count)
+                pixels = new Color32[count];
             Color32 neutral = new Color32(128, 128, 128, 255);
             for (int i = 0; i < pixels.Length; i++)
                 pixels[i] = neutral;

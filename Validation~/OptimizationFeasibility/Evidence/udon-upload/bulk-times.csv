@@ -1,0 +1,16 @@
+case,count,event,mean_us,p95_us,samples
+control,0,Control,0.1625,0.1000,80
+colors,3600,LoopColors,1047.9450,1132.4000,80
+colors,3600,BulkColors,1.2075,1.3000,80
+colors,14400,LoopColors,4391.2100,4534.8000,80
+colors,14400,BulkColors,4.3100,4.4000,80
+colors,32400,LoopColors,9908.0013,10281.0000,80
+colors,32400,BulkColors,9.3337,9.4000,80
+colors,129600,LoopColors,36750.5700,40516.4000,80
+colors,129600,BulkColors,37.4650,37.8000,80
+bytes,32,LoopBytes,14.4088,14.4000,80
+bytes,32,BulkBytes,0.2250,0.3000,80
+bytes,4096,LoopBytes,1472.6975,1644.1000,80
+bytes,4096,BulkBytes,0.4963,0.5000,80
+bytes,65535,LoopBytes,24916.1488,29090.2000,80
+bytes,65535,BulkBytes,5.3125,5.4000,80

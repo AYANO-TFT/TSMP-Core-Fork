@@ -296,7 +296,7 @@ namespace K13A.TSMP.Udon
                 Vector3 velocity = Binary.ReadVector3Float32LE(packedBytes, cursor);
                 cursor += NetworkFrameProtocol.Vector3Bytes;
 
-                if (targetRigidbody != null)
+                if (syncRigidbody && targetRigidbody != null)
                 {
                     if (continuous)
                     {
@@ -315,7 +315,7 @@ namespace K13A.TSMP.Udon
                 Vector3 angularVelocity = Binary.ReadVector3Float32LE(packedBytes, cursor);
                 cursor += NetworkFrameProtocol.Vector3Bytes;
 
-                if (targetRigidbody != null)
+                if (syncRigidbody && targetRigidbody != null)
                 {
                     if (continuous)
                     {
@@ -344,6 +344,12 @@ namespace K13A.TSMP.Udon
 
         private void ApplyContinuousTarget()
         {
+            if (!syncRigidbody)
+            {
+                _continuousHasRigidbodyVelocity = false;
+                _continuousHasRigidbodyAngularVelocity = false;
+            }
+
             if (receiveInterpolation != ReceiveInterpolationMode.Continuous || !_hasContinuousTarget || !IsTSMPActive())
                 return;
 
@@ -389,7 +395,7 @@ namespace K13A.TSMP.Udon
             if (_continuousHasScale)
                 target.localScale = Vector3.Lerp(target.localScale, _continuousScale, step);
 
-            if (targetRigidbody != null)
+            if (syncRigidbody && targetRigidbody != null)
             {
                 if (_continuousHasRigidbodyVelocity)
                     targetRigidbody.velocity = Vector3.Lerp(targetRigidbody.velocity, _continuousRigidbodyVelocity, step);

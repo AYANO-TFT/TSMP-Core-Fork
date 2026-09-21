@@ -17,6 +17,23 @@ float _OutputWidth;
 float _OutputHeight;
 float _FlipY;
 
+#define TSMP_COMBINED_BYTE_OUTPUT 1
+Texture2D<float4> _TSMPHeaderTex;
+float _TSMPHeaderPixels;
+
+bool TSMPReadOutputPrefix(float2 uv, out int baseByte, out float4 prefix)
+{
+    int2 pixel = clamp((int2)floor(uv * float2(_OutputWidth, _OutputHeight)), int2(0, 0), (int2)float2(_OutputWidth - 1, _OutputHeight - 1));
+    int index = pixel.y * (int)_OutputWidth + pixel.x;
+    int headerPixels = max(0, (int)_TSMPHeaderPixels);
+    baseByte = (index - headerPixels) * 4;
+    prefix = 0;
+    if (index >= headerPixels)
+        return false;
+    prefix = _TSMPHeaderTex.Load(int3(index, 0, 0));
+    return true;
+}
+
 struct appdata
 {
     float4 vertex : POSITION;

@@ -1,0 +1,3 @@
+[<color=#0c824c>UdonSharp</color>] Compile of 8 scripts finished in 00:04.719
+[<color=#0c824c>UdonSharp</color>] Compile of 24 scripts finished in 00:02.538
+[<color=#0c824c>UdonSharp</color>] Compile of 24 scripts finished in 00:02.227

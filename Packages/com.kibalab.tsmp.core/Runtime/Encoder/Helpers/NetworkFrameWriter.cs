@@ -220,9 +220,9 @@ namespace K13A.TSMP
             if (error == WriteRpcErrorUnsupportedArgument)
                 return "Unsupported RPC argument at index " + failedArgumentIndex + ".";
             if (error == WriteRpcErrorArgumentWrite)
-                return "Failed to write RPC argument at index " + failedArgumentIndex + ".";
+                return "RPC argument at index " + failedArgumentIndex + " exceeds the payload or UInt16 length limit.";
             if (error == WriteRpcErrorEnd)
-                return "Failed to end RpcCall message.";
+                return "RPC message exceeds the UInt16 body length limit.";
 
             return "Failed to write RpcCall message.";
         }

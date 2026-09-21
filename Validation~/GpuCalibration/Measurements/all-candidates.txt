@@ -1,0 +1,92 @@
+Unity=2022.3.22f1, GPU=NVIDIA GeForce RTX 4090, API=Direct3D11
+PASS TSMPDecodeLuma4Bytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+TIMING,TSMPDecodeLuma4Bytes,sample=1,bytes=4,A_us=4.440,B_us=4.480,wall_A_us=16.113,wall_B_us=15.975,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=1,bytes=56,A_us=4.544,B_us=4.544,wall_A_us=15.909,wall_B_us=16.391,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=1,bytes=1024,A_us=4.640,B_us=4.576,wall_A_us=16.069,wall_B_us=16.219,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=2,bytes=4,A_us=74.944,B_us=28.224,wall_A_us=88.334,wall_B_us=52.206,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=2,bytes=56,A_us=69.792,B_us=26.272,wall_A_us=84.922,wall_B_us=50.138,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=2,bytes=1024,A_us=71.264,B_us=28.704,wall_A_us=86.259,wall_B_us=52.909,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=3,bytes=4,A_us=72.800,B_us=26.992,wall_A_us=85.909,wall_B_us=50.453,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=3,bytes=56,A_us=68.576,B_us=27.384,wall_A_us=83.666,wall_B_us=50.644,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=3,bytes=1024,A_us=71.616,B_us=29.816,wall_A_us=88.378,wall_B_us=56.413,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=4,bytes=4,A_us=68.728,B_us=27.064,wall_A_us=85.153,wall_B_us=51.888,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=4,bytes=56,A_us=69.240,B_us=27.512,wall_A_us=86.713,wall_B_us=53.063,samples=15,batch=32
+TIMING,TSMPDecodeLuma4Bytes,sample=4,bytes=1024,A_us=71.616,B_us=29.856,wall_A_us=87.919,wall_B_us=55.575,samples=15,batch=32
+PASS TSMPDecodeRgb16Bytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+TIMING,TSMPDecodeRgb16Bytes,sample=1,bytes=4,A_us=1.600,B_us=1.600,wall_A_us=15.116,wall_B_us=15.869,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=1,bytes=56,A_us=1.600,B_us=1.600,wall_A_us=13.484,wall_B_us=13.625,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=1,bytes=1024,A_us=1.632,B_us=1.632,wall_A_us=12.947,wall_B_us=12.872,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=2,bytes=4,A_us=30.104,B_us=10.808,wall_A_us=61.419,wall_B_us=60.147,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=2,bytes=56,A_us=30.336,B_us=10.816,wall_A_us=66.131,wall_B_us=53.250,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=2,bytes=1024,A_us=30.720,B_us=11.712,wall_A_us=44.944,wall_B_us=34.231,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=3,bytes=4,A_us=30.080,B_us=11.264,wall_A_us=43.259,wall_B_us=33.075,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=3,bytes=56,A_us=30.464,B_us=11.352,wall_A_us=44.453,wall_B_us=33.413,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=3,bytes=1024,A_us=31.328,B_us=12.288,wall_A_us=45.225,wall_B_us=34.666,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=4,bytes=4,A_us=30.080,B_us=11.328,wall_A_us=42.978,wall_B_us=32.838,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=4,bytes=56,A_us=30.456,B_us=11.488,wall_A_us=42.953,wall_B_us=32.681,samples=15,batch=32
+TIMING,TSMPDecodeRgb16Bytes,sample=4,bytes=1024,A_us=31.264,B_us=12.448,wall_A_us=46.769,wall_B_us=35.084,samples=15,batch=32
+PASS TSMPDecodeRgb16RefineBytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+TIMING,TSMPDecodeRgb16RefineBytes,sample=1,bytes=4,A_us=15.808,B_us=16.672,wall_A_us=28.125,wall_B_us=28.825,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=1,bytes=56,A_us=15.840,B_us=16.704,wall_A_us=28.028,wall_B_us=28.216,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=1,bytes=1024,A_us=15.904,B_us=16.768,wall_A_us=29.706,wall_B_us=29.466,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=2,bytes=4,A_us=58.848,B_us=84.544,wall_A_us=73.763,wall_B_us=108.556,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=2,bytes=56,A_us=60.160,B_us=84.128,wall_A_us=76.631,wall_B_us=109.113,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=2,bytes=1024,A_us=62.144,B_us=84.064,wall_A_us=77.163,wall_B_us=108.384,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=3,bytes=4,A_us=59.200,B_us=84.984,wall_A_us=75.006,wall_B_us=108.791,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=3,bytes=56,A_us=59.392,B_us=84.696,wall_A_us=78.622,wall_B_us=110.156,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=3,bytes=1024,A_us=61.944,B_us=84.640,wall_A_us=81.381,wall_B_us=109.266,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=4,bytes=4,A_us=59.808,B_us=85.024,wall_A_us=81.019,wall_B_us=113.841,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=4,bytes=56,A_us=60.832,B_us=84.824,wall_A_us=77.066,wall_B_us=109.744,samples=15,batch=32
+TIMING,TSMPDecodeRgb16RefineBytes,sample=4,bytes=1024,A_us=62.880,B_us=84.832,wall_A_us=80.278,wall_B_us=109.472,samples=15,batch=32
+PASS TSMPDecodeRgb16VariableBytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+TIMING,TSMPDecodeRgb16VariableBytes,sample=1,bytes=4,A_us=2.072,B_us=2.080,wall_A_us=13.556,wall_B_us=13.503,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=1,bytes=56,A_us=2.592,B_us=2.744,wall_A_us=14.013,wall_B_us=14.072,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=1,bytes=1024,A_us=2.624,B_us=2.752,wall_A_us=14.119,wall_B_us=14.031,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=2,bytes=4,A_us=38.048,B_us=23.008,wall_A_us=53.809,wall_B_us=46.081,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=2,bytes=56,A_us=52.416,B_us=25.792,wall_A_us=68.188,wall_B_us=49.150,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=2,bytes=1024,A_us=53.408,B_us=26.784,wall_A_us=66.663,wall_B_us=49.813,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=3,bytes=4,A_us=38.464,B_us=23.384,wall_A_us=53.338,wall_B_us=46.528,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=3,bytes=56,A_us=51.680,B_us=26.016,wall_A_us=68.809,wall_B_us=50.738,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=3,bytes=1024,A_us=52.928,B_us=27.008,wall_A_us=67.406,wall_B_us=50.163,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=4,bytes=4,A_us=38.432,B_us=23.456,wall_A_us=51.975,wall_B_us=46.284,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=4,bytes=56,A_us=51.968,B_us=26.200,wall_A_us=65.875,wall_B_us=48.444,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableBytes,sample=4,bytes=1024,A_us=53.408,B_us=27.200,wall_A_us=65.191,wall_B_us=46.872,samples=15,batch=32
+PASS TSMPDecodeRgb16VariableRefineBytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=1,bytes=4,A_us=39.328,B_us=39.840,wall_A_us=53.219,wall_B_us=53.894,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=1,bytes=56,A_us=31.680,B_us=32.032,wall_A_us=44.788,wall_B_us=44.891,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=1,bytes=1024,A_us=31.808,B_us=32.128,wall_A_us=44.763,wall_B_us=45.266,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=2,bytes=4,A_us=63.968,B_us=123.552,wall_A_us=78.847,wall_B_us=149.284,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=2,bytes=56,A_us=60.064,B_us=109.728,wall_A_us=75.544,wall_B_us=135.853,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=2,bytes=1024,A_us=62.784,B_us=111.000,wall_A_us=80.247,wall_B_us=136.569,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=3,bytes=4,A_us=44.992,B_us=87.712,wall_A_us=60.253,wall_B_us=112.322,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=3,bytes=56,A_us=60.416,B_us=110.080,wall_A_us=79.041,wall_B_us=135.619,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=3,bytes=1024,A_us=63.520,B_us=111.312,wall_A_us=78.403,wall_B_us=136.900,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=4,bytes=4,A_us=45.184,B_us=87.744,wall_A_us=60.081,wall_B_us=111.672,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=4,bytes=56,A_us=61.056,B_us=110.144,wall_A_us=76.200,wall_B_us=134.469,samples=15,batch=32
+TIMING,TSMPDecodeRgb16VariableRefineBytes,sample=4,bytes=1024,A_us=62.528,B_us=111.392,wall_A_us=79.884,wall_B_us=137.219,samples=15,batch=32
+PASS TSMPDecodeRgb20Bytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+TIMING,TSMPDecodeRgb20Bytes,sample=1,bytes=4,A_us=10.688,B_us=10.432,wall_A_us=21.938,wall_B_us=22.372,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=1,bytes=56,A_us=17.048,B_us=16.992,wall_A_us=28.666,wall_B_us=28.506,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=1,bytes=1024,A_us=17.816,B_us=17.824,wall_A_us=30.347,wall_B_us=30.500,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=2,bytes=4,A_us=157.472,B_us=15.136,wall_A_us=177.878,wall_B_us=42.566,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=2,bytes=56,A_us=237.408,B_us=24.056,wall_A_us=258.781,wall_B_us=51.759,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=2,bytes=1024,A_us=238.336,B_us=24.256,wall_A_us=264.019,wall_B_us=51.853,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=3,bytes=4,A_us=159.104,B_us=15.392,wall_A_us=175.266,wall_B_us=40.144,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=3,bytes=56,A_us=241.824,B_us=24.472,wall_A_us=268.472,wall_B_us=56.156,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=3,bytes=1024,A_us=243.264,B_us=24.672,wall_A_us=263.659,wall_B_us=52.088,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=4,bytes=4,A_us=159.392,B_us=15.424,wall_A_us=181.906,wall_B_us=42.538,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=4,bytes=56,A_us=243.680,B_us=24.544,wall_A_us=269.238,wall_B_us=53.328,samples=15,batch=32
+TIMING,TSMPDecodeRgb20Bytes,sample=4,bytes=1024,A_us=245.184,B_us=24.768,wall_A_us=269.228,wall_B_us=50.538,samples=15,batch=32
+PASS TSMPDecodeColor256RobustRefineBytes: 48 original/LUT GPU comparisons, branch selection, reuse, fallback and dimensions
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=1,bytes=4,A_us=85.336,B_us=58.080,wall_A_us=103.469,wall_B_us=85.769,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=1,bytes=56,A_us=88.768,B_us=57.952,wall_A_us=104.884,wall_B_us=84.109,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=1,bytes=1024,A_us=89.056,B_us=58.208,wall_A_us=104.766,wall_B_us=82.284,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=2,bytes=4,A_us=801.664,B_us=351.680,wall_A_us=822.384,wall_B_us=381.966,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=2,bytes=56,A_us=806.584,B_us=352.504,wall_A_us=828.528,wall_B_us=383.700,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=2,bytes=1024,A_us=824.376,B_us=353.184,wall_A_us=842.809,wall_B_us=382.819,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=3,bytes=4,A_us=808.512,B_us=378.008,wall_A_us=828.825,wall_B_us=408.819,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=3,bytes=56,A_us=815.072,B_us=379.168,wall_A_us=835.263,wall_B_us=410.653,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=3,bytes=1024,A_us=832.128,B_us=379.104,wall_A_us=888.813,wall_B_us=410.466,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=4,bytes=4,A_us=810.328,B_us=380.928,wall_A_us=834.891,wall_B_us=410.547,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=4,bytes=56,A_us=819.960,B_us=381.280,wall_A_us=843.641,wall_B_us=415.509,samples=15,batch=32
+TIMING,TSMPDecodeColor256RobustRefineBytes,sample=4,bytes=1024,A_us=834.176,B_us=382.656,wall_A_us=854.022,wall_B_us=411.438,samples=15,batch=32

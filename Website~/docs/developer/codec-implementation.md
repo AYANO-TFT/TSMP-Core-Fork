@@ -67,9 +67,17 @@ The package should depend on Core:
 
 ```json
 "dependencies": {
-  "com.kibalab.tsmp.core": "0.0.3-beta.3"
+  "com.kibalab.tsmp.core": "0.3.0-beta.2"
 }
 ```
+
+This example requires the preparation API introduced in Core **0.3.0-beta.2**. Core 0.2.0 and 0.3.0-beta.1 do not contain this API. Install a compatible Core before the dependent codec, and test the actual packaged combination before publishing your codec.
+
+Use `"com.kibalab.tsmp.core": ">=0.3.0-beta.2"` in `vpmDependencies` too. UPM package dependencies use version strings, not ranges or Git URLs. For local/disk or Git installation, the **project** must explicitly supply a compatible Core too; this package manifest does not locate it on GitHub. VPM resolves the range from configured repositories; enable pre-release visibility when selecting betas.
+
+Missing preparation materials only fall back after compilation. They cannot make a new codec compile against an old base class. Codecs not using the new API may keep their previously tested minimum version.
+
+See [Unity package manifests](https://docs.unity3d.com/2022.3/Documentation/Manual/upm-manifestPkg.html) and [VPM versions and ranges](https://vcc.docs.vrchat.com/vpm/packages/#versions-and-ranges).
 
 ## 1. Choose the symbol model
 
@@ -343,6 +351,59 @@ Typical pattern:
 3. Decode shader classifies payload blocks by nearest calibration entry.
 
 Expose the calibration start block through material properties when needed. Use `ConfigureMaterials(CodecMaterialContext context)` for editor/native paths and `ApplyDecodeOptions()` for runtime paths.
+
+## Optional calibration preparation
+
+Calibration means measuring the known reference symbols in the received image, then comparing payload samples with those measured values. Reading the same reference blocks for every output byte repeats work. A lookup table (LUT) can move that work into one GPU preparation pass.
+
+The LUT changes where calibration is calculated, not the packet format or the classification algorithm. A codec that does not benefit from this extra pass should keep its original decode path.
+
+### Call order
+
+For **each header or payload byte pass**, the decoder:
+
+1. Selects the handler and calls `ApplyDecodeOptions()` to choose the byte material and layout.
+2. Sets `_MainTex`, source dimensions, block/sample size, `_StartBlock`, `_ByteCount`, byte-output dimensions and `_FlipY` on that material.
+3. Calls `PrepareDecode(source, material)`. An override may prepare calibration from those exact settings.
+4. Immediately blits the same source Texture reference through the byte material.
+5. Requests readback from the byte output, not from the LUT.
+
+Do not prepare in `ApplyDecodeOptions()`: the decoder has not yet assigned all properties for this pass. Do not prepare only in `Start()`, on a codec change, or once per frame. Header and payload passes can use different settings and run at different times.
+
+`TSMPDecoder` copies the input into an owned snapshot before the header pass and supplies that snapshot to every preparation and byte pass in the decode operation. Do not modify or release it. Header and payload therefore use the same captured image even when the video producer updates its source texture. The hook itself does not capture an image: integrations that call codecs without `TSMPDecoder` must provide their own stable input.
+
+### Minimal Luma4 hook
+
+The Luma4 handler uses the following override. It belongs inside the existing codec class, alongside its encode methods and `ApplyDecodeOptions()`.
+
+```csharp
+public override void PrepareDecode(Texture source, Material material)
+{
+    base.PrepareDecode(source, material);
+    if (material == null || GetDecodeSampleSize(material) <= 1)
+        return;
+
+    PrepareCalibrationLut(source, material, 16);
+}
+```
+
+Luma4 has 16 reference symbols, so the table is 16 by 1. Effective sampling of one retains the original path because the preparation overhead outweighed the saved sampling in the measured configuration. This is a Luma4 policy, not a rule Core applies to other codecs. Measure your own codec, including preparation cost, before choosing a condition.
+
+Assign a material using the Luma4 preparation shader to the inherited `calibrationMaterial` field on the codec prefab. This field is hidden from the ordinary Inspector; configure the serialized prefab field through your package's editor tooling or Inspector Debug mode. End users should receive an already configured catalog/prefab, not an extra setup step.
+
+The byte shader also needs `_CalibrationLut`, the `TSMP_CALIBRATION_LUT` local variants and the original sampling fallback. The [shader guide](./codec-shaders.md) shows their implementation. Adding only the C# override does not add LUT support to a shader.
+
+### Resource ownership and fallback
+
+- The codec base owns the generated LUT RenderTexture. It reuses the allocation, redraws its contents before each enabled pass, and releases/destroys it on disable or destruction.
+- `calibrationMaterial` and the byte material are assigned references, not materials the hook creates. The hook changes their properties. Setup prepares controller-owned material copies; a custom integration must also prevent conflicting use of shared materials.
+- Always call `base.PrepareDecode(source, material)` before testing your enable condition. This disables the old LUT keyword, including when the same material now needs the ordinary path.
+- If you override `OnDisable()` or `OnDestroy()`, call the corresponding base implementation. Do not destroy package material assets or an externally supplied source/output texture.
+- Missing source, material, preparation material, invalid LUT width or empty byte output skips preparation. Native checks also reject unsupported preparation shaders/ARGBFloat devices; both paths check the resulting format and texture creation. Keep the original shader variant available.
+- Use one-row, linear `ARGBFloat` with 32-bit float channels, point filtering and no mipmaps. Do not substitute Half, 8-bit or sRGB storage: rounding can change which symbol wins near a classification boundary.
+- If there are multiple preparation passes, define their order and fully overwrite each target. Never sample a LUT while writing into that same texture.
+
+For method signatures, guards and lifecycle behavior, see [TSMPCodec Scripting API](../scripting-api/codec.md#runtime-decode-preparation). Validate missing-resource fallback, changing sample sizes, disable/re-enable, multiple codec instances and both Player shader variants with byte-for-byte comparisons.
 
 ## 7. Configure materials
 

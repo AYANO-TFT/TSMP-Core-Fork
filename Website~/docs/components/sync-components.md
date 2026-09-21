@@ -25,10 +25,12 @@ Important settings:
 | --- | --- |
 | Target | Transform to synchronize. Defaults to the component transform if empty. |
 | Use Local Space | Sends local transform instead of world transform. |
-| Sync Rigidbody | Also sends velocity and angular velocity when a Rigidbody exists. |
+| Sync Rigidbody | Sends and applies velocity and angular velocity when a Rigidbody exists, and applies received position/rotation through that Rigidbody. |
 | Compression Mode | Reduces payload size at the cost of precision. |
 
 Enable Rigidbody sync when physics drives the object. This helps avoid jitter on falling or gravity-driven objects.
+
+Turn it off on a receiver to keep its local velocity and angular velocity. Transform position, rotation and scale still synchronize. This applies to both Discrete and Continuous reception. Disabling the option clears pending velocity interpolation targets; re-enabling it waits for another received packet for velocity updates. Mass, gravity and kinematic settings are local settings, not transmitted by this component.
 
 ## Humanoid pose sync
 

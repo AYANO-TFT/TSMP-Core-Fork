@@ -4,6 +4,19 @@ title: TSMPDecodeByteOutput.cginc
 
 # `TSMPDecodeByteOutput.cginc`
 
+## Optional combined header output
+
+To eliminate the decoder's separate packing pass, include `TSMPDecodeCommon.cginc` and add both hidden shader properties below. Their defaults preserve ordinary byte output. Only advertise these properties if the fragment implements prefix handling.
+
+`TSMPReadOutputPrefix(float2 uv, out int baseByte, out float4 prefix)` returns `true` for the header area: return `prefix` without decoding a payload byte. Otherwise `baseByte` is the payload-relative index. With a 14-pixel prefix, output pixels 0..13 contain the 56 header bytes, pixel 14 contains payload bytes 0..3, then subsequent payload pixels follow across rows. `_ByteCount` remains the payload length, excluding the prefix. Padding returns zero. Header texture coordinates use exact texel loads; do not apply source-image `flipY` again.
+
+The standard `TSMPDecodeByteOutputFragment` handles this automatically when `TSMP_COMBINED_BYTE_OUTPUT` is defined by the common include. A custom fragment must call the helper before its byte/symbol calculations. Use `#if defined(TSMP_COMBINED_BYTE_OUTPUT)` with the original pixel calculation as the `#else` path if supporting older Core versions. Without the common include, standalone byte-output shaders retain their original behavior.
+
+```hlsl
+[HideInInspector] _TSMPHeaderTex ("Decoded Header", 2D) = "black" {}
+[HideInInspector] _TSMPHeaderPixels ("Header Pixels", Float) = 0
+```
+
 `TSMPDecodeByteOutput.cginc` is a shader include for codec decode passes. It turns a byte-addressed `DecodeByte(index)` function into a fragment shader that writes decoded bytes into an RGBA output texture.
 
 Use it when your custom codec can recover one byte by index and you want Core's decoder readback path to receive those bytes in a standard texture layout.

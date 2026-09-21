@@ -25,10 +25,12 @@ TSMP로 보낼 오브젝트에 다음 컴포넌트를 추가합니다.
 | --- | --- |
 | Target | 동기화할 Transform. 비어 있으면 component transform을 사용합니다. |
 | Use Local Space | World transform 대신 local transform을 보냅니다. |
-| Sync Rigidbody | Rigidbody가 있으면 velocity와 angular velocity도 보냅니다. |
+| Sync Rigidbody | Rigidbody가 있으면 속도와 각속도를 송수신하고, 수신한 위치·회전도 해당 Rigidbody에 적용합니다. |
 | Compression Mode | 정밀도를 조금 포기하고 payload size를 줄입니다. |
 
 물리가 오브젝트를 움직이는 경우 Rigidbody sync를 켜세요. 중력으로 떨어지는 오브젝트의 jitter를 줄이는 데 도움이 됩니다.
+
+수신 측에서 이 옵션을 끄면 로컬 속도와 각속도를 유지하며 Transform의 위치·회전·스케일은 계속 동기화합니다. Discrete와 Continuous 모두 동일합니다. 끌 때 대기 중인 속도 보간 목표도 지워지므로, 다시 켠 뒤에는 다음 수신 패킷부터 속도가 갱신됩니다. 질량, 중력, Kinematic 설정은 이 컴포넌트가 전송하지 않는 로컬 설정입니다.
 
 ## Humanoid pose sync
 

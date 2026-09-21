@@ -1,0 +1,47 @@
+[
+  {
+    "name": "com.kibalab.tsmp.core",
+    "version": "0.3.0-beta.2",
+    "repository": "kibalab/TSMP-Core",
+    "tag": "v0.3.0-beta.2",
+    "url": "https://github.com/kibalab/TSMP-Core/releases/download/v0.3.0-beta.2/com.kibalab.tsmp.core-0.3.0-beta.2.zip",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\codec-releases-20260918\\published\\archives\\com.kibalab.tsmp.core-0.3.0-beta.2.zip",
+    "sha256": "99A815AB29D3A925CA730DD37B5A18D07A2850BD538EF06B4326DCD43BAB308A"
+  },
+  {
+    "name": "com.kibalab.tsmp.codec.luma4",
+    "version": "0.0.4-beta.1",
+    "repository": "kibalab/TSMPCodec-Luma4",
+    "tag": "v0.0.4-beta.1",
+    "url": "https://github.com/kibalab/TSMPCodec-Luma4/releases/download/v0.0.4-beta.1/com.kibalab.tsmp.codec.luma4-0.0.4-beta.1.zip",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\codec-releases-20260918\\published\\archives\\com.kibalab.tsmp.codec.luma4-0.0.4-beta.1.zip",
+    "sha256": "988ED39DF32769EBCDAAC5402C03A395F19D11F6A93754060B49B30FD0F838BC"
+  },
+  {
+    "name": "com.kibalab.tsmp.codec.rgb16",
+    "version": "0.0.3-beta.3",
+    "repository": "kibalab/TSMPCodec-RGB16",
+    "tag": "v0.0.3-beta.3",
+    "url": "https://github.com/kibalab/TSMPCodec-RGB16/releases/download/v0.0.3-beta.3/com.kibalab.tsmp.codec.rgb16-0.0.3-beta.3.zip",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\codec-releases-20260918\\published\\archives\\com.kibalab.tsmp.codec.rgb16-0.0.3-beta.3.zip",
+    "sha256": "2AB9F1CABBA1FA82B4027B32C7E597FF5302ACAAA51722226D2367E71C01D57D"
+  },
+  {
+    "name": "com.kibalab.tsmp.codec.rgb20",
+    "version": "0.0.3-beta.4",
+    "repository": "kibalab/TSMPCodec-RGB20",
+    "tag": "v0.0.3-beta.4",
+    "url": "https://github.com/kibalab/TSMPCodec-RGB20/releases/download/v0.0.3-beta.4/com.kibalab.tsmp.codec.rgb20-0.0.3-beta.4.zip",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\codec-releases-20260918\\published\\archives\\com.kibalab.tsmp.codec.rgb20-0.0.3-beta.4.zip",
+    "sha256": "42F7F59C326E8FAECA33C8B582F267C9C4BB42F5F1722BAE92957054887033DE"
+  },
+  {
+    "name": "com.kibalab.tsmp.codec.color256",
+    "version": "0.0.3-beta.3",
+    "repository": "kibalab/TSMPCodec-Color256",
+    "tag": "v0.0.3-beta.3",
+    "url": "https://github.com/kibalab/TSMPCodec-Color256/releases/download/v0.0.3-beta.3/com.kibalab.tsmp.codec.color256-0.0.3-beta.3.zip",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\codec-releases-20260918\\published\\archives\\com.kibalab.tsmp.codec.color256-0.0.3-beta.3.zip",
+    "sha256": "36A6CC8F2DD283D9BA144147FAFC4E66667A821D1C00F7CE6BABF8E755E93476"
+  }
+]

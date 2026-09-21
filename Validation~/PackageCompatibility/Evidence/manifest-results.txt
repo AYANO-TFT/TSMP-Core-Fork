@@ -1,0 +1,20 @@
+PASS
+VPM SemanticVersioning assembly: C:/Users/kjh03/.dotnet/tools/.store/vrchat.vpm.cli/0.1.28/vrchat.vpm.cli/0.1.28/tools/net8.0/any/SemanticVersioning.dll
+com.kibalab.tsmp.core -> com.vrchat.worlds >=3.9.0: 3.10.4-beta.2 accepted with prereleases enabled
+com.kibalab.tsmp.codec.luma4 -> com.kibalab.tsmp.core >=0.3.0-beta.2: 0.3.0-beta.2 accepted with prereleases enabled
+com.kibalab.tsmp.codec.luma4 -> com.vrchat.worlds >=3.9.0: 3.10.4-beta.2 accepted with prereleases enabled
+com.kibalab.tsmp.codec.luma4: incompatible Core 0.2.0 rejected
+com.kibalab.tsmp.codec.luma4: incompatible Core 0.3.0-beta.1 rejected
+com.kibalab.tsmp.codec.rgb16 -> com.kibalab.tsmp.core >=0.3.0-beta.2: 0.3.0-beta.2 accepted with prereleases enabled
+com.kibalab.tsmp.codec.rgb16 -> com.vrchat.worlds >=3.9.0: 3.10.4-beta.2 accepted with prereleases enabled
+com.kibalab.tsmp.codec.rgb16: incompatible Core 0.2.0 rejected
+com.kibalab.tsmp.codec.rgb16: incompatible Core 0.3.0-beta.1 rejected
+com.kibalab.tsmp.codec.rgb20 -> com.kibalab.tsmp.core >=0.3.0-beta.2: 0.3.0-beta.2 accepted with prereleases enabled
+com.kibalab.tsmp.codec.rgb20 -> com.vrchat.worlds >=3.9.0: 3.10.4-beta.2 accepted with prereleases enabled
+com.kibalab.tsmp.codec.rgb20: incompatible Core 0.2.0 rejected
+com.kibalab.tsmp.codec.rgb20: incompatible Core 0.3.0-beta.1 rejected
+com.kibalab.tsmp.codec.color256 -> com.kibalab.tsmp.core >=0.3.0-beta.2: 0.3.0-beta.2 accepted with prereleases enabled
+com.kibalab.tsmp.codec.color256 -> com.vrchat.worlds >=3.9.0: 3.10.4-beta.2 accepted with prereleases enabled
+com.kibalab.tsmp.codec.color256: incompatible Core 0.2.0 rejected
+com.kibalab.tsmp.codec.color256: incompatible Core 0.3.0-beta.1 rejected
+UPM lock uses the extracted candidate packages, matching minimum Core, and no VRChat SDK.

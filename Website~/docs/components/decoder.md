@@ -4,6 +4,12 @@ title: TSMPDecoder
 
 # TSMPDecoder
 
+## Combined byte output
+
+`useCombinedByteOutput` defaults to `true`. In the predicted path, compatible codec shaders write the 56-byte decoded header and payload directly into the private RGBA8 readback target, removing the separate packing pass and intermediate payload write. The immutable source snapshot, header CRC validation, exact-length prediction check and same-snapshot fallback are unchanged. This does not change the wire datagram or guarantee a delivery rate.
+
+Shaders opt in by implementing both `_TSMPHeaderTex` and `_TSMPHeaderPixels`. Existing codecs without these properties keep the separate packing path. The switch is in Diagnostics > Advanced Decode. `combinedByteOutputCount` counts submissions, including predictions later rejected or retried; it is not a received-frame count. `ResetDecodeDiagnostics()` resets it.
+
 Use `TSMPDecoder` on the receiver side. It reads a TSMP input texture and applies decoded messages to matching scene objects.
 
 Most decode problems are caused by the input texture not containing an unmodified TSMP image. Confirm the texture path before changing receiver components.
@@ -25,6 +31,14 @@ Most decode problems are caused by the input texture not containing an unmodifie
 5. Click `Apply Setup`.
 6. Watch logs or `TSMPDebugCanvas` for frame status.
 
+## Frame window
+
+In the decoder's **Decode** section, keep **Filter Frames** enabled for live reception. **Window Size** defaults to **256** frames and is adjustable on the receiver; the sender needs no matching setting.
+
+The decoder normally ignores repeated or older frame numbers. It also recognizes frame zero as a possible restart when the last applied number is at least one window: with 256, `256 -> 0` is allowed but `255 -> 0` is not. Natural UInt32 counter wrap is handled separately. No textures are buffered for this window and the datagram is unchanged.
+
+This does not identify sessions: an old zero can look like a restart, and missing frame zero can prevent restart detection. Disable the filter for intentional seeking through recorded frames, understanding that old values may then be applied. See [exact ordering rules and limitations](../scripting-api/decoder.md#frame-window).
+
 ## What valid decode looks like
 
 In `TSMPDebugCanvas`, a working decoder should show:
@@ -40,7 +54,7 @@ If the frame is valid but objects do not move, check network IDs, receive interp
 
 ## Decode order
 
-The decoder works in stages:
+The first frame and the fallback path work in stages:
 
 1. Read the header area from the input texture.
 2. Validate magic, version, header size, and CRC.
@@ -49,7 +63,15 @@ The decoder works in stages:
 5. Read payload bytes.
 6. Dispatch variable state messages and RPC messages.
 
-When a stage fails, later stages are skipped. For example, a CRC failure means payload decoding does not start.
+After a valid frame, **Use Predicted Readback** is enabled by default. The decoder can recover the current header and payload together using the previous configuration, reducing two sequential GPU readback waits to one. It still checks the current header before applying any values or RPCs. Changed settings or payload length cause the same captured image to be processed through the fallback path.
+
+No extra material assignment is required. You can disable the optimization under **Diagnostics > Advanced Decode** for comparison. Manual layout and safety modes retain sequential decoding. CRC failures discard the frame even when speculative GPU decoding has already run. This improves processing opportunities, not guaranteed delivery or a fixed receive frame rate.
+
+## Overlapping readbacks
+
+**Overlap Readbacks** is enabled by default under **Diagnostics > Advanced Decode**. The decoder can retain two images, starting the next capture while the first is waiting on the GPU. Results are applied in capture order. If both slots are occupied, it skips a new capture instead of extending a queue. Disable this option to compare with single-slot operation; no sender change is needed.
+
+This can reduce missing frames when a readback takes longer than one update, but uses more memory and can increase application latency and GPU/CPU load. Each snapshot needs about 3.52 MiB at 640x360 or 31.64 MiB at 1920x1080; two allocated slots double that storage, excluding byte buffers. It cannot recover frames that never reached the input texture. **Pending Frames** shows occupied slots and **Skipped Busy Captures** counts attempts rejected at capacity, not unique lost frames.
 
 ## Receive interpolation
 

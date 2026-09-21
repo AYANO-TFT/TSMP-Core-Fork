@@ -1,0 +1,9 @@
+FAIL
+System.InvalidOperationException: [TSMP] Injected completed-slot error for regression validation.
+UnityEngine.Debug:LogError (object)
+K13A.TSMP.TSMPBehaviour:LogTSMPError (string,string,bool) (at F:/Unity/TSMP/TSMP-Core-main/Packages/com.kibalab.tsmp.core/Runtime/Core/TSMPBehaviour.cs:110)
+K13A.TSMP.Udon.TSMPDecoder:LogDecodeError (string) (at F:/Unity/TSMP/TSMP-Core-main/Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.cs:1092)
+K13A.TSMP.Udon.TSMPDecoder:ProcessReadyReadbacks () (at F:/Unity/TSMP/TSMP-Core-main/Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.cs:460)
+K13A.TSMP.Udon.TSMPDecoder:Update () (at F:/Unity/TSMP/TSMP-Core-main/Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.cs:260)
+
+  at ContinuousFrameValidation+<Start>d__17.MoveNext () [0x001e0] in F:\Unity\TSMP\Validation-Codecs-NoSDK\Assets\ContinuousFrames\ContinuousFrameValidation.cs:149

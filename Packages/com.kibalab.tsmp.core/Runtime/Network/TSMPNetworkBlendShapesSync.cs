@@ -35,6 +35,8 @@ namespace K13A.TSMP.Udon
         private float[] _targetBlendShapeValues;
         private bool[] _hasTargetBlendShapeValue;
         private bool _hasContinuousTarget;
+        private SkinnedMeshRenderer _cachedRenderer;
+        private Mesh _cachedMesh;
 
         public byte[] BlendShapeBytes
         {
@@ -49,6 +51,11 @@ namespace K13A.TSMP.Udon
         {
             ResolveRenderer();
             RefreshBlendShapeCount();
+        }
+
+        private void OnDisable()
+        {
+            ClearContinuousTargets();
         }
 
 #if UDONSHARP || COMPILER_UDONSHARP
@@ -157,6 +164,8 @@ namespace K13A.TSMP.Udon
 
         public override void OnTSMPVariableReceived()
         {
+            if (receiveInterpolation != ReceiveInterpolationMode.Continuous)
+                ClearContinuousTargets();
             if (receiveInterpolation == ReceiveInterpolationMode.None)
                 return;
 
@@ -172,12 +181,16 @@ namespace K13A.TSMP.Udon
 
         private void RefreshBlendShapeCount()
         {
-#if !COMPILER_UDONSHARP
-            if (targetRenderer != null && targetRenderer.sharedMesh != null)
-                blendShapeCount = targetRenderer.sharedMesh.blendShapeCount;
-            else
-                blendShapeCount = 0;
-#endif
+            Mesh mesh = targetRenderer != null ? targetRenderer.sharedMesh : null;
+            int count = mesh != null ? mesh.blendShapeCount : 0;
+            if ((Object)_cachedRenderer != (Object)targetRenderer || (Object)_cachedMesh != (Object)mesh || blendShapeCount != count)
+            {
+                ClearContinuousTargets();
+                _cachedRenderer = targetRenderer;
+                _cachedMesh = mesh;
+                _cachedBlendShapeCount = -2;
+            }
+            blendShapeCount = count;
         }
 
         private bool IsSelectedBlendShape(int index)
@@ -195,7 +208,7 @@ namespace K13A.TSMP.Udon
             if (_selectedBlendShapeLookup != null && _cachedBlendShapeIndexLength == indexLength && _cachedBlendShapeIndexHash == indexHash && _cachedBlendShapeCount == blendShapeCount)
                 return;
 
-            int lookupLength = blendShapeCount > 0 ? blendShapeCount : GetMaxSelectedBlendShapeIndex() + 1;
+            int lookupLength = blendShapeCount;
             if (lookupLength < 1)
                 lookupLength = 1;
 
@@ -214,6 +227,7 @@ namespace K13A.TSMP.Udon
             int count = 0;
             if (blendShapeIndices == null)
             {
+                ClearContinuousTargets();
                 _selectedBlendShapeCount = 0;
                 _cachedBlendShapeIndexLength = indexLength;
                 _cachedBlendShapeIndexHash = indexHash;
@@ -235,6 +249,14 @@ namespace K13A.TSMP.Udon
             }
 
             _selectedBlendShapeCount = count;
+            _hasContinuousTarget = false;
+            for (int i = 0; i < _hasTargetBlendShapeValue.Length; i++)
+            {
+                if (!_selectedBlendShapeLookup[i])
+                    _hasTargetBlendShapeValue[i] = false;
+                if (_hasTargetBlendShapeValue[i])
+                    _hasContinuousTarget = true;
+            }
             _cachedBlendShapeIndexLength = indexLength;
             _cachedBlendShapeIndexHash = indexHash;
             _cachedBlendShapeCount = blendShapeCount;
@@ -251,35 +273,28 @@ namespace K13A.TSMP.Udon
             return hash;
         }
 
-        private int GetMaxSelectedBlendShapeIndex()
-        {
-            if (blendShapeIndices == null)
-                return -1;
-
-            int max = -1;
-            for (int i = 0; i < blendShapeIndices.Length; i++)
-            {
-                if (blendShapeIndices[i] > max)
-                    max = blendShapeIndices[i];
-            }
-
-            return max;
-        }
-
         private bool IsValidBlendShapeIndex(int index)
         {
             if (index < 0)
                 return false;
-
-            if (blendShapeCount <= 0)
-                return blendShapeIndices != null && index <= GetMaxSelectedBlendShapeIndex();
 
             return index < blendShapeCount;
         }
 
         private void ApplyContinuousBlendShapes()
         {
-            if (receiveInterpolation != ReceiveInterpolationMode.Continuous || !_hasContinuousTarget || !IsTSMPActive() || targetRenderer == null || _targetBlendShapeValues == null || _hasTargetBlendShapeValue == null)
+            if (receiveInterpolation != ReceiveInterpolationMode.Continuous || !IsTSMPActive())
+            {
+                ClearContinuousTargets();
+                return;
+            }
+            if (!_hasContinuousTarget)
+                return;
+
+            ResolveRenderer();
+            RefreshBlendShapeCount();
+            RebuildBlendShapeLookupIfNeeded();
+            if (!_hasContinuousTarget || targetRenderer == null)
                 return;
 
             float step = GetReceiveInterpolationStep();
@@ -304,6 +319,16 @@ namespace K13A.TSMP.Udon
             }
 
             _hasContinuousTarget = hasAnyTarget;
+        }
+
+        private void ClearContinuousTargets()
+        {
+            if (_hasTargetBlendShapeValue != null && _hasContinuousTarget)
+            {
+                for (int i = 0; i < _hasTargetBlendShapeValue.Length; i++)
+                    _hasTargetBlendShapeValue[i] = false;
+            }
+            _hasContinuousTarget = false;
         }
 
     }

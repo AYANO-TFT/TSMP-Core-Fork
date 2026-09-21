@@ -149,7 +149,6 @@ namespace K13A.TSMP
 
             _nextEditorEncodeTime = now + interval;
             SetupApplier.InvokeEncode(encoder);
-            SetupApplier.BlitEncoderOutputInEditor(encoder);
         }
 #endif
 #endif
@@ -235,7 +234,6 @@ namespace K13A.TSMP
                 ApplyEncoder();
 
             SetupApplier.InvokeEncode(encoder);
-            SetupApplier.BlitEncoderOutputInEditor(encoder);
         }
 
         private void ApplyDecoder()

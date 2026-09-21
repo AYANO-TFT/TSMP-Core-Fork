@@ -1,0 +1,37 @@
+[
+  {
+    "name": "com.kibalab.tsmp.core",
+    "version": "0.3.0-beta.2",
+    "commit": "ce55d15c611357443888a86c331735f8f44a3703",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\issue28-20260913-candidates\\archives\\com.kibalab.tsmp.core-0.3.0-beta.2.zip",
+    "sha256": "CA956E61BB29983F4303DF16C5456005ECCF0594C14D036454FEBA8A6C861944"
+  },
+  {
+    "name": "com.kibalab.tsmp.codec.luma4",
+    "version": "0.0.4-beta.1",
+    "commit": "f7f3d82e4b7902f78566287610f15296601817f6",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\issue28-20260913-candidates\\archives\\com.kibalab.tsmp.codec.luma4-0.0.4-beta.1.zip",
+    "sha256": "4017CBD6778D744EF197D542481F5325CC447EBA9884F2FB75C172C6E7192129"
+  },
+  {
+    "name": "com.kibalab.tsmp.codec.rgb16",
+    "version": "0.0.3-beta.3",
+    "commit": "eb69fe5c6a6fe1e3e6d8d13d0102ef2754702a33",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\issue28-20260913-candidates\\archives\\com.kibalab.tsmp.codec.rgb16-0.0.3-beta.3.zip",
+    "sha256": "5D9FC29DF6CCB1499D7D0A5EEAEDD4AAB979D757FC94892AD3A375EEBFAF76FF"
+  },
+  {
+    "name": "com.kibalab.tsmp.codec.rgb20",
+    "version": "0.0.3-beta.4",
+    "commit": "3373c73e4b381a9305ab1aee42978c1e0f763a1b",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\issue28-20260913-candidates\\archives\\com.kibalab.tsmp.codec.rgb20-0.0.3-beta.4.zip",
+    "sha256": "25BDF9A4650AFE5173FEEB868B5BCB91D1340C832623385CE562763E667EEB6D"
+  },
+  {
+    "name": "com.kibalab.tsmp.codec.color256",
+    "version": "0.0.3-beta.3",
+    "commit": "97b6e00ca4197f640d171ba9b8c80909888183c2",
+    "archive": "F:\\Unity\\TSMP\\Validation-Results\\issue28-20260913-candidates\\archives\\com.kibalab.tsmp.codec.color256-0.0.3-beta.3.zip",
+    "sha256": "C9093F272D86E0F906054B9F8EAF62C6EBB0A8A9835DDACAC4F68F81115BACC0"
+  }
+]

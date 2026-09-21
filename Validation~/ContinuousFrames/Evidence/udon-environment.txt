@@ -1,0 +1,7 @@
+Unity=2022.3.22f1
+GPU=NVIDIA GeForce RTX 4090
+API=Direct3D11
+ColorSpace=Gamma
+Editor=True
+Path=Compiled Udon VM
+Managed source=05bb03e372e44e183ff84af5d41622a8b685b26a

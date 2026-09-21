@@ -1,0 +1,16 @@
+width,height,path,samples,gpu_p50_us,gpu_p95_us
+640,360,native-upload-blit,25,0.8320,0.8320
+640,360,udon-symbol-expand,25,0.8320,0.8320
+640,360,gpu-convert-expand,25,3.3920,3.4880
+648,360,native-upload-blit,25,1.7600,1.8240
+648,360,udon-symbol-expand,25,1.7280,1.7920
+648,360,gpu-convert-expand,25,5.9200,5.9840
+1280,720,native-upload-blit,25,8.2880,8.3200
+1280,720,udon-symbol-expand,25,8.2880,8.3200
+1280,720,gpu-convert-expand,25,16.5120,18.6240
+3840,2160,native-upload-blit,25,80.8640,80.8960
+3840,2160,udon-symbol-expand,25,80.9600,80.9920
+3840,2160,gpu-convert-expand,25,93.7600,93.8560
+640,360,native-upload-blit,25,2.5280,2.5600
+640,360,udon-symbol-expand,25,2.4960,2.5600
+640,360,gpu-convert-expand,25,10.7200,11.3280

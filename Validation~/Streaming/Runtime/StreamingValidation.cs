@@ -31,6 +31,11 @@ public static class StreamingValidation
         Test("Validate dimensions and YUV420p before launching", InvalidDimensions);
         Test("Write Texture2D/RenderTexture RGBA frames and vertical flip through real FFmpeg", FrameOutput);
         Test("Repeat the last frame without reallocating or mixing buffers", RepeatFrame);
+        Test("Pace slow input and idle repeats at the configured frame rate", () => FramePacing("slow", 40, 1, true));
+        Test("Coalesce fast input at the configured frame rate", () => FramePacing("fast", 2, 1, true));
+        Test("Coalesce input bursts without extra output slots", () => FramePacing("burst", 80, 20, true));
+        Test("Pace fast input without repeating idle frames", () => FramePacing("no-repeat", 2, 1, false));
+        Test("Do not output before the first input and interrupt a long deadline on stop", EmptyPacing);
         Test("Stop and restart repeatedly without stale process diagnostics", Restart);
         Test("Detect a failed FFmpeg process even while edit-mode capture is paused", FailedProcess);
         Test("Failed startup and repeated stop restore background execution", FailedStartup);
@@ -318,6 +323,92 @@ public static class StreamingValidation
             Check(publisher.lastError.Contains("readback dimensions"), publisher.lastError);
         }
         finally { Destroy(publisher); UnityEngine.Object.DestroyImmediate(texture); }
+    }
+
+    private static void FramePacing(string name, int inputInterval, int burstSize, bool repeat)
+    {
+        const int fps = 30;
+        string path = Path.Combine(directory, "pacing-" + name + ".framemd5");
+        Type type = typeof(TSMPFfmpegRtmpPublisher).Assembly.GetType("K13A.TSMP.FfmpegPublishSession");
+        object session = Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.NonPublic, null,
+            new object[] { 2, 2, fps, repeat }, null);
+        var frame = new byte[16];
+        var info = new ProcessStartInfo(Environment.GetEnvironmentVariable("TSMP_VALIDATION_FFMPEG") ?? "ffmpeg",
+            "-nostdin -loglevel error -y -f rawvideo -pixel_format rgba -video_size 2x2 -framerate 30 -i pipe:0 -f framemd5 \"" + path + "\"")
+        {
+            UseShellExecute = false, RedirectStandardInput = true, RedirectStandardError = true,
+            RedirectStandardOutput = true, CreateNoWindow = true
+        };
+        try
+        {
+            Call(session, "Start", info);
+            var timer = Stopwatch.StartNew();
+            int submitted = 0;
+            while (timer.Elapsed.TotalSeconds < 1.8)
+            {
+                for (int i = 0; i < burstSize; i++)
+                {
+                    frame[0] = (byte)(++submitted % 251);
+                    Check((bool)Call(session, "Submit", frame), "Frame submission failed");
+                }
+                Thread.Sleep(inputInterval);
+            }
+            Thread.Sleep(120);
+            int beforeIdle = (int)Field(Call(session, "GetStatus"), "Written");
+            Thread.Sleep(200);
+            double elapsed = timer.Elapsed.TotalSeconds;
+            Call(session, "Stop");
+            object status = Call(session, "GetStatus");
+            int written = (int)Field(status, "Written");
+            Results.Add("Pacing " + name + ": elapsed=" + elapsed.ToString("F3") + "s, submitted=" + submitted +
+                ", written=" + written + ", rate=" + (written / elapsed).ToString("F2") + " FPS");
+            Check(string.IsNullOrEmpty((string)Field(status, "Error")) && (int)Field(status, "ExitCode") == 0, "FFmpeg pacing process failed");
+            Check(written <= Math.Ceiling(elapsed * fps) + 1, "Input events exceeded the configured FPS");
+            if (repeat) Check(written >= Math.Floor(elapsed * fps * .8), "Output cadence fell well below the configured FPS");
+            else Check(written == beforeIdle, "Idle frames repeated while disabled");
+            string[] lines = File.ReadAllLines(path);
+            Check(Array.Exists(lines, line => line.StartsWith("#tb 0: 1/30")), "FFmpeg time base does not match frame rate");
+            var rows = new List<string[]>();
+            foreach (string line in lines)
+                if (!line.StartsWith("#") && !string.IsNullOrWhiteSpace(line)) rows.Add(line.Split(','));
+            Check(rows.Count == written, "FFmpeg frame count differs from pipe writes");
+            for (int i = 0; i < rows.Count; i++)
+                Check(long.Parse(rows[i][2]) == i && int.Parse(rows[i][3]) == 1 && int.Parse(rows[i][4]) == 16,
+                    "FFmpeg timestamps or frame sizes are discontinuous");
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            {
+                string expected = BitConverter.ToString(md5.ComputeHash(frame)).Replace("-", "").ToLowerInvariant();
+                Check(rows.Count > 0 && rows[rows.Count - 1][5].Trim() == expected, "Latest submitted frame was not output intact");
+            }
+        }
+        finally { Call(session, "Stop"); }
+    }
+
+    private static void EmptyPacing()
+    {
+        Type type = typeof(TSMPFfmpegRtmpPublisher).Assembly.GetType("K13A.TSMP.FfmpegPublishSession");
+        object session = Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.NonPublic, null,
+            new object[] { 2, 2, 1, true }, null);
+        try
+        {
+            Call(session, "Start", new ProcessStartInfo(Environment.GetEnvironmentVariable("TSMP_VALIDATION_FFMPEG") ?? "ffmpeg",
+                "-nostdin -loglevel error -f rawvideo -pixel_format rgba -video_size 2x2 -framerate 1 -i pipe:0 -f null -")
+            {
+                UseShellExecute = false, RedirectStandardInput = true, RedirectStandardError = true,
+                RedirectStandardOutput = true, CreateNoWindow = true
+            });
+            Thread.Sleep(100);
+            Check((int)Field(Call(session, "GetStatus"), "Written") == 0, "Output invented a frame before input");
+            Call(session, "Submit", new byte[16]);
+            var timer = Stopwatch.StartNew();
+            while ((int)Field(Call(session, "GetStatus"), "Written") == 0 && timer.ElapsedMilliseconds < 1000) Thread.Sleep(5);
+            Check((int)Field(Call(session, "GetStatus"), "Written") == 1, "First frame did not wake writer");
+            timer.Restart();
+            Call(session, "Stop");
+            Check(timer.ElapsedMilliseconds < 800, "Stop waited for the next one-second output slot");
+            Check((bool)Field(Call(session, "GetStatus"), "Stopped"), "Writer did not stop");
+        }
+        finally { Call(session, "Stop"); }
     }
 
     private static void Restart()
