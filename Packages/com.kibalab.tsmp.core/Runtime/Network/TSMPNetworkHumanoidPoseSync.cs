@@ -137,6 +137,7 @@ namespace K13A.TSMP.Udon
         private Vector3 _continuousRootPosition;
         private Quaternion _continuousRootRotation = Quaternion.identity;
         private bool _continuousRootHasRotation;
+        private bool _snapNextReceive;
 
         public byte[] PoseBytes
         {
@@ -163,6 +164,55 @@ namespace K13A.TSMP.Udon
             ApplyContinuousPose();
         }
 #endif
+
+        public override void ResetReceiveState()
+        {
+            if (_targetBoneRotations != null)
+            {
+                int count = _targetBoneRotations.Length;
+                for (int i = 0; i < count; i++)
+                    _targetBoneRotations[i] = Quaternion.identity;
+            }
+
+            if (_hasTargetBoneRotation != null)
+            {
+                int count = _hasTargetBoneRotation.Length;
+                for (int i = 0; i < count; i++)
+                    _hasTargetBoneRotation[i] = false;
+            }
+
+            if (_receivedBoneWorldRotations != null)
+            {
+                int count = _receivedBoneWorldRotations.Length;
+                for (int i = 0; i < count; i++)
+                    _receivedBoneWorldRotations[i] = Quaternion.identity;
+            }
+
+            ClearReceivedBoneWorldRotations();
+
+            if (_cachedHasReceivedBoneWorldRotation != null)
+            {
+                int count = _cachedHasReceivedBoneWorldRotation.Length;
+                for (int i = 0; i < count; i++)
+                    _cachedHasReceivedBoneWorldRotation[i] = false;
+            }
+
+            if (_receivedAncestorBoneIdsById != null)
+            {
+                int count = _receivedAncestorBoneIdsById.Length;
+                for (int i = 0; i < count; i++)
+                    _receivedAncestorBoneIdsById[i] = -1;
+            }
+
+            _receivedAncestorBoneIdsValid = false;
+            _hasContinuousBoneTargets = false;
+            _hasContinuousRootTarget = false;
+            _continuousRootIsLocal = false;
+            _continuousRootPosition = Vector3.zero;
+            _continuousRootRotation = Quaternion.identity;
+            _continuousRootHasRotation = false;
+            _snapNextReceive = true;
+        }
 
         public override void TSMPBeforeEncode()
         {
@@ -293,7 +343,8 @@ namespace K13A.TSMP.Udon
             }
 
             Transform[] targetsById = _boneTargetsById;
-            bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous;
+            bool appliedAny = false;
+            bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous && !_snapNextReceive;
             if (continuous)
             {
                 EnsureLookupArrays();
@@ -331,6 +382,7 @@ namespace K13A.TSMP.Udon
                             _targetBoneRotations[rawBoneId] = rotation;
                             _hasTargetBoneRotation[rawBoneId] = true;
                             _hasContinuousBoneTargets = true;
+                            appliedAny = true;
                         }
                         else if (_receivedBoneWorldRotations != null && _hasReceivedBoneWorldRotation != null && rawBoneId < _receivedBoneWorldRotations.Length)
                         {
@@ -340,20 +392,24 @@ namespace K13A.TSMP.Udon
                                 _receivedBoneWorldRotations[rawBoneId] = rotation;
 
                             _hasReceivedBoneWorldRotation[rawBoneId] = true;
+                            appliedAny = true;
                         }
                     }
                 }
                 else if (animatorRootSpaceRotations && animatorRoot != null)
                 {
                     target.rotation = animatorRootRotation * rotation;
+                    appliedAny = true;
                 }
                 else if (localRotations)
                 {
                     target.localRotation = rotation;
+                    appliedAny = true;
                 }
                 else
                 {
                     target.rotation = rotation;
+                    appliedAny = true;
                 }
             }
 
@@ -374,6 +430,7 @@ namespace K13A.TSMP.Udon
                 Transform target = _rootMotionTarget != null ? _rootMotionTarget : ResolveRootMotionTarget();
                 if (target != null && rootMotionWorldSpace)
                 {
+                    appliedAny = true;
                     if (continuous)
                     {
                         _continuousRootPosition = rootPosition;
@@ -396,6 +453,7 @@ namespace K13A.TSMP.Udon
                 }
                 else if (target != null && animatorRootSpaceRotations && animatorRoot != null)
                 {
+                    appliedAny = true;
                     Vector3 rootOffset = animatorRoot.rotation * rootPosition;
                     if (continuous)
                     {
@@ -419,6 +477,7 @@ namespace K13A.TSMP.Udon
                 }
                 else if (target != null)
                 {
+                    appliedAny = true;
                     if (continuous)
                     {
                         _continuousRootPosition = rootPosition;
@@ -443,6 +502,9 @@ namespace K13A.TSMP.Udon
 
             if (continuous)
                 ConvertReceivedWorldRotationsToLocalTargets(skipContinuousRootBoneRotation);
+
+            if (_snapNextReceive && appliedAny)
+                _snapNextReceive = false;
         }
 
         public override void OnTSMPVariableReceived()
