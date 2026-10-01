@@ -97,11 +97,16 @@ namespace K13A.TSMP.Udon
         private const byte PoseFlagHasRootMotionPosition = 1 << 1;
         private const byte PoseFlagAnimatorRootSpaceRotations = 1 << 2;
         private const byte PoseFlagRootMotionWorldSpace = 1 << 3;
+        private const byte PoseKnownFlags = PoseFlagLocalRotations |
+                                            PoseFlagHasRootMotionPosition |
+                                            PoseFlagAnimatorRootSpaceRotations |
+                                            PoseFlagRootMotionWorldSpace;
 
         private Transform[] _boneTargetsById;
         private bool[] _boneTargetResolvedById;
         private bool[] _boneTargetResolvedByIndex;
         private bool[] _hasBoneId;
+        private bool[] _validatedReceivedBoneIds;
         private bool[] _fingerAllowedById;
         private int[] _activeBoneIndices;
         private int[] _activeBoneIds;
@@ -320,14 +325,24 @@ namespace K13A.TSMP.Udon
             byte version = poseBytes[0];
             byte flags = poseBytes[1];
             int count = Binary.ReadUInt16LE(poseBytes, 2);
+            if (version == 0 || version > PoseVersion || (flags & ~PoseKnownFlags) != 0)
+                return;
+            if (version < 2 && (flags & PoseFlagHasRootMotionPosition) != 0)
+                return;
+
             int rootTailBytes = 0;
             if (version >= 2 && (flags & PoseFlagHasRootMotionPosition) != 0)
                 rootTailBytes = PoseRootMotionPositionBytes + (version >= 4 ? PoseRootMotionRotationBytes : 0);
-            if (poseBytes.Length < PoseHeaderBytes + rootTailBytes)
+            int expectedBytes = PoseHeaderBytes + count * PoseBoneBytes + rootTailBytes;
+            if (poseBytes.Length != expectedBytes)
                 return;
 
             int maxBoneRecords = (poseBytes.Length - PoseHeaderBytes - rootTailBytes) / PoseBoneBytes;
             if (count < 0 || count > maxBoneRecords)
+                return;
+            if (!ValidatePoseBoneRecords(count, PoseHeaderBytes))
+                return;
+            if (!ValidateRootMotionPosition(count, rootTailBytes))
                 return;
 
             int cursor = PoseHeaderBytes;
@@ -899,6 +914,8 @@ namespace K13A.TSMP.Udon
                 _boneTargetResolvedById = new bool[lastBone];
             if (_hasBoneId == null || _hasBoneId.Length != lastBone)
                 _hasBoneId = new bool[lastBone];
+            if (_validatedReceivedBoneIds == null || _validatedReceivedBoneIds.Length != lastBone)
+                _validatedReceivedBoneIds = new bool[lastBone];
             if (_fingerAllowedById == null || _fingerAllowedById.Length != lastBone)
                 _fingerAllowedById = new bool[lastBone];
             if (_targetBoneRotations == null || _targetBoneRotations.Length != lastBone)
@@ -977,6 +994,54 @@ namespace K13A.TSMP.Udon
             _cachedBoneIdHash = GetBoneIdHash();
             _cachedIncludeFingerBones = includeFingerBones;
             _boneCacheValid = true;
+        }
+
+        private bool ValidatePoseBoneRecords(int count, int cursor)
+        {
+            EnsureLookupArrays();
+            if (!_boneCacheValid ||
+                _cachedBoneIdLength != (boneIds != null ? boneIds.Length : -1) ||
+                _cachedBoneIdHash != GetBoneIdHash() ||
+                _cachedIncludeFingerBones != includeFingerBones)
+            {
+                RebuildBoneLookup();
+            }
+
+            int lastBone = (int)HumanBodyBones.LastBone;
+            for (int i = 0; i < lastBone; i++)
+                _validatedReceivedBoneIds[i] = false;
+
+            for (int i = 0; i < count; i++)
+            {
+                if (cursor + PoseBoneBytes > poseBytes.Length)
+                    return false;
+
+                int rawBoneId = poseBytes[cursor];
+                if (rawBoneId < 0 || rawBoneId >= lastBone)
+                    return false;
+                if (!_hasBoneId[rawBoneId] || _validatedReceivedBoneIds[rawBoneId])
+                    return false;
+
+                _validatedReceivedBoneIds[rawBoneId] = true;
+                cursor += PoseBoneBytes;
+            }
+
+            return true;
+        }
+
+        private bool ValidateRootMotionPosition(int boneCount, int rootTailBytes)
+        {
+            if (rootTailBytes == 0)
+                return true;
+
+            int cursor = PoseHeaderBytes + boneCount * PoseBoneBytes;
+            Vector3 rootPosition = Binary.ReadVector3Float32LE(poseBytes, cursor);
+            return IsFinite(rootPosition.x) && IsFinite(rootPosition.y) && IsFinite(rootPosition.z);
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
         private void RebuildBoneParentLookup()
