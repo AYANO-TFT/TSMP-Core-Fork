@@ -15,6 +15,7 @@ TSMP includes several `TSMPNetworkBehaviour` components that cover common VRChat
 | Active state | Disabled components or inactive GameObjects do not participate. |
 | `TSMPBeforeEncode()` | Captures component state before the encoder reads `[TransSync]` fields. |
 | `OnTSMPVariableReceived()` | Applies decoded state after a frame is received. |
+| `ResetReceiveState()` | Clears transient receive targets in Transform, Humanoid Pose, and BlendShapes; it is a no-op in other built-in components. |
 
 ## Component overview
 
