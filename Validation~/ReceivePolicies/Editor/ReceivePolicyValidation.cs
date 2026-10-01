@@ -48,6 +48,7 @@ public static class ReceivePolicyValidation
         foreach (var mode in new[] { ReceiveInterpolationMode.Discrete, ReceiveInterpolationMode.Continuous })
             Test("Disabling Rigidbody clears pending targets while " + mode, () => CancelRigidbodyTarget(mode));
         Test("Missing Rigidbody still receives Transform data", MissingRigidbody);
+        Test("Transform receive reset clears targets and snaps the next applicable packet", TransformReceiveReset);
         foreach (string change in BlendShapePolicyCases.Changes)
             Test("BlendShape target invalidation: " + change, () => BlendShapePolicyCases.Run(change));
         foreach (string selection in AnimatorPolicyCases.SelectionCases)
@@ -387,6 +388,68 @@ public static class ReceivePolicyValidation
             receiver.Call("OnTSMPVariableReceived");
             TickTransform(receiver);
             Check(Vector3.Distance(receiver.Target.transform.position, new Vector3(3, 4, 5)) < .001f, "Missing Rigidbody blocked Transform application");
+        }
+    }
+
+    private static void TransformReceiveReset()
+    {
+        byte[] stalePacket = TransformPacket();
+        byte[] recoveryPacket = (byte[])stalePacket.Clone();
+        byte[] followingPacket = (byte[])stalePacket.Clone();
+        Binary.WriteVector3Float32LE(recoveryPacket, 2, new Vector3(11, 12, 13));
+        Binary.WriteVector3Float32LE(followingPacket, 2, new Vector3(21, 22, 23));
+
+        using (var receiver = new Endpoint(typeof(TSMPNetworkTransformSync)))
+        {
+            receiver.Set("receiveInterpolation", ReceiveInterpolationMode.Continuous);
+            receiver.Set("continuousInterpolationRate", 0f);
+            receiver.Set("networkId", (ushort)19);
+            receiver.Set("lastVariableHash", 123u);
+            receiver.Set("packedBytes", stalePacket);
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Get<bool>("_hasContinuousTarget"), "Continuous target fixture was not armed");
+
+            receiver.Call("ResetReceiveState");
+            Check(!receiver.Get<bool>("_hasContinuousTarget"), "Reset retained the aggregate Transform target");
+            Check(!receiver.Get<bool>("_continuousHasPosition") &&
+                  !receiver.Get<bool>("_continuousHasRotation") &&
+                  !receiver.Get<bool>("_continuousHasScale") &&
+                  !receiver.Get<bool>("_continuousHasRigidbodyVelocity") &&
+                  !receiver.Get<bool>("_continuousHasRigidbodyAngularVelocity"), "Reset retained a Transform target flag");
+            Check(receiver.Get<Vector3>("_continuousPosition") == Vector3.zero &&
+                  receiver.Get<Quaternion>("_continuousRotation") == Quaternion.identity &&
+                  receiver.Get<Vector3>("_continuousScale") == Vector3.zero &&
+                  receiver.Get<Vector3>("_continuousRigidbodyVelocity") == Vector3.zero &&
+                  receiver.Get<Vector3>("_continuousRigidbodyAngularVelocity") == Vector3.zero, "Reset retained a Transform target value");
+            Check(receiver.Get<bool>("_snapNextReceive"), "Reset did not arm the next applicable packet");
+            Check(ReferenceEquals(receiver.Get<byte[]>("packedBytes"), stalePacket), "Reset replaced the public receive buffer");
+            Check(receiver.Get<ReceiveInterpolationMode>("receiveInterpolation") == ReceiveInterpolationMode.Continuous &&
+                  receiver.Get<float>("continuousInterpolationRate") == 0f &&
+                  receiver.Get<ushort>("networkId") == 19 &&
+                  receiver.Get<uint>("lastVariableHash") == 123u, "Reset changed public configuration or diagnostics");
+
+            TickTransform(receiver);
+            Check(receiver.Target.transform.position == Vector3.zero, "A stale Transform target was replayed after reset");
+
+            receiver.Set("packedBytes", new byte[] { 2 });
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Get<bool>("_snapNextReceive"), "A malformed packet consumed the pending snap");
+
+            receiver.Set("packedBytes", new byte[] { 2, 0 });
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Get<bool>("_snapNextReceive"), "An empty packet consumed the pending snap");
+
+            receiver.Set("packedBytes", recoveryPacket);
+            receiver.Call("OnTSMPVariableReceived");
+            Check(Vector3.Distance(receiver.Target.transform.position, new Vector3(11, 12, 13)) < .001f, "The recovery packet did not snap immediately");
+            Check(!receiver.Get<bool>("_snapNextReceive") && !receiver.Get<bool>("_hasContinuousTarget"), "The successful snap did not return to normal receive state");
+
+            receiver.Target.transform.position = Vector3.zero;
+            receiver.Set("packedBytes", followingPacket);
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Target.transform.position == Vector3.zero && receiver.Get<bool>("_hasContinuousTarget"), "Continuous interpolation did not resume after the snap");
+            TickTransform(receiver);
+            Check(Vector3.Distance(receiver.Target.transform.position, new Vector3(21, 22, 23)) < .001f, "The resumed continuous target was not applied");
         }
     }
 
