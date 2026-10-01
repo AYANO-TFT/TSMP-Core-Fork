@@ -37,6 +37,7 @@ namespace K13A.TSMP.Udon
         private bool _hasContinuousTarget;
         private SkinnedMeshRenderer _cachedRenderer;
         private Mesh _cachedMesh;
+        private bool _snapNextReceive;
 
         public byte[] BlendShapeBytes
         {
@@ -69,6 +70,26 @@ namespace K13A.TSMP.Udon
             ApplyContinuousBlendShapes();
         }
 #endif
+
+        public override void ResetReceiveState()
+        {
+            _hasContinuousTarget = false;
+            if (_targetBlendShapeValues != null)
+            {
+                int count = _targetBlendShapeValues.Length;
+                for (int i = 0; i < count; i++)
+                    _targetBlendShapeValues[i] = 0f;
+            }
+
+            if (_hasTargetBlendShapeValue != null)
+            {
+                int count = _hasTargetBlendShapeValue.Length;
+                for (int i = 0; i < count; i++)
+                    _hasTargetBlendShapeValue[i] = false;
+            }
+
+            _snapNextReceive = true;
+        }
 
         public override void TSMPBeforeEncode()
         {
@@ -133,7 +154,8 @@ namespace K13A.TSMP.Udon
                 return;
 
             int cursor = BlendShapeHeaderBytes;
-            bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous;
+            bool appliedAny = false;
+            bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous && !_snapNextReceive;
             for (int i = 0; i < count; i++)
             {
                 int index = Binary.ReadUInt16LE(blendShapeBytes, cursor);
@@ -150,16 +172,24 @@ namespace K13A.TSMP.Udon
                         _targetBlendShapeValues[index] = value;
                         _hasTargetBlendShapeValue[index] = true;
                         _hasContinuousTarget = true;
+                        appliedAny = true;
                     }
 
                     continue;
                 }
 
                 if (targetRenderer.GetBlendShapeWeight(index) == (float)value)
+                {
+                    appliedAny = true;
                     continue;
+                }
 
                 targetRenderer.SetBlendShapeWeight(index, value);
+                appliedAny = true;
             }
+
+            if (_snapNextReceive && appliedAny)
+                _snapNextReceive = false;
         }
 
         public override void OnTSMPVariableReceived()

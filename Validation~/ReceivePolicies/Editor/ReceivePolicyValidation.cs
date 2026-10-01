@@ -50,6 +50,7 @@ public static class ReceivePolicyValidation
         Test("Missing Rigidbody still receives Transform data", MissingRigidbody);
         Test("Transform receive reset clears targets and snaps the next applicable packet", TransformReceiveReset);
         Test("Humanoid receive reset clears targets and snaps the next applicable packet", HumanoidReceiveReset);
+        Test("BlendShape receive reset clears targets and snaps the next applicable packet", BlendShapePolicyCases.Reset);
         foreach (string change in BlendShapePolicyCases.Changes)
             Test("BlendShape target invalidation: " + change, () => BlendShapePolicyCases.Run(change));
         foreach (string selection in AnimatorPolicyCases.SelectionCases)
