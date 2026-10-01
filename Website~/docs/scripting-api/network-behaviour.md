@@ -89,7 +89,16 @@ public override void OnTSMPVariableReceived()
 | --- | --- |
 | `IsTSMPActive()` | Returns enabled and active-in-hierarchy state. |
 | `GetReceiveInterpolationStep()` | Returns a clamped `0..1` interpolation step. |
+| `ResetReceiveState()` | Clears transient receiver state where the component provides an override. |
 | `SendTransRPC(string methodName, RPCTarget target)` | Queue an RPC event through TSMP. |
+
+## Receiver state reset
+
+`ResetReceiveState()` is a public, parameterless, virtual API. The base implementation is a no-op. `TSMPNetworkTransformSync`, `TSMPNetworkHumanoidPoseSync`, and `TSMPNetworkBlendShapesSync` override it to discard their private interpolation targets and arm one direct application. The next structurally valid packet that applies at least one configured target is applied without continuous smoothing; later packets resume the configured receive mode. Malformed, empty, or targetless packets do not consume the pending direct application.
+
+The reset is idempotent. It does not replace the public packed byte array, alter `receiveInterpolation`, network IDs, hashes, diagnostics, or automatically run from enable/disable callbacks. It also does not restore presentation defaults such as baseline Transforms, default blendshape weights, or Animator state. A controller that needs those presentation changes should perform them separately, then call this method before normal packets resume.
+
+Other built-in components currently inherit the no-op base implementation. Custom components can override the method to clear their own private receive caches while preserving public received fields and configuration.
 
 ## RPCTarget
 
