@@ -23,7 +23,6 @@ namespace K13A.TSMP.Editor
         {
             SetupInstantiation.PrepareAction = Prepare;
             SetupInstantiation.InstantiateCodecAction = InstantiateCodec;
-            EditorApplication.hierarchyChanged += QueueAll;
             EditorApplication.projectChanged += QueueAll;
             Undo.undoRedoPerformed += QueueAll;
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
@@ -63,6 +62,9 @@ namespace K13A.TSMP.Editor
             foreach (TSMPEncoder encoder in UnityEngine.Object.FindObjectsOfType<TSMPEncoder>(true))
                 if (encoder.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(encoder))
                     PrepareEncoder(encoder);
+
+            // Include components created by setup without relying on hierarchyChanged.
+            TransSyncBindingBuilder.RebuildSceneBindings(false);
         }
 
         private static void OnPlayModeChanged(PlayModeStateChange state)
@@ -74,6 +76,7 @@ namespace K13A.TSMP.Editor
         private static void OnSceneSaving(Scene scene, string path)
         {
             PrepareScene(scene);
+            TransSyncBindingBuilder.RebuildSceneBindings(false);
             foreach (GameObject root in scene.GetRootGameObjects())
                 foreach (TSMPSetup setup in root.GetComponentsInChildren<TSMPSetup>(true))
                     if (setup.resources != null)

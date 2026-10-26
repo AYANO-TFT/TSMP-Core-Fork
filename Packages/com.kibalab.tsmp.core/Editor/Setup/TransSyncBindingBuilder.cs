@@ -34,8 +34,6 @@ namespace K13A.TSMP.Editor
             UdonProxySyncBridge.SyncAction = SyncUdonProxy;
             UdonProxySyncBridge.ResolveProxyAction = ResolveUdonProxy;
 #endif
-            EditorApplication.hierarchyChanged -= QueueAutomaticRebuild;
-            EditorApplication.hierarchyChanged += QueueAutomaticRebuild;
             Undo.postprocessModifications -= OnPostprocessModifications;
             Undo.postprocessModifications += OnPostprocessModifications;
         }
@@ -83,7 +81,7 @@ namespace K13A.TSMP.Editor
             QueueAutomaticRebuild();
         }
 
-        private static void RebuildSceneBindings(bool logResult)
+        internal static void RebuildSceneBindings(bool logResult)
         {
             TSMPNetworkBehaviour[] behaviours = UnityEngine.Object.FindObjectsOfType<TSMPNetworkBehaviour>(true);
             Component[] encoders = FindComponents("K13A.TSMP.TSMPEncoder");
@@ -926,7 +924,8 @@ namespace K13A.TSMP.Editor
 #if UDONSHARP
         private static void SyncUdonProxy(Component component)
         {
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            // ExitingEditMode still needs to serialize the prepared bindings.
+            if (EditorApplication.isPlaying)
                 return;
 
             UdonSharpBehaviour proxy = component as UdonSharpBehaviour;
