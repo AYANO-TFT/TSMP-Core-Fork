@@ -22,6 +22,7 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _payloadByteTexture;
         private SerializedProperty _codecHandlers;
         private SerializedProperty _applyEveryFrame;
+        private SerializedProperty _validateBindingCacheOnReceive;
         private SerializedProperty _skipDuplicateFrames;
         private SerializedProperty _frameWindowSize;
         private SerializedProperty _blockSize;
@@ -46,6 +47,7 @@ namespace K13A.TSMP.Editor
             _payloadByteTexture = serializedObject.FindProperty("payloadByteTexture");
             _codecHandlers = serializedObject.FindProperty("codecHandlers");
             _applyEveryFrame = serializedObject.FindProperty("applyEveryFrame");
+            _validateBindingCacheOnReceive = serializedObject.FindProperty("validateBindingCacheOnReceive");
             _skipDuplicateFrames = serializedObject.FindProperty("skipDuplicateFrames");
             _frameWindowSize = serializedObject.FindProperty("frameWindowSize");
             _blockSize = serializedObject.FindProperty("blockSize");
@@ -97,6 +99,9 @@ namespace K13A.TSMP.Editor
         {
             InspectorUI.BeginSection("Decode");
             InspectorUI.Property(_applyEveryFrame);
+            EditorGUILayout.PropertyField(_validateBindingCacheOnReceive,
+                new GUIContent("Validate Binding Cache On Receive",
+                    "Default: on. Disable for bindings fixed during Play to skip full configuration scans. Packet validation and target activity checks remain enabled. Call _InvalidateBindingCache after changing bindings at runtime."));
             EditorGUILayout.PropertyField(_skipDuplicateFrames, new GUIContent("Filter Frames", "Skip duplicate and older frames, with a frame-zero restart exception based on Window Size."));
             using (new EditorGUI.DisabledScope(!_skipDuplicateFrames.hasMultipleDifferentValues && !_skipDuplicateFrames.boolValue))
                 EditorGUILayout.PropertyField(_frameWindowSize, new GUIContent("Window Size", "Frame count used to recognize a restart at frame zero. Default: 256."));
