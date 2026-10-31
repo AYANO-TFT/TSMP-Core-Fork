@@ -93,7 +93,9 @@ namespace K13A.TSMP
                     quaternionValueArrays,
                     stringValueArrays);
 
-                if (DecoderVariableDispatcher.Apply(targets, bindingIndex, fieldName, variableHash, decodedValue))
+                // Only decoding/copying occurs after IsTargetActive above. Recheck
+                // each later binding as usual: a receiver event may deactivate it.
+                if (DecoderVariableDispatcher.ApplyToActiveTarget(targets[bindingIndex], fieldName, variableHash, decodedValue))
                     appliedCount++;
             }
 

@@ -50,7 +50,16 @@ namespace K13A.TSMP
             if (!IsTargetActive(targets, index))
                 return false;
 
-            UdonBehaviour target = targets[index];
+            return ApplyToActiveTarget(targets[index], fieldName, variableHash, decodedValue);
+        }
+
+        // The caller must have checked this target with IsTargetActive in the same
+        // synchronous operation, without dispatching events or changing target state.
+        internal static bool ApplyToActiveTarget(UdonBehaviour target, string fieldName, uint variableHash, object decodedValue)
+        {
+            if (decodedValue == null)
+                return false;
+
             TSMPBehaviour.SetProgramVariable(target, fieldName, decodedValue);
             TSMPBehaviour.SetProgramVariable(target, TSMPNetworkBehaviour.LastVariableHashFieldName, variableHash);
             TSMPBehaviour.SendCustomEvent(target, TSMPNetworkBehaviour.OnVariableReceivedEventName);
@@ -82,7 +91,16 @@ namespace K13A.TSMP
             if (!IsTargetActive(targets, index))
                 return false;
 
-            Component target = targets[index];
+            return ApplyToActiveTarget(targets[index], fieldName, variableHash, decodedValue);
+        }
+
+        // Same precondition as the Udon path: eligibility was checked immediately
+        // before value decoding, which does not invoke recipient code.
+        internal static bool ApplyToActiveTarget(Component target, string fieldName, uint variableHash, object decodedValue)
+        {
+            if (decodedValue == null)
+                return false;
+
             TSMPBehaviour.SetProgramVariable(target, fieldName, decodedValue);
             TSMPBehaviour.SetProgramVariable(target, TSMPNetworkBehaviour.LastVariableHashFieldName, variableHash);
             TSMPBehaviour.SendCustomEvent(target, TSMPNetworkBehaviour.OnVariableReceivedEventName);
