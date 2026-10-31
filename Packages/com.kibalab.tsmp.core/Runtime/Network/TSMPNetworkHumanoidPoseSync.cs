@@ -76,6 +76,10 @@ namespace K13A.TSMP.Udon
         public bool autoResolveBones = true;
         public HumanoidRootSyncSpace rootSyncSpace = HumanoidRootSyncSpace.Local;
         public bool includeFingerBones = true;
+        [Tooltip("Receive only: alternate left/right finger decoding on successful pose receipts. Continuous interpolation still runs for both sides every frame. Disabled by default.")]
+        public bool alternateHandUpdates;
+        [Tooltip("Also alternate LeftHand/RightHand (wrists). Arms and the rest of the body still update on every pose receipt.")]
+        public bool alternateIncludeWrists;
         [HideInInspector] public int validBoneCount;
         [HideInInspector] public int encodedPoseBytes;
         [HideInInspector] public int encodedRootMotionBytes;
@@ -144,6 +148,10 @@ namespace K13A.TSMP.Udon
         private Quaternion _continuousRootRotation = Quaternion.identity;
         private bool _continuousRootHasRotation;
         private bool _snapNextReceive;
+        private bool _handReceiveInitialized;
+        private bool _receiveRightHandNext;
+        private int _lastHandUpdateMode;
+        private ReceiveInterpolationMode _lastHandInterpolation;
 
         public byte[] PoseBytes
         {
@@ -157,6 +165,11 @@ namespace K13A.TSMP.Udon
         private void Start()
         {
             ResolveBones();
+        }
+
+        private void OnDisable()
+        {
+            _handReceiveInitialized = false;
         }
 
 #if UDONSHARP || COMPILER_UDONSHARP
@@ -219,6 +232,7 @@ namespace K13A.TSMP.Udon
             _continuousRootRotation = Quaternion.identity;
             _continuousRootHasRotation = false;
             _snapNextReceive = true;
+            _handReceiveInitialized = false;
         }
 
         public override void TSMPBeforeEncode()
@@ -362,6 +376,17 @@ namespace K13A.TSMP.Udon
             Transform[] targetsById = _boneTargetsById;
             bool appliedAny = false;
             bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous && !_snapNextReceive;
+            int handUpdateMode = alternateHandUpdates ? (alternateIncludeWrists ? 2 : 1) : 0;
+            // Receipt order, not render-frame parity: a slower or irregular sender must
+            // not repeatedly update only one side. Invalid packets never advance this state.
+            bool alternate = handUpdateMode != 0 && _handReceiveInitialized && !_snapNextReceive
+                && _lastHandUpdateMode == handUpdateMode && _lastHandInterpolation == receiveInterpolation;
+            int skipFingerStart = _receiveRightHandNext
+                ? (int)HumanBodyBones.LeftThumbProximal : (int)HumanBodyBones.RightThumbProximal;
+            int skipFingerEnd = _receiveRightHandNext
+                ? (int)HumanBodyBones.LeftLittleDistal : (int)HumanBodyBones.RightLittleDistal;
+            int skipWrist = alternateIncludeWrists
+                ? (_receiveRightHandNext ? (int)HumanBodyBones.LeftHand : (int)HumanBodyBones.RightHand) : -1;
             if (continuous)
             {
                 EnsureLookupArrays();
@@ -378,6 +403,14 @@ namespace K13A.TSMP.Udon
                 Transform target = targetsById[rawBoneId];
                 if (target == null)
                 {
+                    cursor += PoseBoneBytes;
+                    continue;
+                }
+
+                if (alternate && ((rawBoneId >= skipFingerStart && rawBoneId <= skipFingerEnd) || rawBoneId == skipWrist))
+                {
+                    // Keep the previous local interpolation target; do not re-convert
+                    // an old world rotation against this packet's newer parent pose.
                     cursor += PoseBoneBytes;
                     continue;
                 }
@@ -508,6 +541,13 @@ namespace K13A.TSMP.Udon
 
             if (_snapNextReceive && appliedAny)
                 _snapNextReceive = false;
+            if (count > 0 || appliedAny)
+            {
+                _receiveRightHandNext = alternate ? !_receiveRightHandNext : false;
+                _handReceiveInitialized = true;
+                _lastHandUpdateMode = handUpdateMode;
+                _lastHandInterpolation = receiveInterpolation;
+            }
         }
 
         public override void OnTSMPVariableReceived()
@@ -762,6 +802,10 @@ namespace K13A.TSMP.Udon
             // Called only for a validated bone after EnsureLookupArrays and
             // EnsureReceivedAncestorBoneIdsCache. The cache contains -1 or a valid ID.
             int ancestorBoneId = _receivedAncestorBoneIdsById[boneId];
+            // The ancestor cache follows the full validated packet, so alternation
+            // does not rebuild it every receipt. Skip ancestors not decoded this time.
+            while (ancestorBoneId >= 0 && !_hasReceivedBoneWorldRotation[ancestorBoneId])
+                ancestorBoneId = _receivedAncestorBoneIdsById[ancestorBoneId];
             bool ancestorAvailable = ancestorBoneId >= 0 && _hasReceivedBoneWorldRotation[ancestorBoneId];
             if (ancestorAvailable)
             {
@@ -790,7 +834,7 @@ namespace K13A.TSMP.Udon
                 bool receivedBoneSetMatches = true;
                 for (int i = 0; i < count; i++)
                 {
-                    if (_cachedHasReceivedBoneWorldRotation[i] == _hasReceivedBoneWorldRotation[i])
+                    if (_cachedHasReceivedBoneWorldRotation[i] == (_validatedReceivedBoneIds[i] || _hasReceivedBoneWorldRotation[i]))
                         continue;
 
                     receivedBoneSetMatches = false;
@@ -803,7 +847,10 @@ namespace K13A.TSMP.Udon
 
             for (int i = 0; i < count; i++)
             {
-                _cachedHasReceivedBoneWorldRotation[i] = _hasReceivedBoneWorldRotation[i];
+                _cachedHasReceivedBoneWorldRotation[i] = _validatedReceivedBoneIds[i] || _hasReceivedBoneWorldRotation[i];
+            }
+            for (int i = 0; i < count; i++)
+            {
                 _receivedAncestorBoneIdsById[i] = FindReceivedAncestorBoneId(i);
             }
 
@@ -823,7 +870,7 @@ namespace K13A.TSMP.Udon
             int guard = 0;
             while (parentBoneId >= 0 && parentBoneId < lastBone && guard < lastBone)
             {
-                if (parentBoneId < _hasReceivedBoneWorldRotation.Length && _hasReceivedBoneWorldRotation[parentBoneId])
+                if (_cachedHasReceivedBoneWorldRotation[parentBoneId])
                     return parentBoneId;
 
                 parentBoneId = _boneParentIdsById[parentBoneId];
@@ -945,6 +992,7 @@ namespace K13A.TSMP.Udon
         private void RebuildBoneLookup()
         {
             EnsureLookupArrays();
+            _handReceiveInitialized = false;
 
             int lastBone = (int)HumanBodyBones.LastBone;
             for (int i = 0; i < lastBone; i++)
@@ -1034,6 +1082,7 @@ namespace K13A.TSMP.Udon
 
         private void RebuildBoneParentLookup()
         {
+            _handReceiveInitialized = false;
             if (_boneParentIdsById == null || _boneTargetsById == null)
                 return;
 

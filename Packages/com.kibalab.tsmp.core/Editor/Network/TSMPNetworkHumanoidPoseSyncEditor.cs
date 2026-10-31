@@ -110,6 +110,15 @@ namespace K13A.TSMP.Editor
             DrawProperty("autoResolveBones");
             DrawProperty("rootSyncSpace");
 
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Receive Hand Updates", EditorStyles.boldLabel);
+            DrawProperty("alternateHandUpdates");
+            SerializedProperty alternate = serializedObject.FindProperty("alternateHandUpdates");
+            using (new EditorGUI.DisabledScope(!alternate.boolValue && !alternate.hasMultipleDifferentValues))
+                DrawProperty("alternateIncludeWrists");
+            if (alternate.boolValue || alternate.hasMultipleDifferentValues)
+                EditorGUILayout.HelpBox("Receive only: left/right fingers update on alternate successful pose receipts. Include Wrists also alternates the hands. Continuous interpolation runs on both sides every frame. Fast hand motion can lag by one receipt; leave disabled when precision matters.", MessageType.Info);
+
             using (new EditorGUI.DisabledScope(true))
             {
                 DrawProperty("validBoneCount");
