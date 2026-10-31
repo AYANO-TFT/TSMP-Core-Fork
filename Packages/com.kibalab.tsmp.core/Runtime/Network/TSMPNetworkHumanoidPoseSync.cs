@@ -139,6 +139,7 @@ namespace K13A.TSMP.Udon
         private bool _hasContinuousBoneTargets;
         private bool _hasContinuousRootTarget;
         private bool _continuousRootIsLocal;
+        private bool _continuousRootIsAnimatorRelative;
         private Vector3 _continuousRootPosition;
         private Quaternion _continuousRootRotation = Quaternion.identity;
         private bool _continuousRootHasRotation;
@@ -213,6 +214,7 @@ namespace K13A.TSMP.Udon
             _hasContinuousBoneTargets = false;
             _hasContinuousRootTarget = false;
             _continuousRootIsLocal = false;
+            _continuousRootIsAnimatorRelative = false;
             _continuousRootPosition = Vector3.zero;
             _continuousRootRotation = Quaternion.identity;
             _continuousRootHasRotation = false;
@@ -367,70 +369,53 @@ namespace K13A.TSMP.Udon
                 ClearReceivedBoneWorldRotations();
             }
 
+            // ValidatePoseBoneRecords has checked every ID and record boundary, and
+            // EnsureLookupArrays has prepared every ID-indexed array. Keep those checks
+            // outside this loop: repeated array/null checks are expensive in Udon.
             for (int i = 0; i < count; i++)
             {
-                if (cursor + PoseBoneBytes > poseBytes.Length)
-                    return;
-
-                int rawBoneId = poseBytes[cursor++];
-                if (rawBoneId < 0 || rawBoneId >= (int)HumanBodyBones.LastBone)
+                int rawBoneId = poseBytes[cursor];
+                Transform target = targetsById[rawBoneId];
+                if (target == null)
                 {
-                    cursor += 5;
+                    cursor += PoseBoneBytes;
                     continue;
                 }
 
-                Quaternion rotation = Binary.ReadPackedQuaternion12LE(poseBytes, cursor);
-                cursor += 5;
-
-                Transform target = null;
-                if (targetsById != null && rawBoneId < targetsById.Length)
-                    target = targetsById[rawBoneId];
-                if (target == null)
-                    continue;
+                Quaternion rotation = Binary.ReadPackedQuaternion12LE(poseBytes, cursor + 1);
+                cursor += PoseBoneBytes;
 
                 if (continuous)
                 {
-                    if (_targetBoneRotations != null && _hasTargetBoneRotation != null && rawBoneId < _targetBoneRotations.Length)
+                    if (localRotations)
                     {
-                        if (localRotations)
-                        {
-                            _targetBoneRotations[rawBoneId] = rotation;
-                            _hasTargetBoneRotation[rawBoneId] = true;
-                            _hasContinuousBoneTargets = true;
-                            appliedAny = true;
-                        }
-                        else if (_receivedBoneWorldRotations != null && _hasReceivedBoneWorldRotation != null && rawBoneId < _receivedBoneWorldRotations.Length)
-                        {
-                            if (animatorRootSpaceRotations && animatorRoot != null)
-                                _receivedBoneWorldRotations[rawBoneId] = animatorRootRotation * rotation;
-                            else
-                                _receivedBoneWorldRotations[rawBoneId] = rotation;
-
-                            _hasReceivedBoneWorldRotation[rawBoneId] = true;
-                            appliedAny = true;
-                        }
+                        _targetBoneRotations[rawBoneId] = rotation;
+                        _hasTargetBoneRotation[rawBoneId] = true;
+                        _hasContinuousBoneTargets = true;
+                    }
+                    else
+                    {
+                        if (animatorRootSpaceRotations && animatorRoot != null)
+                            _receivedBoneWorldRotations[rawBoneId] = animatorRootRotation * rotation;
+                        else
+                            _receivedBoneWorldRotations[rawBoneId] = rotation;
+                        _hasReceivedBoneWorldRotation[rawBoneId] = true;
                     }
                 }
                 else if (animatorRootSpaceRotations && animatorRoot != null)
-                {
                     target.rotation = animatorRootRotation * rotation;
-                    appliedAny = true;
-                }
                 else if (localRotations)
-                {
                     target.localRotation = rotation;
-                    appliedAny = true;
-                }
                 else
-                {
                     target.rotation = rotation;
-                    appliedAny = true;
-                }
+
+                appliedAny = true;
             }
 
             bool skipContinuousRootBoneRotation = false;
             if (version >= 2 && (flags & PoseFlagHasRootMotionPosition) != 0 && cursor + PoseRootMotionPositionBytes <= poseBytes.Length)
             {
+                _continuousRootIsAnimatorRelative = false;
                 Vector3 rootPosition = Binary.ReadVector3Float32LE(poseBytes, cursor);
                 cursor += PoseRootMotionPositionBytes;
 
@@ -472,14 +457,17 @@ namespace K13A.TSMP.Udon
                     Vector3 rootOffset = animatorRoot.rotation * rootPosition;
                     if (continuous)
                     {
-                        _continuousRootPosition = animatorRoot.position + rootOffset;
-                        _continuousRootRotation = animatorRoot.rotation * rootRotation;
+                        // Keep the transmitted reference space while interpolating. The Animator
+                        // may be moved by a separate TransformSync after this packet is decoded.
+                        _continuousRootPosition = rootPosition;
+                        _continuousRootRotation = rootRotation;
                         _continuousRootIsLocal = false;
+                        _continuousRootIsAnimatorRelative = true;
                         _continuousRootHasRotation = hasRootRotation;
                         _hasContinuousRootTarget = true;
                         if (hasRootRotation)
                         {
-                            SetReceivedRootWorldRotation(target, _continuousRootRotation, false);
+                            SetReceivedRootWorldRotation(target, animatorRoot.rotation * rootRotation, false);
                             skipContinuousRootBoneRotation = true;
                         }
                     }
@@ -771,18 +759,10 @@ namespace K13A.TSMP.Udon
 
         private Quaternion GetContinuousParentWorldRotation(int boneId, Transform parent)
         {
-            int ancestorBoneId = -1;
-            if (_receivedAncestorBoneIdsById != null && boneId >= 0 && boneId < _receivedAncestorBoneIdsById.Length)
-                ancestorBoneId = _receivedAncestorBoneIdsById[boneId];
-
-            bool ancestorAvailable = ancestorBoneId >= 0
-                                     && _boneTargetsById != null
-                                     && _receivedBoneWorldRotations != null
-                                     && _hasReceivedBoneWorldRotation != null
-                                     && ancestorBoneId < _boneTargetsById.Length
-                                     && ancestorBoneId < _receivedBoneWorldRotations.Length
-                                     && ancestorBoneId < _hasReceivedBoneWorldRotation.Length
-                                     && _hasReceivedBoneWorldRotation[ancestorBoneId];
+            // Called only for a validated bone after EnsureLookupArrays and
+            // EnsureReceivedAncestorBoneIdsCache. The cache contains -1 or a valid ID.
+            int ancestorBoneId = _receivedAncestorBoneIdsById[boneId];
+            bool ancestorAvailable = ancestorBoneId >= 0 && _hasReceivedBoneWorldRotation[ancestorBoneId];
             if (ancestorAvailable)
             {
                 Transform ancestor = _boneTargetsById[ancestorBoneId];
@@ -888,7 +868,15 @@ namespace K13A.TSMP.Udon
             if (root == null)
                 return;
 
-            if (_continuousRootIsLocal)
+            if (_continuousRootIsAnimatorRelative && animator != null)
+            {
+                Transform animatorRoot = animator.transform;
+                Vector3 position = animatorRoot.position + animatorRoot.rotation * _continuousRootPosition;
+                root.position = Vector3.Lerp(root.position, position, step);
+                if (_continuousRootHasRotation)
+                    root.rotation = Quaternion.Slerp(root.rotation, animatorRoot.rotation * _continuousRootRotation, step);
+            }
+            else if (_continuousRootIsLocal)
             {
                 root.localPosition = Vector3.Lerp(root.localPosition, _continuousRootPosition, step);
                 if (_continuousRootHasRotation)
