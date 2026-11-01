@@ -20,6 +20,9 @@ namespace K13A.TSMP.Editor
 
             DrawTSMPNetworkSection(true);
             DrawProperty("targetRenderer");
+            DrawProperty("validateBlendShapeCacheOnReceive");
+            if (!serializedObject.FindProperty("validateBlendShapeCacheOnReceive").boolValue)
+                EditorGUILayout.HelpBox("Fixed selection cache: call _InvalidateBlendShapeCache after changing elements of the existing index array at runtime. Character activation and renderer/mesh/array replacement remain supported.", MessageType.Info);
 
             SerializedProperty encodedCount = serializedObject.FindProperty("encodedBlendShapeCount");
             using (new EditorGUI.DisabledScope(true))
