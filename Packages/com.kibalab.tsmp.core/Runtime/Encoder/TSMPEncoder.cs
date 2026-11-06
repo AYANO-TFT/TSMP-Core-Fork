@@ -43,6 +43,10 @@ namespace K13A.TSMP
 
 #if !COMPILER_UDONSHARP && !UDONSHARP
         public TSMPNetworkBehaviour[] networkBehaviours;
+        public bool characterCrcEnabled;
+        public TSMPCharacterCrcGroup[] characterCrcGroups = new TSMPCharacterCrcGroup[0];
+        private readonly EncoderCharacterCrcWriter _characterCrcWriter = new EncoderCharacterCrcWriter();
+        private bool _lastCharacterCrcEnabled;
 #endif
 
         [HideInInspector] public Texture2D outputTexture;
@@ -419,10 +423,11 @@ namespace K13A.TSMP
 
         private bool BuildNetworkPayload()
         {
-            if (_sendStreamId != streamId)
+            if (_sendStreamId != streamId || _lastCharacterCrcEnabled != characterCrcEnabled)
             {
                 _sendState.Reset();
                 _sendStreamId = streamId;
+                _lastCharacterCrcEnabled = characterCrcEnabled;
             }
             _sendTime = GetSendTime();
             string error;
@@ -445,7 +450,8 @@ namespace K13A.TSMP
                 _sendState,
                 _sendTime,
                 transSyncRefreshInterval,
-                SetLastError);
+                SetLastError,
+                characterCrcEnabled ? _characterCrcWriter : null, characterCrcGroups);
 
             queuedRpcCount = _queuedRpcs.Count;
             if (!result)
@@ -510,7 +516,7 @@ namespace K13A.TSMP
                 codec.GetCodecOptionBytes(),
                 payloadBytes,
                 sampleSize,
-                _crc32Table);
+                _crc32Table, characterCrcEnabled ? CharacterCrcProtocol.PayloadType : NetworkFrameProtocol.PayloadTypeNetworkFrame);
         }
 
         private static void DestroyResource(Object resource)

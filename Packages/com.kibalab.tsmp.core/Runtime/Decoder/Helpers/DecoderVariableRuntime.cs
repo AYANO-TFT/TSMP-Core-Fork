@@ -37,7 +37,7 @@ namespace K13A.TSMP
             Vector3[][] vector3ValueArrays,
             Quaternion[][] quaternionValueArrays,
             string[][] stringValueArrays,
-            out int rejectedValueTypeCount)
+            out int rejectedValueTypeCount, bool skipFingers = false)
         {
             rejectedValueTypeCount = 0;
 
@@ -95,6 +95,7 @@ namespace K13A.TSMP
 
                 // Only decoding/copying occurs after IsTargetActive above. Recheck
                 // each later binding as usual: a receiver event may deactivate it.
+                if (fieldName == "poseBytes") TSMPBehaviour.SetProgramVariable(targets[bindingIndex], "crcSkipFingerUpdate", skipFingers);
                 if (DecoderVariableDispatcher.ApplyToActiveTarget(targets[bindingIndex], fieldName, variableHash, decodedValue))
                     appliedCount++;
             }

@@ -33,7 +33,8 @@ namespace K13A.TSMP
             EncoderNativeSendState sendState = null,
             double now = 0.0,
             float refreshInterval = 1f,
-            System.Action<string> onRpcRejected = null)
+            System.Action<string> onRpcRejected = null,
+            EncoderCharacterCrcWriter crcWriter = null, TSMPCharacterCrcGroup[] crcGroups = null)
         {
             networkMessageCount = 0;
             variableMessageCount = 0;
@@ -52,6 +53,13 @@ namespace K13A.TSMP
                 return false;
             }
 
+            int wireCapacity = maxPayloadBytes;
+            if (crcWriter != null)
+            {
+                if (!crcWriter.Prepare(crcGroups, behaviours, out error)) return false;
+                maxPayloadBytes -= crcWriter.ReservedBytes();
+                if (maxPayloadBytes < 8) { error = "CRC directory exceeds capacity."; return false; }
+            }
             ushort sequence = unchecked((ushort)frameIndex);
             WriteRpcMessages(queuedRpcs, payload, maxPayloadBytes, ref payloadOffset, sequence,
                 ref networkMessageCount, out rpcMessageCount, onRpcRejected);
@@ -61,6 +69,13 @@ namespace K13A.TSMP
                 return false;
             if (sendState == null)
                 sendState = new EncoderNativeSendState();
+            sendState.CrcMembers = crcWriter != null ? crcWriter.Members : null;
+            if (crcWriter != null)
+            {
+                int protectedMessages;
+                if (!crcWriter.WriteGroups(payload, maxPayloadBytes, sequence, bindingCache, ref payloadOffset, out protectedMessages, out error)) return false;
+                manualMessages += protectedMessages;
+            }
             if (!sendState.Write(behaviours, bindingCache, payload, maxPayloadBytes, sequence, now, refreshInterval,
                 ref payloadOffset, out variableMessageCount, out error, false))
                 return false;
@@ -73,6 +88,7 @@ namespace K13A.TSMP
                 return false;
             }
 
+            if (crcWriter != null && !crcWriter.Finish(payload, ref payloadOffset, wireCapacity, out error)) return false;
             payloadBytes = payloadOffset;
             encodedPayload = NetworkPayloadBuffer.CopyPrefix(payload, payloadBytes, encodedPayload);
             return true;

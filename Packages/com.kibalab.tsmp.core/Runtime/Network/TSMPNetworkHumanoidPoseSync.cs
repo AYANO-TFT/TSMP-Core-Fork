@@ -186,6 +186,7 @@ namespace K13A.TSMP.Udon
 
         public override void ResetReceiveState()
         {
+            crcSkipFingerUpdate = false;
             if (_targetBoneRotations != null)
             {
                 int count = _targetBoneRotations.Length;
@@ -328,6 +329,8 @@ namespace K13A.TSMP.Udon
             encodedPoseBytes = requiredBytes;
         }
 
+        [HideInInspector] public bool crcSkipFingerUpdate;
+
         private void ApplyPose()
         {
             if (!IsTSMPActive() || poseBytes == null || poseBytes.Length < PoseHeaderBytes)
@@ -402,6 +405,12 @@ namespace K13A.TSMP.Udon
                 int rawBoneId = poseBytes[cursor];
                 Transform target = targetsById[rawBoneId];
                 if (target == null)
+                {
+                    cursor += PoseBoneBytes;
+                    continue;
+                }
+
+                if (crcSkipFingerUpdate && rawBoneId >= 24 && rawBoneId <= 53)
                 {
                     cursor += PoseBoneBytes;
                     continue;
@@ -543,7 +552,7 @@ namespace K13A.TSMP.Udon
                 _snapNextReceive = false;
             if (count > 0 || appliedAny)
             {
-                _receiveRightHandNext = alternate ? !_receiveRightHandNext : false;
+                if (!crcSkipFingerUpdate) _receiveRightHandNext = alternate ? !_receiveRightHandNext : false;
                 _handReceiveInitialized = true;
                 _lastHandUpdateMode = handUpdateMode;
                 _lastHandInterpolation = receiveInterpolation;

@@ -108,9 +108,10 @@ namespace K13A.TSMP.Editor
 
         private static void PrepareDecoder(TSMPDecoder decoder)
         {
-            if (decoder.readbackPackMaterial != null)
+            if (decoder.readbackPackMaterial != null && decoder.characterCrcMaterial != null)
                 return;
-            decoder.readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+            if (decoder.readbackPackMaterial == null) decoder.readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+            if (decoder.characterCrcMaterial == null) decoder.characterCrcMaterial = Resources.Load<Material>("TSMPCharacterCrc");
             EditorUtility.SetDirty(decoder);
             PrefabUtility.RecordPrefabInstancePropertyModifications(decoder);
 #if UDONSHARP

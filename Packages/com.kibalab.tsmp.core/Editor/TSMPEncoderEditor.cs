@@ -113,6 +113,13 @@ namespace K13A.TSMP.Editor
             InspectorUI.Property(_autoBuildVariablesFromBindings);
             InspectorUI.Property(_transRpcRepeatFrames);
             InspectorUI.Property(_transSyncRefreshInterval);
+            var crcEnabled = serializedObject.FindProperty("characterCrcEnabled");
+            if (crcEnabled != null)
+            {
+                EditorGUILayout.PropertyField(crcEnabled);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("characterCrcGroups"), true);
+                EditorGUILayout.HelpBox("CRC groups send Pose and all additional Transforms together. Fingers can be excluded or protected separately; expressions are not protected.", MessageType.Info);
+            }
 
             if (_networkBehaviours != null)
             {

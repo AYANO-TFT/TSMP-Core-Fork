@@ -134,6 +134,22 @@ namespace K13A.TSMP.Udon
         private byte[] _readbackBytes;
         private RenderTexture _decodeSourceTexture;
         private bool _decodeSuspended;
+
+        [HideInInspector] public Material characterCrcMaterial;
+        [HideInInspector] public bool lastCharacterCrcActive;
+        [HideInInspector] public int crcFramesChecked, crcMetadataRejected, crcBodyChecked, crcBodyRejected, crcFingerChecked, crcFingerRejected;
+        [HideInInspector] public int crcKnownCharacterCount;
+        [HideInInspector] public int[] crcCharacterIds = new int[64];
+        [HideInInspector] public int[] crcCharacterBodyChecked = new int[64], crcCharacterBodyRejected = new int[64];
+        [HideInInspector] public int[] crcCharacterFingerChecked = new int[64], crcCharacterFingerRejected = new int[64];
+        private Material _characterCrcInstance;
+        private RenderTexture[] _slotCrcTextures = new RenderTexture[2];
+        private int[] _slotCrcResultOffsets = new int[2];
+        private int _crcDirectoryOffset, _crcCharacters, _crcTransforms;
+        private bool _crcSkipCurrentFingers;
+        private bool _hasRejectedCrcFrame;
+        private uint _rejectedCrcStreamId, _rejectedCrcFrameIndex;
+
         private bool _processingReadbacks;
         private int _slotHead;
         private int _activeSlot = -1;
@@ -254,6 +270,7 @@ namespace K13A.TSMP.Udon
 #if UNITY_EDITOR && !COMPILER_UDONSHARP
         private void OnValidate()
         {
+            if (characterCrcMaterial == null) characterCrcMaterial = Resources.Load<Material>("TSMPCharacterCrc");
             if (readbackPackMaterial == null)
                 readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
         }
@@ -302,6 +319,17 @@ namespace K13A.TSMP.Udon
 
         private void OnDestroy()
         {
+#if !COMPILER_UDONSHARP
+            if (_characterCrcInstance != null)
+            {
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+                if (!Application.isPlaying) DestroyImmediate(_characterCrcInstance);
+                else
+#endif
+                    Destroy(_characterCrcInstance);
+                _characterCrcInstance = null;
+            }
+#endif
             _decodeSuspended = true;
             for (int i = 0; i < 2; i++)
                 ReleaseSlotTextures(i);
@@ -598,6 +626,8 @@ namespace K13A.TSMP.Udon
 
         private void ReleaseSlotTextures(int slot)
         {
+            DecoderSnapshotRuntime.Release(_slotCrcTextures[slot]);
+            _slotCrcTextures[slot] = null;
             DecoderSnapshotRuntime.Release(_slotSnapshots[slot]);
             DecoderSnapshotRuntime.Release(_slotHeaderTextures[slot]);
             DecoderSnapshotRuntime.Release(_slotCombinedTextures[slot]);
@@ -681,6 +711,7 @@ namespace K13A.TSMP.Udon
                 return;
             }
 
+            if (!ValidateCharacterCrc()) return;
             if (!ApplyNetworkFrame())
                 return;
             if (_requestSafetyMode == 0)
@@ -780,6 +811,13 @@ namespace K13A.TSMP.Udon
 
         private void RequestTextureReadback(RenderTexture texture, int byteCount)
         {
+            _slotCrcResultOffsets[_activeSlot] = -1;
+            if (_decodeStage != 1 && _payloadType == CharacterCrcProtocol.PayloadType)
+            {
+                texture = PackCharacterCrc(texture, byteCount);
+                if (texture == null) { lastFrameValid = false; return; }
+                byteCount = _slotCrcResultOffsets[_activeSlot] + CharacterCrcProtocol.ResultBytes;
+            }
             int pixelCount;
             int readWidth;
             int readHeight;
@@ -1059,7 +1097,7 @@ namespace K13A.TSMP.Udon
             lastFrameIndex = decodedFrameIndex;
             lastPayloadSizeFromHeader = payloadSize;
 
-            if (_payloadType != NetworkFrameProtocol.PayloadTypeNetworkFrame)
+            if (_payloadType != NetworkFrameProtocol.PayloadTypeNetworkFrame && _payloadType != CharacterCrcProtocol.PayloadType)
             {
                 lastFrameValid = false;
                 lastError = "Unsupported payload type. expected NetworkFrame=" + NetworkFrameProtocol.PayloadTypeNetworkFrame + " actual=" + _payloadType;
@@ -1077,6 +1115,14 @@ namespace K13A.TSMP.Udon
 
         private bool ShouldSkipFrame()
         {
+            if (skipDuplicateFrames && _hasRejectedCrcFrame && lastStreamId == _rejectedCrcStreamId && lastFrameIndex == _rejectedCrcFrameIndex)
+            {
+                skippedDuplicateFrameCount++;
+                lastAppliedVariableCount = 0;
+                lastFrameValid = false;
+                lastError = "Duplicate rejected CRC frame skipped.";
+                return true;
+            }
             if (!skipDuplicateFrames || !_hasAppliedFrame || lastStreamId != _lastAppliedStreamId)
                 return false;
 
@@ -1128,6 +1174,97 @@ namespace K13A.TSMP.Udon
             LogTSMPRateLimitedWarning(LogPrefix, error, 1f);
         }
 
+
+        private RenderTexture PackCharacterCrc(RenderTexture input, int byteCount)
+        {
+            #if !COMPILER_UDONSHARP
+            if (characterCrcMaterial == null) characterCrcMaterial = Resources.Load<Material>("TSMPCharacterCrc");
+#endif
+            if (characterCrcMaterial == null) { lastError = "Character CRC material is missing."; return null; }
+            #if COMPILER_UDONSHARP
+            _characterCrcInstance = characterCrcMaterial;
+#else
+            if (_characterCrcInstance == null) _characterCrcInstance = new Material(characterCrcMaterial);
+#endif
+            if (byteCount < 1 || byteCount > input.width * input.height * 4) { lastError = "CRC source byte texture is too small."; return null; }
+            int pixel = (byteCount + 3) / 4;
+            int count = pixel + 1 + CharacterCrcProtocol.MaxCharacters * 2;
+            int width = Mathf.Min(input.width, count), height = (count + width - 1) / width;
+            RenderTexture output = DecoderPredictionRuntime.EnsureTexture(_slotCrcTextures[_activeSlot], width, height);
+            _slotCrcTextures[_activeSlot] = output;
+            if (output == null) { lastError = "Cannot create CRC readback texture."; return null; }
+            int prefix = _decodeStage == 3 ? FrameHeader.Size : 0;
+            _characterCrcInstance.SetInt("_InputWidth", input.width);
+            _characterCrcInstance.SetInt("_OutputWidth", width);
+            _characterCrcInstance.SetInt("_PayloadOffset", prefix);
+            _characterCrcInstance.SetInt("_PayloadLength", byteCount - prefix);
+            _characterCrcInstance.SetInt("_ResultPixel", pixel);
+            GraphicsBridge.Blit(input, output, _characterCrcInstance);
+            _slotCrcResultOffsets[_activeSlot] = pixel * 4;
+            return output;
+        }
+
+        private bool ValidateCharacterCrc()
+        {
+            lastCharacterCrcActive = _payloadType == CharacterCrcProtocol.PayloadType;
+            _crcCharacters = 0; _crcDirectoryOffset = _payloadDataBytes; _crcTransforms = 0;
+            if (!lastCharacterCrcActive) { _hasRejectedCrcFrame = false; return true; }
+            lastAppliedVariableCount = 0;
+            lastRpcCallCount = 0;
+            crcFramesChecked++;
+            int result = _slotCrcResultOffsets[_activeSlot];
+            if (result < 0 || result > _readbackBytes.Length - CharacterCrcProtocol.ResultBytes ||
+                !CharacterCrcProtocol.TryLayout(_payloadBytes, _payloadDataBytes, out _crcDirectoryOffset, out _crcCharacters, out _crcTransforms) ||
+                Binary.ReadUInt32LE(_readbackBytes, result) != (CharacterCrcProtocol.ResultMagic | (uint)_crcCharacters) ||
+                Binary.ReadUInt32LE(_payloadBytes, NetworkFrameProtocol.NetworkSequenceOffset) != lastFrameIndex ||
+                !CharacterCrcProtocol.ValidateEntries(_payloadBytes, _crcDirectoryOffset, _crcCharacters, _crcTransforms))
+            {
+                crcMetadataRejected++;
+                _hasRejectedCrcFrame = true; _rejectedCrcStreamId = lastStreamId; _rejectedCrcFrameIndex = lastFrameIndex;
+                return FailNetworkFrame("Character CRC metadata rejected; no values applied.");
+            }
+            _hasRejectedCrcFrame = false;
+            for (int i = 0; i < _crcCharacters; i++)
+            {
+                int d = _crcDirectoryOffset + 16 + i * 16;
+                bool body = Binary.ReadUInt32LE(_readbackBytes, result + 4 + i * 8) == 1u;
+                bool finger = Binary.ReadUInt32LE(_readbackBytes, result + 8 + i * 8) == 1u;
+                crcBodyChecked++; if (!body) crcBodyRejected++;
+                bool separate = _payloadBytes[d + 7] == 1;
+                if (separate) { crcFingerChecked++; if (!finger) crcFingerRejected++; }
+                int pose = Binary.ReadUInt16LE(_payloadBytes, d);
+                // Writer emits each protected member as a single-value message.
+                int id = Binary.ReadUInt16LE(_payloadBytes, pose - 17);
+                int stat = -1;
+                for (int j = 0; j < crcKnownCharacterCount; j++) if (crcCharacterIds[j] == id) { stat = j; break; }
+                if (stat < 0 && crcKnownCharacterCount < 64) { stat = crcKnownCharacterCount++; crcCharacterIds[stat] = id; }
+                if (stat >= 0)
+                {
+                    crcCharacterBodyChecked[stat]++; if (!body) crcCharacterBodyRejected[stat]++;
+                    if (separate) { crcCharacterFingerChecked[stat]++; if (!finger) crcCharacterFingerRejected[stat]++; }
+                }
+            }
+            return true;
+        }
+
+        private bool AcceptCharacterValue(int valueOffset)
+        {
+            _crcSkipCurrentFingers = false;
+            if (!lastCharacterCrcActive) return true;
+            int result = _slotCrcResultOffsets[_activeSlot];
+            for (int i = 0; i < _crcCharacters; i++)
+            {
+                int d = _crcDirectoryOffset + 16 + i * 16;
+                bool member = Binary.ReadUInt16LE(_payloadBytes, d) == valueOffset;
+                if (member) _crcSkipCurrentFingers = _payloadBytes[d + 7] == 1 && Binary.ReadUInt32LE(_readbackBytes, result + 8 + i * 8) != 1u;
+                int first = Binary.ReadUInt16LE(_payloadBytes, d + 4), count = _payloadBytes[d + 6];
+                for (int j = first; !member && j < first + count; j++)
+                    member = Binary.ReadUInt16LE(_payloadBytes, _crcDirectoryOffset + 16 + _crcCharacters * 16 + j * 4) == valueOffset;
+                if (member) return Binary.ReadUInt32LE(_readbackBytes, result + 4 + i * 8) == 1u;
+            }
+            return true;
+        }
+
         private bool ApplyNetworkFrame()
         {
             lastAppliedVariableCount = 0;
@@ -1164,7 +1301,7 @@ namespace K13A.TSMP.Udon
                 int bodyStart;
                 int bodyEnd;
                 int nextMessageOffset;
-                if (!NetworkFrameReader.TryReadMessageHeader(_payloadBytes, cursor, _payloadDataBytes, out networkId, out messageType, out bodyStart, out bodyEnd, out nextMessageOffset))
+                if (!NetworkFrameReader.TryReadMessageHeader(_payloadBytes, cursor, lastCharacterCrcActive ? _crcDirectoryOffset : _payloadDataBytes, out networkId, out messageType, out bodyStart, out bodyEnd, out nextMessageOffset))
                     return FailNetworkFrame("NetworkFrame message is malformed.");
 
                 if (NetworkFrameReader.IsVariableStateMessage(messageType))
@@ -1181,7 +1318,7 @@ namespace K13A.TSMP.Udon
                 cursor = nextMessageOffset;
             }
 
-            if (cursor != _payloadDataBytes)
+            if (cursor != (lastCharacterCrcActive ? _crcDirectoryOffset : _payloadDataBytes))
                 return FailNetworkFrame("NetworkFrame has trailing bytes.");
 
             return true;
@@ -1320,6 +1457,7 @@ namespace K13A.TSMP.Udon
 
         private void ApplyVariableValue(ushort networkId, uint variableHash, int valueType, int valueOffset, int valueLength)
         {
+            if (!AcceptCharacterValue(valueOffset)) return;
             int bindingCount = GetReadableBindingCount();
             if (bindingCount <= 0)
                 return;
@@ -1351,7 +1489,7 @@ namespace K13A.TSMP.Udon
                 _vector3ValueArrays,
                 _quaternionValueArrays,
                 _stringValueArrays,
-                out rejectedValueTypeCount);
+                out rejectedValueTypeCount, _crcSkipCurrentFingers);
 #else
             int appliedCount = DecoderVariableRuntime.ApplyVariableValue(
                 _payloadBytes,
@@ -1378,7 +1516,7 @@ namespace K13A.TSMP.Udon
                 _vector3ValueArrays,
                 _quaternionValueArrays,
                 _stringValueArrays,
-                out rejectedValueTypeCount);
+                out rejectedValueTypeCount, _crcSkipCurrentFingers);
 #endif
 
             if (rejectedValueTypeCount > 0)

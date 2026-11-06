@@ -10,7 +10,8 @@ namespace K13A.TSMP
     public enum PayloadType : ushort
     {
         Empty = 0x0000,
-        NetworkFrame = 0x0100
+        NetworkFrame = 0x0100,
+        NetworkFrameCharacterCrc = 0x0101
     }
 
     public enum NetworkMessageType : byte

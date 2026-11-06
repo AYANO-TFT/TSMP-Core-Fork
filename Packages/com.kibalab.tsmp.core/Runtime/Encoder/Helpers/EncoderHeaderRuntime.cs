@@ -18,7 +18,7 @@ namespace K13A.TSMP
             byte[] codecOptions,
             int payloadBytes,
             int sampleSize,
-            uint[] crc32Table)
+            uint[] crc32Table, int payloadType = NetworkFrameProtocol.PayloadTypeNetworkFrame)
         {
             uint timestampMs = GetTimestampMilliseconds();
             crc32Table = Crc32Runtime.EnsureTable(crc32Table);
@@ -39,7 +39,7 @@ namespace K13A.TSMP
                 timestampMs,
                 codecId,
                 codecOptions,
-                NetworkFrameProtocol.PayloadTypeNetworkFrame,
+                payloadType,
                 payloadBytes,
                 sampleSize,
                 0,

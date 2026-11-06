@@ -23,6 +23,7 @@ namespace K13A.TSMP
         private int[] _priorities;
         private readonly byte[] _scratch = new byte[TransSyncSendScheduler.ScratchBytes];
         private int _rotation;
+        public List<TSMPNetworkBehaviour> CrcMembers;
         public int WrittenCount { get; private set; }
         public int DeferredCount { get; private set; }
 
@@ -102,6 +103,7 @@ namespace K13A.TSMP
                 for (int step = 0; step < groupCount; step++)
                 {
                     Entry entry = _entries[_order[groupStart + (step + _rotation % groupCount) % groupCount]];
+                    if (CrcMembers != null && CrcMembers.Contains(entry.Target)) continue;
                     if (!entry.Target.IsTSMPActive() || !TransSyncMetadata.IsFieldEnabled(entry.Target, entry.Field))
                     {
                         entry.Sent = false;
