@@ -91,6 +91,13 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public bool lastHeaderFlipY;
         [HideInInspector] public uint lastStreamId;
         [HideInInspector] public uint lastFrameIndex;
+        // Local receive-health diagnostics. Duplicate/old frames and diagnostic-only
+        // decode modes must not keep a stalled video source looking alive.
+        [HideInInspector] public uint acceptedNewFrameCount;
+        [HideInInspector] public float lastAcceptedFrameRealtime = -1f;
+        private bool _hasFreshFrame;
+        private uint _freshStreamId;
+        private uint _freshFrameIndex;
         [HideInInspector] public int skippedDuplicateFrameCount;
         [HideInInspector] public int skippedOutOfOrderFrameCount;
         [HideInInspector] public int lastSymbolMode;
@@ -676,6 +683,22 @@ namespace K13A.TSMP.Udon
 
             if (!ApplyNetworkFrame())
                 return;
+            if (_requestSafetyMode == 0)
+            {
+                long distance = (long)lastFrameIndex - (long)_freshFrameIndex;
+                if (distance < 0L) distance += 4294967296L;
+                bool progressed = !_hasFreshFrame || lastStreamId != _freshStreamId
+                    || (distance > 0L && distance < 2147483648L)
+                    || (lastFrameIndex == 0u && (long)_freshFrameIndex >= (long)Mathf.Max(1, frameWindowSize));
+                if (progressed)
+                {
+                    _hasFreshFrame = true;
+                    _freshStreamId = lastStreamId;
+                    _freshFrameIndex = lastFrameIndex;
+                    acceptedNewFrameCount++;
+                    lastAcceptedFrameRealtime = Time.realtimeSinceStartup;
+                }
+            }
             _hasAppliedFrame = true;
             _lastAppliedStreamId = lastStreamId;
             _lastAppliedFrameIndex = lastFrameIndex;
