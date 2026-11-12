@@ -95,6 +95,14 @@ namespace K13A.TSMP.Udon
         // decode modes must not keep a stalled video source looking alive.
         [HideInInspector] public uint acceptedNewFrameCount;
         [HideInInspector] public float lastAcceptedFrameRealtime = -1f;
+        // Optional local, one-shot timing capture. The observer arms this before
+        // connecting; latch at acceptance so overlapping readbacks cannot replace
+        // the first timestamp before the observer's next Update. No wire changes.
+        [HideInInspector] public bool diagnosticCaptureNextAcceptedFrame;
+        [HideInInspector] public float diagnosticAcceptedFrameRealtime = -1f;
+        [HideInInspector] public int diagnosticAcceptedUnityFrame = -1;
+        [HideInInspector] public float diagnosticAcceptedFrameDeltaTime;
+        [HideInInspector] public uint diagnosticAcceptedSequence;
         private bool _hasFreshFrame;
         private uint _freshStreamId;
         private uint _freshFrameIndex;
@@ -728,6 +736,14 @@ namespace K13A.TSMP.Udon
                     _freshFrameIndex = lastFrameIndex;
                     acceptedNewFrameCount++;
                     lastAcceptedFrameRealtime = Time.realtimeSinceStartup;
+                    if (diagnosticCaptureNextAcceptedFrame)
+                    {
+                        diagnosticAcceptedFrameRealtime = lastAcceptedFrameRealtime;
+                        diagnosticAcceptedUnityFrame = Time.frameCount;
+                        diagnosticAcceptedFrameDeltaTime = Time.unscaledDeltaTime;
+                        diagnosticAcceptedSequence = acceptedNewFrameCount;
+                        diagnosticCaptureNextAcceptedFrame = false;
+                    }
                 }
             }
             _hasAppliedFrame = true;
