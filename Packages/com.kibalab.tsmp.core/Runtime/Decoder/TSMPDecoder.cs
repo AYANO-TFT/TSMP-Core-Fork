@@ -55,6 +55,50 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public int[] bindingPriorities;
 
         public bool applyEveryFrame = true;
+        // Opt-in local transport lifecycle. Ordinary decoders keep their original path.
+        [HideInInspector] public uint preparedFrameCount;
+        private bool _holdReceptionDispatch;
+
+        public void _SuspendReception()
+        {
+            applyEveryFrame = false;
+            _decodeSuspended = true;
+            _holdReceptionDispatch = true;
+            _predictionValid = false;
+            lastFrameValid = false;
+            for (int i = 0; i < 2; i++) _slotDiscarded[i] = true;
+        }
+
+        // Never recycle textures while an older GPU request still owns them.
+        public bool _ResumeReception()
+        {
+            if (pendingDecodeCount != 0 || _processingReadbacks) return false;
+            for (int i = 0; i < 2; i++)
+            {
+                ReleaseSlotTextures(i);
+                _slotStates[i] = 0;
+                _slotDiscarded[i] = false;
+            }
+            ReleasePredictionResources();
+            _slotHead = 0;
+            _activeSlot = -1;
+            _hasAppliedFrame = false;
+            _hasFreshFrame = false;
+            _hasRejectedCrcFrame = false;
+            lastFrameValid = false;
+            lastHeaderValid = false;
+            readbackInFlight = false;
+            _holdReceptionDispatch = true;
+            _decodeSuspended = false;
+            applyEveryFrame = true;
+            return true;
+        }
+
+        public void _EnableReceptionDispatch()
+        {
+            _holdReceptionDispatch = false;
+        }
+
         [Tooltip("Check all binding settings on each received frame. Disable only for fixed bindings; call _InvalidateBindingCache after changing bindings at runtime.")]
         public bool validateBindingCacheOnReceive = true;
         public bool skipDuplicateFrames = true;
@@ -293,6 +337,14 @@ namespace K13A.TSMP.Udon
 
         private void Update()
         {
+#if COMPILER_UDONSHARP
+            // During transport suspension, tolerate a delayed/missed callback.
+            // Only consume requests that the GPU reports as actually complete.
+            if ((_decodeSuspended || (_holdReceptionDispatch && !applyEveryFrame)) && pendingDecodeCount > 0)
+                for (int i = 0; i < 2; i++)
+                    if (_slotStates[i] == 1 && _slotRequests[i] != null && _slotRequests[i].done)
+                        OnAsyncGpuReadbackComplete(_slotRequests[i]);
+#endif
             ProcessReadyReadbacks();
             if (!applyEveryFrame)
                 return;
@@ -722,6 +774,14 @@ namespace K13A.TSMP.Udon
             if (!ValidateCharacterCrc()) return;
             if (!ApplyNetworkFrame())
                 return;
+            if (_holdReceptionDispatch)
+            {
+                // A complete, validated payload opens the transport gate on a
+                // later frame. It must not consume receiver/RPC state meanwhile.
+                preparedFrameCount++;
+                lastFrameValid = true;
+                return;
+            }
             if (_requestSafetyMode == 0)
             {
                 long distance = (long)lastFrameIndex - (long)_freshFrameIndex;
@@ -1327,7 +1387,7 @@ namespace K13A.TSMP.Udon
                 }
                 else if (NetworkFrameReader.IsRpcCallMessage(messageType))
                 {
-                    if (_requestSafetyMode != DecodeSafetyParseOnly && !ReadRpcCall(networkId, bodyStart, bodyEnd))
+                    if (!_holdReceptionDispatch && _requestSafetyMode != DecodeSafetyParseOnly && !ReadRpcCall(networkId, bodyStart, bodyEnd))
                         return false;
                 }
 
@@ -1473,7 +1533,7 @@ namespace K13A.TSMP.Udon
 
         private void ApplyVariableValue(ushort networkId, uint variableHash, int valueType, int valueOffset, int valueLength)
         {
-            if (!AcceptCharacterValue(valueOffset)) return;
+            if (_holdReceptionDispatch || !AcceptCharacterValue(valueOffset)) return;
             int bindingCount = GetReadableBindingCount();
             if (bindingCount <= 0)
                 return;
