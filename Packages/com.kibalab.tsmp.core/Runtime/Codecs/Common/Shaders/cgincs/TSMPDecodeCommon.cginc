@@ -109,6 +109,10 @@ float3 SampleBlockRgb(float blockX, float blockY)
     return sum / (sampleLimit * sampleLimit);
 }
 
+// Codecs may supply their own luma sampler while sharing layout and output helpers.
+#ifdef TSMP_CUSTOM_LUMA_SAMPLING
+float SampleBlockLuma(float blockX, float blockY);
+#else
 float SampleBlockLuma(float blockX, float blockY)
 {
     float sampleSize = _SampleSize > 0.5 ? floor(_SampleSize) : (_BlockSize >= 8.0 ? 4.0 : 3.0);
@@ -135,6 +139,7 @@ float SampleBlockLuma(float blockX, float blockY)
 
     return sum / (sampleLimit * sampleLimit);
 }
+#endif
 
 // Block indices are non-negative integers; width is a positive integer.
 int2 BlockXYExact(int index, int width)

@@ -48,6 +48,8 @@ namespace K13A.TSMP
         public bool payloadInterleaved;
         public Material selectedDecodeMaterial;
         [HideInInspector] public Material calibrationMaterial;
+        [HideInInspector] public bool decodePreparationFailed;
+        [HideInInspector] public string decodePreparationError;
         private RenderTexture _calibrationLut;
         private Material _calibrationDecodeMaterial;
         public int payloadStartRow = 5;
@@ -79,6 +81,8 @@ namespace K13A.TSMP
 
         public virtual void PrepareDecode(Texture source, Material material)
         {
+            decodePreparationFailed = false;
+            decodePreparationError = string.Empty;
             if (_calibrationDecodeMaterial != material)
                 ClearCalibrationBinding();
             if (material != null)
@@ -93,17 +97,29 @@ namespace K13A.TSMP
             return Mathf.Clamp(samples, 1, Mathf.Min(blockSize, 8));
         }
 
-        protected void PrepareCalibrationLut(Texture source, Material material, int width)
+        protected bool PrepareCalibrationLut(Texture source, Material material, int width)
         {
             if (source == null || material == null || calibrationMaterial == null || width <= 0)
-                return;
+            {
+                decodePreparationError = "Calibration source/material/width is missing or invalid.";
+                return false;
+            }
             if (material.GetFloat("_ByteCount") <= 0f)
-                return;
+            {
+                decodePreparationError = "Calibration requires a non-empty decode request.";
+                return false;
+            }
 #if !COMPILER_UDONSHARP
             if (calibrationMaterial.shader == null || !calibrationMaterial.shader.isSupported)
-                return;
+            {
+                decodePreparationError = "Calibration shader is missing or unsupported.";
+                return false;
+            }
             if (!SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBFloat))
-                return;
+            {
+                decodePreparationError = "Calibration RT format is unsupported.";
+                return false;
+            }
 #endif
 
             if (_calibrationLut == null)
@@ -120,9 +136,15 @@ namespace K13A.TSMP
             }
 
             if (_calibrationLut.format != RenderTextureFormat.ARGBFloat)
-                return;
+            {
+                decodePreparationError = "Calibration RT format differs from ARGBFloat.";
+                return false;
+            }
             if (!_calibrationLut.IsCreated() && !_calibrationLut.Create())
-                return;
+            {
+                decodePreparationError = "Calibration RT creation failed.";
+                return false;
+            }
 
             calibrationMaterial.CopyPropertiesFromMaterial(material);
 #if !COMPILER_UDONSHARP
@@ -135,6 +157,7 @@ namespace K13A.TSMP
             material.SetTexture("_CalibrationLut", _calibrationLut);
             material.EnableKeyword("TSMP_CALIBRATION_LUT");
             _calibrationDecodeMaterial = material;
+            return true;
         }
 
         protected virtual void OnDisable()

@@ -57,6 +57,8 @@ namespace K13A.TSMP.Udon
         public bool applyEveryFrame = true;
         // Opt-in local transport lifecycle. Ordinary decoders keep their original path.
         [HideInInspector] public uint preparedFrameCount;
+        [HideInInspector] public bool decodePreparationFailed;
+        [HideInInspector] public string decodePreparationError;
         private bool _holdReceptionDispatch;
 
         public void _SuspendReception()
@@ -89,6 +91,8 @@ namespace K13A.TSMP.Udon
             lastHeaderValid = false;
             readbackInFlight = false;
             _holdReceptionDispatch = true;
+            decodePreparationFailed = false;
+            decodePreparationError = string.Empty;
             _decodeSuspended = false;
             applyEveryFrame = true;
             return true;
@@ -354,6 +358,8 @@ namespace K13A.TSMP.Udon
 
         private void OnEnable()
         {
+            decodePreparationFailed = false;
+            decodePreparationError = string.Empty;
             _decodeSuspended = false;
 #if !COMPILER_UDONSHARP
             if (readbackPackMaterial == null)
@@ -855,8 +861,8 @@ namespace K13A.TSMP.Udon
             int startBlock = _currentHeaderRow * _activeWidthBlocks;
             lastRequestedByteCount = FrameHeader.Size;
             _decodeStage = 1;
-            RunByteDecodePass(startBlock, FrameHeader.Size, 0);
-            RequestByteReadback(FrameHeader.Size);
+            if (RunByteDecodePass(startBlock, FrameHeader.Size, 0))
+                RequestByteReadback(FrameHeader.Size);
         }
 
         private void RequestPayloadReadback()
@@ -876,8 +882,8 @@ namespace K13A.TSMP.Udon
             lastPayloadStartRow = handler.payloadStartRow;
             lastRequestedByteCount = _payloadDataBytes;
             _decodeStage = 2;
-            RunByteDecodePass(_payloadStartBlock, _payloadDataBytes, symbolMode);
-            RequestByteReadback(_payloadDataBytes);
+            if (RunByteDecodePass(_payloadStartBlock, _payloadDataBytes, symbolMode))
+                RequestByteReadback(_payloadDataBytes);
         }
 
         private void RequestByteReadback(int byteCount)
@@ -929,21 +935,25 @@ namespace K13A.TSMP.Udon
 #endif
         }
 
-        private void RunByteDecodePass(int startBlock, int byteCount, int symbolMode)
+        private bool RunByteDecodePass(int startBlock, int byteCount, int symbolMode)
         {
-            RunByteDecodeTo(startBlock, byteCount, symbolMode, _requestByteTexture, false);
+            return RunByteDecodeTo(startBlock, byteCount, symbolMode, _requestByteTexture, false);
         }
 
         private bool RunByteDecodeTo(int startBlock, int byteCount, int symbolMode, RenderTexture destination, bool combined)
         {
+            if (decodePreparationFailed) return false;
             int codecId = _payloadCodecId;
             if (symbolMode == 0)
                 codecId = 0;
 
             TSMPCodec handler = PrepareDecodeHandler(codecId, byteCount);
             Material material = handler != null ? handler.selectedDecodeMaterial : null;
-            if (material == null)
+            if (material == null || destination == null)
+            {
+                FailDecodePreparation("Decode material or destination RT is missing.");
                 return false;
+            }
 
             Texture decodeSource = _decodeSourceTexture;
             material.SetTexture(ShaderProperties.MainTex, decodeSource);
@@ -964,8 +974,24 @@ namespace K13A.TSMP.Udon
             }
 
             handler.PrepareDecode(decodeSource, material);
+            if (handler.decodePreparationFailed)
+            {
+                FailDecodePreparation(handler.decodePreparationError);
+                return false;
+            }
             GraphicsBridge.Blit(decodeSource, destination, material);
             return true;
+        }
+
+        private void FailDecodePreparation(string reason)
+        {
+            if (decodePreparationFailed) return;
+            decodePreparationFailed = true;
+            decodePreparationError = reason;
+            lastError = reason;
+            lastHeaderValid = false;
+            _SuspendReception();
+            LogDecodeError(reason);
         }
 
         private bool TryRequestPredictedReadback()
