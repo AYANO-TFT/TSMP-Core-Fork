@@ -136,18 +136,26 @@ float SampleBlockLuma(float blockX, float blockY)
     return sum / (sampleLimit * sampleLimit);
 }
 
+// Block indices are non-negative integers; width is a positive integer.
+int2 BlockXYExact(int index, int width)
+{
+    uint n = (uint)index;
+    uint w = (uint)width;
+    uint row = n / w;
+    uint col = n - row * w;
+    return int2((int)col, (int)row);
+}
+
 float3 SampleBlockByIndex(float blockIndex)
 {
-    float blockX = fmod(blockIndex, _ActiveWidthBlocks);
-    float blockY = floor(blockIndex / _ActiveWidthBlocks);
-    return SampleBlockRgb(blockX, blockY);
+    int2 block = BlockXYExact((int)blockIndex, (int)_ActiveWidthBlocks);
+    return SampleBlockRgb(block.x, block.y);
 }
 
 float SampleLumaBlockByIndex(float blockIndex)
 {
-    float blockX = fmod(blockIndex, _ActiveWidthBlocks);
-    float blockY = floor(blockIndex / _ActiveWidthBlocks);
-    return SampleBlockLuma(blockX, blockY);
+    int2 block = BlockXYExact((int)blockIndex, (int)_ActiveWidthBlocks);
+    return SampleBlockLuma(block.x, block.y);
 }
 
 float PayloadBlockIndex(int symbolIndex)
