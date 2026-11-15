@@ -19,6 +19,7 @@ namespace K13A.TSMP.Editor
             serializedObject.Update();
 
             DrawTSMPNetworkSection(true);
+            InspectorUI.FixedReceiveConfiguration(serializedObject);
             DrawProperty("target");
             DrawProperty("useLocalSpace");
 

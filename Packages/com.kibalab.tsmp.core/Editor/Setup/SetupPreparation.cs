@@ -70,7 +70,14 @@ namespace K13A.TSMP.Editor
         private static void OnPlayModeChanged(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.ExitingEditMode)
-                PrepareAll();
+            {
+                try { PrepareAll(); }
+                catch (Exception exception)
+                {
+                    EditorApplication.isPlaying = false;
+                    Debug.LogException(exception);
+                }
+            }
         }
 
         private static void OnSceneSaving(Scene scene, string path)
@@ -91,6 +98,7 @@ namespace K13A.TSMP.Editor
         public void OnProcessScene(Scene scene, BuildReport report)
         {
             PrepareScene(scene);
+            TransSyncBindingBuilder.RebuildSceneBindings(false, scene);
         }
 
         private static void PrepareScene(Scene scene)

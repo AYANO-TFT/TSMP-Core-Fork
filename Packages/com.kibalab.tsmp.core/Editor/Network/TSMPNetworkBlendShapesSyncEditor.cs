@@ -19,9 +19,11 @@ namespace K13A.TSMP.Editor
             serializedObject.Update();
 
             DrawTSMPNetworkSection(true);
+            bool fixedReceive = InspectorUI.FixedReceiveConfiguration(serializedObject);
             DrawProperty("targetRenderer");
-            DrawProperty("validateBlendShapeCacheOnReceive");
-            if (!serializedObject.FindProperty("validateBlendShapeCacheOnReceive").boolValue)
+            using (new EditorGUI.DisabledScope(fixedReceive))
+                DrawProperty("validateBlendShapeCacheOnReceive");
+            if (!fixedReceive && !serializedObject.FindProperty("validateBlendShapeCacheOnReceive").boolValue)
                 EditorGUILayout.HelpBox("Fixed selection cache: call _InvalidateBlendShapeCache after changing elements of the existing index array at runtime. Character activation and renderer/mesh/array replacement remain supported.", MessageType.Info);
 
             SerializedProperty encodedCount = serializedObject.FindProperty("encodedBlendShapeCount");

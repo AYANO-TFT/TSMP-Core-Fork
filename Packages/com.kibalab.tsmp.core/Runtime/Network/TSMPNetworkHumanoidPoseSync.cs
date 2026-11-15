@@ -80,6 +80,15 @@ namespace K13A.TSMP.Udon
         public bool alternateHandUpdates;
         [Tooltip("Also alternate LeftHand/RightHand (wrists). Arms and the rest of the body still update on every pose receipt.")]
         public bool alternateIncludeWrists;
+        [Tooltip("Prepare fixed receive bone references and hierarchy in the Editor before Play/build.")]
+        public bool cacheFixedReceiveConfiguration;
+        [SerializeField, HideInInspector] private int _preparedReceiveVersion;
+        [SerializeField, HideInInspector] private Transform[] _preparedBoneParents;
+        [SerializeField, HideInInspector] private Transform _preparedAnimatorRoot;
+        [SerializeField, HideInInspector] private Transform _preparedRootParent;
+        [SerializeField, HideInInspector] private int _preparedHandUpdateMode;
+        private bool _fixedReceiveChecked;
+        private bool _useFixedReceiveConfiguration;
         [HideInInspector] public int validBoneCount;
         [HideInInspector] public int encodedPoseBytes;
         [HideInInspector] public int encodedRootMotionBytes;
@@ -106,16 +115,16 @@ namespace K13A.TSMP.Udon
                                             PoseFlagAnimatorRootSpaceRotations |
                                             PoseFlagRootMotionWorldSpace;
 
-        private Transform[] _boneTargetsById;
+        [SerializeField, HideInInspector] private Transform[] _boneTargetsById;
         private bool[] _boneTargetResolvedById;
         private bool[] _boneTargetResolvedByIndex;
-        private bool[] _hasBoneId;
+        [SerializeField, HideInInspector] private bool[] _hasBoneId;
         private bool[] _validatedReceivedBoneIds;
-        private bool[] _fingerAllowedById;
-        private int[] _activeBoneIndices;
-        private int[] _activeBoneIds;
-        private Transform[] _activeBoneTargets;
-        private int _activeBoneCount;
+        [SerializeField, HideInInspector] private bool[] _fingerAllowedById;
+        [SerializeField, HideInInspector] private int[] _activeBoneIndices;
+        [SerializeField, HideInInspector] private int[] _activeBoneIds;
+        [SerializeField, HideInInspector] private Transform[] _activeBoneTargets;
+        [SerializeField, HideInInspector] private int _activeBoneCount;
         private int _cachedBoneIdLength = -1;
         private int _cachedBoneIdHash;
         private bool _boneIdHashCacheValid;
@@ -127,7 +136,7 @@ namespace K13A.TSMP.Udon
         private bool _resolvedBones;
         private Animator _resolvedAnimator;
         private Avatar _resolvedAvatar;
-        private Transform _rootMotionTarget;
+        [SerializeField, HideInInspector] private Transform _rootMotionTarget;
         private bool _fingerBoneIdsPrepared;
         private int _fingerBoneIdsPreparedLength = -1;
         private int _fingerBoneIdsPreparedHash;
@@ -137,7 +146,7 @@ namespace K13A.TSMP.Udon
         private Quaternion[] _receivedBoneWorldRotations;
         private bool[] _hasReceivedBoneWorldRotation;
         private bool[] _cachedHasReceivedBoneWorldRotation;
-        private int[] _boneParentIdsById;
+        [SerializeField, HideInInspector] private int[] _boneParentIdsById;
         private int[] _receivedAncestorBoneIdsById;
         private bool _receivedAncestorBoneIdsValid;
         private bool _hasContinuousBoneTargets;
@@ -164,8 +173,65 @@ namespace K13A.TSMP.Udon
 
         private void Start()
         {
-            ResolveBones();
+            InitializeFixedReceiveConfiguration();
+            if (!_useFixedReceiveConfiguration) ResolveBones();
         }
+
+        private void InitializeFixedReceiveConfiguration()
+        {
+            if (_fixedReceiveChecked) return;
+            _fixedReceiveChecked = true;
+            int count = (int)HumanBodyBones.LastBone;
+            _useFixedReceiveConfiguration = cacheFixedReceiveConfiguration && _preparedReceiveVersion == 1
+                && _boneTargetsById != null && _boneTargetsById.Length == count
+                && _hasBoneId != null && _hasBoneId.Length == count
+                && _fingerAllowedById != null && _fingerAllowedById.Length == count
+                && _boneParentIdsById != null && _boneParentIdsById.Length == count
+                && _preparedBoneParents != null && _preparedBoneParents.Length == count;
+            if (_useFixedReceiveConfiguration)
+                EnsureLookupArrays(); // Only the existing mutable receive buffers need allocation.
+            else if (cacheFixedReceiveConfiguration)
+                Debug.LogWarning("[TSMP] Fixed Humanoid receive data is missing or outdated; using dynamic configuration.");
+        }
+
+        // Local-only invalidation; the prepared table is never rebuilt by reception.
+        public void _InvalidateReceiveConfiguration()
+        {
+            _fixedReceiveChecked = true;
+            _useFixedReceiveConfiguration = false;
+            _resolvedBones = false;
+            _boneCacheValid = false;
+        }
+
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+        public bool EditorPrepareFixedReceiveConfiguration()
+        {
+            _fixedReceiveChecked = false;
+            _useFixedReceiveConfiguration = false;
+            _preparedReceiveVersion = 0;
+            if (!cacheFixedReceiveConfiguration) return true;
+            // Force a fresh resolution even if only the hierarchy/Avatar contents
+            // changed. Reuse the legacy resolver, including finger ID completion.
+            _resolvedAnimator = null;
+            _resolvedBones = false;
+            _boneCacheValid = false;
+            _fingerBoneIdsPrepared = false;
+            _boneTargetsById = null;
+            _boneTargetResolvedById = null;
+            _boneTargetResolvedByIndex = null;
+            ResolveBones();
+            if (!_resolvedBones) return false;
+            int count = (int)HumanBodyBones.LastBone;
+            _preparedBoneParents = new Transform[count];
+            for (int i = 0; i < count; i++)
+                _preparedBoneParents[i] = _boneTargetsById[i] != null ? _boneTargetsById[i].parent : null;
+            _preparedAnimatorRoot = animator != null ? animator.transform : null;
+            _preparedRootParent = _rootMotionTarget != null ? _rootMotionTarget.parent : null;
+            _preparedHandUpdateMode = alternateHandUpdates ? (alternateIncludeWrists ? 2 : 1) : 0;
+            _preparedReceiveVersion = 1;
+            return true;
+        }
+#endif
 
         private void OnDisable()
         {
@@ -336,10 +402,12 @@ namespace K13A.TSMP.Udon
             if (!IsTSMPActive() || poseBytes == null || poseBytes.Length < PoseHeaderBytes)
                 return;
 
-            if (autoResolveBones)
-                ResolveBones();
-            else
-                EnsureFingerBoneIds();
+            if (!_fixedReceiveChecked) InitializeFixedReceiveConfiguration();
+            if (!_useFixedReceiveConfiguration)
+            {
+                if (autoResolveBones) ResolveBones();
+                else EnsureFingerBoneIds();
+            }
 
             byte version = poseBytes[0];
             byte flags = poseBytes[1];
@@ -372,14 +440,14 @@ namespace K13A.TSMP.Udon
             Quaternion animatorRootRotation = Quaternion.identity;
             if (animatorRootSpaceRotations && animator != null)
             {
-                animatorRoot = animator.transform;
+                animatorRoot = _useFixedReceiveConfiguration ? _preparedAnimatorRoot : animator.transform;
                 animatorRootRotation = animatorRoot.rotation;
             }
 
             Transform[] targetsById = _boneTargetsById;
             bool appliedAny = false;
             bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous && !_snapNextReceive;
-            int handUpdateMode = alternateHandUpdates ? (alternateIncludeWrists ? 2 : 1) : 0;
+            int handUpdateMode = _useFixedReceiveConfiguration ? _preparedHandUpdateMode : (alternateHandUpdates ? (alternateIncludeWrists ? 2 : 1) : 0);
             // Receipt order, not render-frame parity: a slower or irregular sender must
             // not repeatedly update only one side. Invalid packets never advance this state.
             bool alternate = handUpdateMode != 0 && _handReceiveInitialized && !_snapNextReceive
@@ -392,7 +460,7 @@ namespace K13A.TSMP.Udon
                 ? (_receiveRightHandNext ? (int)HumanBodyBones.LeftHand : (int)HumanBodyBones.RightHand) : -1;
             if (continuous)
             {
-                EnsureLookupArrays();
+                if (!_useFixedReceiveConfiguration) EnsureLookupArrays();
                 targetsById = _boneTargetsById;
                 ClearReceivedBoneWorldRotations();
             }
@@ -763,7 +831,7 @@ namespace K13A.TSMP.Udon
             Quaternion worldRotation = rootRotation;
             if (rootRotationIsLocal)
             {
-                Transform parent = root.parent;
+                Transform parent = _useFixedReceiveConfiguration ? _preparedRootParent : root.parent;
                 if (parent != null)
                     worldRotation = parent.rotation * rootRotation;
             }
@@ -795,7 +863,7 @@ namespace K13A.TSMP.Udon
                 if (target == null)
                     continue;
 
-                Transform parent = target.parent;
+                Transform parent = _useFixedReceiveConfiguration ? _preparedBoneParents[i] : target.parent;
                 Quaternion parentWorldRotation = Quaternion.identity;
                 if (parent != null)
                     parentWorldRotation = GetContinuousParentWorldRotation(i, parent);
@@ -926,7 +994,7 @@ namespace K13A.TSMP.Udon
 
             if (_continuousRootIsAnimatorRelative && animator != null)
             {
-                Transform animatorRoot = animator.transform;
+                Transform animatorRoot = _useFixedReceiveConfiguration ? _preparedAnimatorRoot : animator.transform;
                 Vector3 position = animatorRoot.position + animatorRoot.rotation * _continuousRootPosition;
                 root.position = Vector3.Lerp(root.position, position, step);
                 if (_continuousRootHasRotation)
@@ -1043,13 +1111,14 @@ namespace K13A.TSMP.Udon
 
         private bool ValidatePoseBoneRecords(int count, int cursor)
         {
-            EnsureLookupArrays();
-            if (!_boneCacheValid ||
-                _cachedBoneIdLength != (boneIds != null ? boneIds.Length : -1) ||
-                _cachedBoneIdHash != GetBoneIdHash() ||
-                _cachedIncludeFingerBones != includeFingerBones)
+            if (!_useFixedReceiveConfiguration)
             {
-                RebuildBoneLookup();
+                EnsureLookupArrays();
+                if (!_boneCacheValid ||
+                    _cachedBoneIdLength != (boneIds != null ? boneIds.Length : -1) ||
+                    _cachedBoneIdHash != GetBoneIdHash() ||
+                    _cachedIncludeFingerBones != includeFingerBones)
+                    RebuildBoneLookup();
             }
 
             int lastBone = (int)HumanBodyBones.LastBone;
@@ -1239,6 +1308,7 @@ namespace K13A.TSMP.Udon
 
         private Transform ResolveRootMotionTarget()
         {
+            if (_useFixedReceiveConfiguration) return _rootMotionTarget;
             if (animator == null)
                 animator = GetComponent<Animator>();
 

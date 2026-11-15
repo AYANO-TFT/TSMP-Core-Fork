@@ -105,6 +105,17 @@ namespace K13A.TSMP.Udon
 
         [Tooltip("Check all binding settings on each received frame. Disable only for fixed bindings; call _InvalidateBindingCache after changing bindings at runtime.")]
         public bool validateBindingCacheOnReceive = true;
+        [Tooltip("Use bindings and dispatch metadata prepared by the Editor before Play/build. Disable for runtime binding changes.")]
+        public bool cacheFixedBindings;
+        [SerializeField, HideInInspector] private int _preparedBindingVersion;
+        [SerializeField, HideInInspector] private int _preparedBindingCount;
+        [SerializeField, HideInInspector] private GameObject[] _preparedBindingObjects;
+        [SerializeField, HideInInspector] private byte[] _preparedReceivePolicies;
+        [SerializeField, HideInInspector] private byte[] _preparedBindingKinds;
+        [SerializeField, HideInInspector] private int[] _preparedLookupEnds;
+        private bool _fixedBindingsChecked;
+        private bool _useFixedBindings;
+        private bool _fixedBindingBuffersReady;
         public bool skipDuplicateFrames = true;
         [Min(1)] public int frameWindowSize = 256;
 
@@ -289,14 +300,14 @@ namespace K13A.TSMP.Udon
         private uint _lastAppliedStreamId;
         private uint _lastAppliedFrameIndex;
 #if UDONSHARP || COMPILER_UDONSHARP
-        private UdonBehaviour[] _cachedBindingUdonTargets;
+        [SerializeField, HideInInspector] private UdonBehaviour[] _cachedBindingUdonTargets;
 #endif
-        private Component[] _cachedBindingComponentTargets;
+        [SerializeField, HideInInspector] private Component[] _cachedBindingComponentTargets;
         private string[] _cachedBindingFieldNames;
-        private ushort[] _bindingLookupNetworkIds;
-        private uint[] _bindingLookupVariableHashes;
-        private int[] _bindingLookupBindingIndices;
-        private int _bindingLookupCount;
+        [SerializeField, HideInInspector] private ushort[] _bindingLookupNetworkIds;
+        [SerializeField, HideInInspector] private uint[] _bindingLookupVariableHashes;
+        [SerializeField, HideInInspector] private int[] _bindingLookupBindingIndices;
+        [SerializeField, HideInInspector] private int _bindingLookupCount;
         private int _bindingLookupSignature;
         private byte[][] _rawByteValueArrays;
         private uint[] _crc32Table;
@@ -1560,6 +1571,11 @@ namespace K13A.TSMP.Udon
         private void ApplyVariableValue(ushort networkId, uint variableHash, int valueType, int valueOffset, int valueLength)
         {
             if (_holdReceptionDispatch || !AcceptCharacterValue(valueOffset)) return;
+            if (_useFixedBindings)
+            {
+                ApplyPreparedVariableValue(networkId, variableHash, valueType, valueOffset, valueLength);
+                return;
+            }
             int bindingCount = GetReadableBindingCount();
             if (bindingCount <= 0)
                 return;
@@ -1656,6 +1672,9 @@ namespace K13A.TSMP.Udon
         // Local-only helper. Rebuild lazily before the next applied network frame.
         public void _InvalidateBindingCache()
         {
+            _fixedBindingsChecked = true;
+            _useFixedBindings = false;
+            _fixedBindingBuffersReady = false;
             _cachedBindingTargetCount = -1;
             _bindingLookupCount = -1;
             _bindingLookupSignature = -1;
@@ -1665,6 +1684,37 @@ namespace K13A.TSMP.Udon
         {
             if (targetCount < 0)
                 targetCount = 0;
+
+            if (!_fixedBindingsChecked)
+            {
+                _fixedBindingsChecked = true;
+                _useFixedBindings = cacheFixedBindings && _preparedBindingVersion == 1
+                    && _preparedBindingCount == GetReadableBindingCount()
+                    && _preparedBindingObjects != null && _preparedBindingObjects.Length == targetCount
+                    && _preparedReceivePolicies != null && _preparedReceivePolicies.Length == targetCount
+                    && _preparedBindingKinds != null && _preparedBindingKinds.Length == targetCount
+                    && _preparedLookupEnds != null && _preparedLookupEnds.Length == _bindingLookupCount
+                    && BindingLookup.IsCacheValid(_bindingLookupNetworkIds, _bindingLookupVariableHashes,
+                        _bindingLookupBindingIndices, _bindingLookupCount, _bindingLookupCount, targetCount, targetCount);
+#if UDONSHARP || COMPILER_UDONSHARP
+                _useFixedBindings = _useFixedBindings && BindingTable.IsUdonTargetCacheValid(_cachedBindingUdonTargets, targetCount);
+#else
+                _useFixedBindings = _useFixedBindings && BindingTable.IsComponentTargetCacheValid(_cachedBindingComponentTargets, targetCount);
+#endif
+                if (cacheFixedBindings && !_useFixedBindings)
+                    Debug.LogWarning("[TSMP] Fixed binding data is missing or outdated; using dynamic bindings.");
+            }
+            if (_useFixedBindings)
+            {
+                if (!_fixedBindingBuffersReady)
+                {
+                    InitializeBindingValueArrays(targetCount);
+                    _cachedBindingFieldNames = bindingFieldNames;
+                    _cachedBindingTargetCount = targetCount;
+                    _fixedBindingBuffersReady = true;
+                }
+                return;
+            }
 
             if (_lastValidateBindingCacheOnReceive != validateBindingCacheOnReceive)
             {
@@ -1711,14 +1761,7 @@ namespace K13A.TSMP.Udon
             }
 
             _cachedBindingTargetCount = targetCount;
-            _rawByteValueArrays = new byte[targetCount][];
-            _boolValueArrays = new bool[targetCount][];
-            _intValueArrays = new int[targetCount][];
-            _floatValueArrays = new float[targetCount][];
-            _vector2ValueArrays = new Vector2[targetCount][];
-            _vector3ValueArrays = new Vector3[targetCount][];
-            _quaternionValueArrays = new Quaternion[targetCount][];
-            _stringValueArrays = new string[targetCount][];
+            InitializeBindingValueArrays(targetCount);
             _cachedBindingFieldNames = new string[targetCount];
             for (int i = 0; i < targetCount; i++)
             {
@@ -1732,6 +1775,145 @@ namespace K13A.TSMP.Udon
 
             EnsureBindingLookupCache(targetCount);
         }
+
+        private void InitializeBindingValueArrays(int count)
+        {
+            _rawByteValueArrays = new byte[count][];
+            _boolValueArrays = new bool[count][];
+            _intValueArrays = new int[count][];
+            _floatValueArrays = new float[count][];
+            _vector2ValueArrays = new Vector2[count][];
+            _vector3ValueArrays = new Vector3[count][];
+            _quaternionValueArrays = new Quaternion[count][];
+            _stringValueArrays = new string[count][];
+        }
+
+        private void ApplyPreparedVariableValue(ushort networkId, uint variableHash, int valueType, int valueOffset, int valueLength)
+        {
+            int start = BindingLookup.FindStart(_bindingLookupNetworkIds, _bindingLookupVariableHashes, _bindingLookupCount, networkId, variableHash);
+            if (start < 0) return;
+            int end = _preparedLookupEnds[start];
+            int applied = 0;
+            int rejected = 0;
+            for (int lookup = start; lookup < end; lookup++)
+            {
+                int index = _bindingLookupBindingIndices[lookup];
+                byte kind = _preparedBindingKinds[index];
+                if (kind == 0) continue;
+                if (bindingValueTypes[index] == NetworkFrameProtocol.ValueTypeUnsupported || bindingValueTypes[index] != valueType) { rejected++; continue; }
+#if UDONSHARP || COMPILER_UDONSHARP
+                UdonBehaviour receiver = _cachedBindingUdonTargets[index];
+#else
+                Component receiver = _cachedBindingComponentTargets[index];
+#endif
+                if (receiver == null) continue;
+                byte policy = _preparedReceivePolicies[index];
+                if (policy == 2) continue;
+                // Recheck each recipient immediately before decoding. A preceding
+                // receiver event can change the active state of a later recipient.
+                if (policy == 0)
+                {
+#if UDONSHARP || COMPILER_UDONSHARP
+                    if (!DecoderVariableDispatcher.IsTargetActive(_cachedBindingUdonTargets, index)) continue;
+#else
+                    if (!DecoderVariableDispatcher.IsTargetActive(_cachedBindingComponentTargets, index)) continue;
+#endif
+                }
+                else
+                {
+                    GameObject targetObject = _preparedBindingObjects[index];
+                    if (targetObject == null || !targetObject.activeInHierarchy) continue;
+#if !UDONSHARP && !COMPILER_UDONSHARP
+                    Behaviour behaviour = receiver as Behaviour;
+                    if (behaviour != null && !behaviour.enabled) continue;
+#endif
+                }
+                object value;
+                if (valueType == NetworkFrameProtocol.ValueTypeRawBytes)
+                {
+                    byte[] bytes = _rawByteValueArrays[index];
+                    if (bytes == null || bytes.Length != valueLength) bytes = new byte[valueLength];
+                    if (valueLength > 0) System.Array.Copy(_payloadBytes, valueOffset, bytes, 0, valueLength);
+                    _rawByteValueArrays[index] = bytes;
+                    value = bytes;
+                }
+                else
+                    value = DecoderValueRuntime.DecodeProgramVariableValue(_payloadBytes, index, valueType, valueOffset, valueLength,
+                        _rawByteValueArrays, _boolValueArrays, _intValueArrays, _floatValueArrays, _vector2ValueArrays,
+                        _vector3ValueArrays, _quaternionValueArrays, _stringValueArrays);
+                if (kind == 2) TSMPBehaviour.SetProgramVariable(receiver, "crcSkipFingerUpdate", _crcSkipCurrentFingers);
+                if (value == null) continue;
+                TSMPBehaviour.SetProgramVariable(receiver, bindingFieldNames[index], value);
+                TSMPBehaviour.SetProgramVariable(receiver, TSMPNetworkBehaviour.LastVariableHashFieldName, variableHash);
+                TSMPBehaviour.SendCustomEvent(receiver, TSMPNetworkBehaviour.OnVariableReceivedEventName);
+                applied++;
+            }
+            if (rejected > 0)
+            {
+                lastError = "Skipped " + rejected + " TSMP variable value(s) with mismatched value type.";
+                LogTSMPWarning(LogPrefix, lastError, debugLog, 1f);
+            }
+            if (applied <= 0) return;
+            lastAppliedValueType = valueType;
+            lastAppliedValueLength = valueLength;
+            lastAppliedVariableCount += applied;
+        }
+
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+        public bool EditorPrepareFixedBindings()
+        {
+            _fixedBindingsChecked = false;
+            _useFixedBindings = false;
+            _fixedBindingBuffersReady = false;
+            _preparedBindingVersion = 0;
+            if (!cacheFixedBindings) return true;
+            int targetCount = GetBindingTargetCount();
+            _preparedBindingCount = GetReadableBindingCount();
+            if (_preparedBindingCount != targetCount) return false;
+#if UDONSHARP
+            _cachedBindingUdonTargets = BindingTable.BuildUdonTargetCache(bindingTargets, bindingUdonTargets, targetCount);
+#else
+            _cachedBindingComponentTargets = BindingTable.BuildComponentTargetCache(bindingTargets, targetCount);
+#endif
+            _bindingLookupCount = targetCount;
+            _bindingLookupNetworkIds = new ushort[targetCount];
+            _bindingLookupVariableHashes = new uint[targetCount];
+            _bindingLookupBindingIndices = new int[targetCount];
+            BindingLookup.Build(_bindingLookupNetworkIds, _bindingLookupVariableHashes, _bindingLookupBindingIndices,
+                targetCount, bindingNetworkIds, bindingVariableHashes);
+            _preparedLookupEnds = new int[targetCount];
+            int end = targetCount;
+            for (int i = targetCount - 1; i >= 0; i--)
+            {
+                if (i + 1 < targetCount && (_bindingLookupNetworkIds[i] != _bindingLookupNetworkIds[i + 1]
+                    || _bindingLookupVariableHashes[i] != _bindingLookupVariableHashes[i + 1])) end = i + 1;
+                _preparedLookupEnds[i] = end;
+            }
+            _preparedBindingObjects = new GameObject[targetCount];
+            _preparedReceivePolicies = new byte[targetCount];
+            _preparedBindingKinds = new byte[targetCount];
+            for (int i = 0; i < targetCount; i++)
+            {
+#if UDONSHARP
+                Component receiver = _cachedBindingUdonTargets[i];
+#else
+                Component receiver = _cachedBindingComponentTargets[i];
+#endif
+                _preparedBindingObjects[i] = receiver != null ? receiver.gameObject : null;
+                string fieldName = bindingFieldNames[i];
+                _preparedBindingKinds[i] = string.IsNullOrEmpty(fieldName) ? (byte)0 : fieldName == "poseBytes" ? (byte)2 : (byte)1;
+                TSMPNetworkBehaviour behaviour = bindingTargets != null && i < bindingTargets.Length
+                    ? bindingTargets[i] as TSMPNetworkBehaviour : null;
+                bool fixedConfiguration = (behaviour is TSMPNetworkHumanoidPoseSync pose && pose.cacheFixedReceiveConfiguration)
+                    || (behaviour is TSMPNetworkTransformSync transformSync && transformSync.cacheFixedReceiveConfiguration)
+                    || (behaviour is TSMPNetworkBlendShapesSync blend && blend.cacheFixedReceiveConfiguration);
+                if (fixedConfiguration)
+                    _preparedReceivePolicies[i] = behaviour.receiveInterpolation == ReceiveInterpolationMode.None ? (byte)2 : (byte)1;
+            }
+            _preparedBindingVersion = 1;
+            return true;
+        }
+#endif
 
         private void EnsureBindingLookupCache(int targetCount)
         {

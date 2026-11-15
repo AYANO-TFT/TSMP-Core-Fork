@@ -61,6 +61,7 @@ namespace K13A.TSMP.Editor
                     go.transform.localScale = Vector3.one;
 
                     sync.PackedBytes = roundTrip;
+                    sync.OnTSMPVariableReceived();
 
                     if (!PositionMatches(go.transform.localPosition, seedPos, mode, out string posErr))
                         failures.Add($"[mode={mode}] position {posErr}");

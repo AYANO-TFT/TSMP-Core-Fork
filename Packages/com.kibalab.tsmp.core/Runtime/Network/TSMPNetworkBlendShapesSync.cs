@@ -13,6 +13,13 @@ namespace K13A.TSMP.Udon
         public string[] blendShapeNames;
         [Tooltip("Validate every selected BlendShape index on receive and interpolation. Disable for fixed selections; call _InvalidateBlendShapeCache after editing the existing index array in place. Renderer, mesh and array replacement are still detected. Encoding always validates.")]
         public bool validateBlendShapeCacheOnReceive = true;
+        [Tooltip("Prepare fixed receive selection and mesh information in the Editor before Play/build.")]
+        public bool cacheFixedReceiveConfiguration;
+        [SerializeField, HideInInspector] private int _preparedReceiveVersion;
+        [SerializeField, HideInInspector] private int[] _preparedInterpolationIndices;
+        private bool _fixedReceiveChecked;
+        private bool _useFixedReceiveConfiguration;
+        private bool _receiveBuffersReady;
         [HideInInspector] public int blendShapeCount;
         [HideInInspector] public int encodedBlendShapeCount;
 
@@ -28,9 +35,9 @@ namespace K13A.TSMP.Udon
         private const int BlendShapeEntryBytes = 3;
         private const int MaxEncodedBlendShapes = 255;
 
-        private bool[] _selectedBlendShapeLookup;
-        private int[] _validBlendShapeIndices;
-        private int _selectedBlendShapeCount;
+        [SerializeField, HideInInspector] private bool[] _selectedBlendShapeLookup;
+        [SerializeField, HideInInspector] private int[] _validBlendShapeIndices;
+        [SerializeField, HideInInspector] private int _selectedBlendShapeCount;
         private int[] _cachedBlendShapeIndices;
         private int _cachedBlendShapeIndexLength = -1;
         private int _cachedBlendShapeIndexHash;
@@ -53,9 +60,68 @@ namespace K13A.TSMP.Udon
 
         private void Start()
         {
+            InitializeFixedReceiveConfiguration();
+            if (!_useFixedReceiveConfiguration)
+            {
+                ResolveRenderer();
+                RefreshBlendShapeCount();
+            }
+        }
+
+        private void InitializeFixedReceiveConfiguration()
+        {
+            if (_fixedReceiveChecked) return;
+            _fixedReceiveChecked = true;
+            _useFixedReceiveConfiguration = cacheFixedReceiveConfiguration && _preparedReceiveVersion == 1
+                && targetRenderer != null && _selectedBlendShapeLookup != null
+                && _selectedBlendShapeLookup.Length == Mathf.Max(1, blendShapeCount)
+                && _preparedInterpolationIndices != null && _preparedInterpolationIndices.Length == _selectedBlendShapeCount;
+            if (cacheFixedReceiveConfiguration && !_useFixedReceiveConfiguration)
+                Debug.LogWarning("[TSMP] Fixed BlendShape receive data is missing or outdated; using dynamic configuration.");
+        }
+
+        private void PrepareReceiveState()
+        {
+            if (!_fixedReceiveChecked) InitializeFixedReceiveConfiguration();
+            if (!_useFixedReceiveConfiguration)
+            {
+                ResolveRenderer();
+                RefreshBlendShapeCount();
+                RebuildBlendShapeLookupIfNeeded(false);
+                return;
+            }
+            if (_receiveBuffersReady) return;
+            int length = Mathf.Max(1, blendShapeCount);
+            if (_targetBlendShapeValues == null || _targetBlendShapeValues.Length != length)
+                _targetBlendShapeValues = new float[length];
+            if (_hasTargetBlendShapeValue == null || _hasTargetBlendShapeValue.Length != length)
+                _hasTargetBlendShapeValue = new bool[length];
+            _receiveBuffersReady = true;
+        }
+
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+        public bool EditorPrepareFixedReceiveConfiguration()
+        {
+            _fixedReceiveChecked = false;
+            _useFixedReceiveConfiguration = false;
+            _receiveBuffersReady = false;
+            _preparedReceiveVersion = 0;
+            if (!cacheFixedReceiveConfiguration) return true;
             ResolveRenderer();
             RefreshBlendShapeCount();
+            _cachedBlendShapeCount = -2;
+            RebuildBlendShapeLookupIfNeeded(true);
+            if (targetRenderer == null || targetRenderer.sharedMesh == null) return false;
+            _preparedInterpolationIndices = new int[_selectedBlendShapeCount];
+            int cursor = 0;
+            // Keep the legacy interpolation order (ascending mesh index), without
+            // changing the selection order used by the encoder.
+            for (int i = 0; i < _selectedBlendShapeLookup.Length; i++)
+                if (_selectedBlendShapeLookup[i]) _preparedInterpolationIndices[cursor++] = i;
+            _preparedReceiveVersion = 1;
+            return true;
         }
+#endif
 
         private void OnDisable()
         {
@@ -144,9 +210,7 @@ namespace K13A.TSMP.Udon
             if (blendShapeBytes[0] != BlendShapeVersion)
                 return;
 
-            ResolveRenderer();
-            RefreshBlendShapeCount();
-            RebuildBlendShapeLookupIfNeeded(false);
+            PrepareReceiveState();
 
             if (targetRenderer == null)
                 return;
@@ -238,6 +302,9 @@ namespace K13A.TSMP.Udon
         public void _InvalidateBlendShapeCache()
         {
             _cachedBlendShapeCount = -2;
+            _fixedReceiveChecked = true;
+            _useFixedReceiveConfiguration = false;
+            _receiveBuffersReady = false;
         }
 
         private void RebuildBlendShapeLookupIfNeeded(bool forceValidation)
@@ -336,17 +403,17 @@ namespace K13A.TSMP.Udon
             if (!_hasContinuousTarget)
                 return;
 
-            ResolveRenderer();
-            RefreshBlendShapeCount();
-            RebuildBlendShapeLookupIfNeeded(false);
+            PrepareReceiveState();
             if (!_hasContinuousTarget || targetRenderer == null)
                 return;
 
             float step = GetReceiveInterpolationStep();
             bool hasAnyTarget = false;
             int count = _targetBlendShapeValues.Length < _hasTargetBlendShapeValue.Length ? _targetBlendShapeValues.Length : _hasTargetBlendShapeValue.Length;
-            for (int i = 0; i < count; i++)
+            if (_useFixedReceiveConfiguration) count = _preparedInterpolationIndices.Length;
+            for (int entry = 0; entry < count; entry++)
             {
+                int i = _useFixedReceiveConfiguration ? _preparedInterpolationIndices[entry] : entry;
                 if (!_hasTargetBlendShapeValue[i])
                     continue;
 

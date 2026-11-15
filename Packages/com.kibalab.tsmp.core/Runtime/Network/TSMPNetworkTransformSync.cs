@@ -20,6 +20,15 @@ namespace K13A.TSMP.Udon
         public Rigidbody targetRigidbody;
         public bool syncRigidbody = true;
 
+        [Tooltip("Prepare fixed receive references in the Editor before Play/build. Disable before Play for runtime configuration changes.")]
+        public bool cacheFixedReceiveConfiguration;
+        [SerializeField, HideInInspector] private int _preparedReceiveVersion;
+        [SerializeField, HideInInspector] private Transform _preparedParent;
+        [SerializeField, HideInInspector] private Vector3 _preparedPositionMax;
+        [SerializeField, HideInInspector] private Vector3 _preparedScaleMax;
+        private bool _fixedReceiveChecked;
+        private bool _useFixedReceiveConfiguration;
+
         public CompressionMode compressionMode = CompressionMode.RotOnly;
         public Vector3 quantizedPositionMin = new Vector3(-32f, -8f, -32f);
         public Vector3 quantizedPositionMax = new Vector3(32f, 24f, 32f);
@@ -71,10 +80,45 @@ namespace K13A.TSMP.Udon
 
         private void Start()
         {
+            InitializeFixedReceiveConfiguration();
             if (target == null)
                 target = transform;
-            ResolveRigidbody();
+            if (!_useFixedReceiveConfiguration)
+                ResolveRigidbody();
         }
+
+        private void InitializeFixedReceiveConfiguration()
+        {
+            if (_fixedReceiveChecked) return;
+            _fixedReceiveChecked = true;
+            _useFixedReceiveConfiguration = cacheFixedReceiveConfiguration && _preparedReceiveVersion == 1 && target != null;
+            if (cacheFixedReceiveConfiguration && !_useFixedReceiveConfiguration)
+                Debug.LogWarning("[TSMP] Fixed Transform receive data is missing or outdated; using dynamic configuration.");
+        }
+
+        // Local-only: leave the prepared path until the next Editor preparation.
+        public void _InvalidateReceiveConfiguration()
+        {
+            _fixedReceiveChecked = true;
+            _useFixedReceiveConfiguration = false;
+        }
+
+#if UNITY_EDITOR && !COMPILER_UDONSHARP
+        public bool EditorPrepareFixedReceiveConfiguration()
+        {
+            _fixedReceiveChecked = false;
+            _useFixedReceiveConfiguration = false;
+            _preparedReceiveVersion = 0;
+            if (!cacheFixedReceiveConfiguration) return true;
+            if (target == null) target = transform;
+            ResolveRigidbody();
+            _preparedParent = target.parent;
+            _preparedPositionMax = GetSafeRangeMax(quantizedPositionMin, quantizedPositionMax);
+            _preparedScaleMax = GetSafeRangeMax(quantizedScaleMin, quantizedScaleMax);
+            _preparedReceiveVersion = 1;
+            return true;
+        }
+#endif
 
 #if UDONSHARP || COMPILER_UDONSHARP
         public override void PostLateUpdate()
@@ -196,15 +240,18 @@ namespace K13A.TSMP.Udon
             if (packedBytes.Length != expected)
                 return;
 
+            if (!_fixedReceiveChecked) InitializeFixedReceiveConfiguration();
             if (target == null)
                 target = transform;
-            ResolveRigidbody();
+            if (!_useFixedReceiveConfiguration)
+                ResolveRigidbody();
 
             int cursor = PackedHeaderBytes;
             bool hasAppliedPosition = false;
             bool hasAppliedRotation = false;
             bool appliedAny = false;
             bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous && !_snapNextReceive;
+            bool needsWorldValues = !_useFixedReceiveConfiguration || (!continuous && syncRigidbody && targetRigidbody != null);
             Vector3 appliedPosition = Vector3.zero;
             Quaternion appliedRotation = Quaternion.identity;
             if (continuous)
@@ -221,7 +268,7 @@ namespace K13A.TSMP.Udon
                 Vector3 pos;
                 if ((flags & FlagPositionQuantized) != 0)
                 {
-                    pos = ReadPackedPos12(packedBytes, cursor, quantizedPositionMin, GetSafeRangeMax(quantizedPositionMin, quantizedPositionMax));
+                    pos = ReadPackedPos12(packedBytes, cursor, quantizedPositionMin, _useFixedReceiveConfiguration ? _preparedPositionMax : GetSafeRangeMax(quantizedPositionMin, quantizedPositionMax));
                     cursor += PackedPos12Bytes;
                 }
                 else
@@ -232,7 +279,7 @@ namespace K13A.TSMP.Udon
 
                 hasAppliedPosition = true;
                 appliedAny = true;
-                appliedPosition = GetWorldPosition(pos);
+                if (needsWorldValues) appliedPosition = GetWorldPosition(pos);
                 if (continuous)
                 {
                     _continuousHasPosition = true;
@@ -263,7 +310,7 @@ namespace K13A.TSMP.Udon
 
                 hasAppliedRotation = true;
                 appliedAny = true;
-                appliedRotation = GetWorldRotation(rot);
+                if (needsWorldValues) appliedRotation = GetWorldRotation(rot);
                 if (continuous)
                 {
                     _continuousHasRotation = true;
@@ -283,7 +330,7 @@ namespace K13A.TSMP.Udon
                 Vector3 scale;
                 if ((flags & FlagScaleQuantized) != 0)
                 {
-                    scale = ReadPackedPos12(packedBytes, cursor, quantizedScaleMin, GetSafeRangeMax(quantizedScaleMin, quantizedScaleMax));
+                    scale = ReadPackedPos12(packedBytes, cursor, quantizedScaleMin, _useFixedReceiveConfiguration ? _preparedScaleMax : GetSafeRangeMax(quantizedScaleMin, quantizedScaleMax));
                     cursor += PackedPos12Bytes;
                 }
                 else
@@ -486,7 +533,7 @@ namespace K13A.TSMP.Udon
             if (!useLocalSpace)
                 return value;
 
-            Transform parent = target != null ? target.parent : null;
+            Transform parent = _useFixedReceiveConfiguration ? _preparedParent : (target != null ? target.parent : null);
             if (parent == null)
                 return value;
 
@@ -498,7 +545,7 @@ namespace K13A.TSMP.Udon
             if (!useLocalSpace)
                 return value;
 
-            Transform parent = target != null ? target.parent : null;
+            Transform parent = _useFixedReceiveConfiguration ? _preparedParent : (target != null ? target.parent : null);
             if (parent == null)
                 return value;
 

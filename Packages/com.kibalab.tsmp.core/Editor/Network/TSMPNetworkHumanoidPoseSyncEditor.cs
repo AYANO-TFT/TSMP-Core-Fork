@@ -106,6 +106,7 @@ namespace K13A.TSMP.Editor
             serializedObject.Update();
 
             DrawTSMPNetworkSection(true);
+            InspectorUI.FixedReceiveConfiguration(serializedObject);
             DrawProperty("animator");
             DrawProperty("autoResolveBones");
             DrawProperty("rootSyncSpace");

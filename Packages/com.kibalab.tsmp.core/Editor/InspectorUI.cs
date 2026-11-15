@@ -9,6 +9,16 @@ namespace K13A.TSMP.Editor
 {
     internal static class InspectorUI
     {
+        public static bool FixedReceiveConfiguration(SerializedObject serializedObject)
+        {
+            SerializedProperty property = serializedObject.FindProperty("cacheFixedReceiveConfiguration");
+            using (new EditorGUI.DisabledScope(EditorApplication.isPlayingOrWillChangePlaymode))
+                EditorGUILayout.PropertyField(property, new GUIContent("Use Fixed Receive Configuration"));
+            if (property.boolValue || property.hasMultipleDifferentValues)
+                EditorGUILayout.HelpBox("Fixed references and lookup tables are generated before Play/build, including inactive models. Edit configuration before Play. Disable this option to use the existing dynamic path; incoming values, activity and receive reset remain dynamic.", MessageType.Info);
+            return !property.hasMultipleDifferentValues && property.boolValue;
+        }
+
         public static bool DrawUdonSharpHeader(Object[] targets)
         {
 #if UDONSHARP

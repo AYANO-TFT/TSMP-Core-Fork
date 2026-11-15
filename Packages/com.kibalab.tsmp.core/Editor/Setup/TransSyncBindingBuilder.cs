@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using K13A.TSMP.Udon;
 using UnityEditor;
 using UnityEditor.Callbacks;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 #if UDONSHARP
 using UdonSharp;
 using UdonSharpEditor;
@@ -81,15 +83,26 @@ namespace K13A.TSMP.Editor
             QueueAutomaticRebuild();
         }
 
-        internal static void RebuildSceneBindings(bool logResult)
+        internal static void RebuildSceneBindings(bool logResult, Scene scene = default)
         {
             TSMPNetworkBehaviour[] behaviours = UnityEngine.Object.FindObjectsOfType<TSMPNetworkBehaviour>(true);
             Component[] encoders = FindComponents("K13A.TSMP.TSMPEncoder");
             Component[] decoders = FindComponents("K13A.TSMP.Udon.TSMPDecoder");
+            if (scene.IsValid())
+            {
+                // Build and prefab-preview scenes need their own roots: the global
+                // FindObjectsOfType query does not include every preview scene.
+                Component[] components = scene.GetRootGameObjects()
+                    .SelectMany(root => root.GetComponentsInChildren<Component>(true)).Where(c => c != null).ToArray();
+                behaviours = components.OfType<TSMPNetworkBehaviour>().ToArray();
+                encoders = components.Where(c => c.GetType().FullName == "K13A.TSMP.TSMPEncoder").ToArray();
+                decoders = components.OfType<TSMPDecoder>().Cast<Component>().ToArray();
+            }
 
             SortBehaviours(behaviours);
             int assignedNetworkIds = AssignNetworkIds(behaviours);
             int assignedTransRpcEncoders = AssignTransRpcEncoders(encoders, behaviours);
+            PrepareFixedReceivers(behaviours);
             SyncBackingUdon(behaviours);
             RefreshTransSyncCollisionDiagnostics(behaviours, logResult);
 
@@ -115,6 +128,27 @@ namespace K13A.TSMP.Editor
 
             if (logResult)
                 Debug.Log("[TSMP] scene network rebuilt. encoders=" + assignedEncoders + " encoderBindings=" + totalEncoderBindings + " decoders=" + decoders.Length + " bindings=" + totalBindings + " assignedNetworkIds=" + assignedNetworkIds + " assignedTransRpcEncoders=" + assignedTransRpcEncoders);
+        }
+
+        private static void PrepareFixedReceivers(TSMPNetworkBehaviour[] behaviours)
+        {
+            if (EditorApplication.isPlaying) return;
+            foreach (TSMPNetworkBehaviour behaviour in behaviours)
+            {
+                if (!(behaviour is TSMPNetworkHumanoidPoseSync) && !(behaviour is TSMPNetworkTransformSync)
+                    && !(behaviour is TSMPNetworkBlendShapesSync)) continue;
+                string before = EditorJsonUtility.ToJson(behaviour);
+                Undo.RecordObject(behaviour, "Prepare TSMP fixed receive configuration");
+                bool valid = behaviour is TSMPNetworkHumanoidPoseSync pose ? pose.EditorPrepareFixedReceiveConfiguration()
+                    : behaviour is TSMPNetworkTransformSync transformSync ? transformSync.EditorPrepareFixedReceiveConfiguration()
+                    : ((TSMPNetworkBlendShapesSync)behaviour).EditorPrepareFixedReceiveConfiguration();
+                if (!valid)
+                    throw new UnityEditor.Build.BuildFailedException("[TSMP] Cannot prepare fixed receive configuration on '"
+                        + behaviour.name + "' (" + behaviour.GetType().Name + "). Check the Animator/Avatar or Renderer/Mesh, or disable Use Fixed Receive Configuration.");
+                if (before == EditorJsonUtility.ToJson(behaviour)) continue;
+                EditorUtility.SetDirty(behaviour);
+                PrefabUtility.RecordPrefabInstancePropertyModifications(behaviour);
+            }
         }
 
         public static int ResolveSceneNetworkIds(bool logResult)
@@ -679,6 +713,7 @@ namespace K13A.TSMP.Editor
                         networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
             }
 
+            string before = EditorJsonUtility.ToJson(decoder);
             Undo.RecordObject(decoder, "Rebuild TSMP TransSync bindings");
             SetComponentArrayFieldValue(decoder, FieldBindingTargets, targets);
 #if UDONSHARP
@@ -690,7 +725,13 @@ namespace K13A.TSMP.Editor
             SetFieldValue(decoder, FieldBindingFieldNames, fieldNames.ToArray());
             SetFieldValue(decoder, FieldBindingDirections, directions.ToArray());
             SetFieldValue(decoder, FieldBindingPriorities, priorities.ToArray());
-            EditorUtility.SetDirty(decoder);
+            if (decoder is TSMPDecoder tsmpDecoder && !tsmpDecoder.EditorPrepareFixedBindings())
+                throw new UnityEditor.Build.BuildFailedException("[TSMP] Cannot prepare fixed bindings on '" + decoder.name + "': binding arrays have inconsistent lengths.");
+            if (before != EditorJsonUtility.ToJson(decoder))
+            {
+                EditorUtility.SetDirty(decoder);
+                PrefabUtility.RecordPrefabInstancePropertyModifications(decoder);
+            }
 
             return targets.Count;
         }
@@ -938,6 +979,13 @@ namespace K13A.TSMP.Editor
             }
             catch (System.Exception exception)
             {
+                bool prepared = (component is TSMPDecoder decoder && decoder.cacheFixedBindings)
+                    || (component is TSMPNetworkHumanoidPoseSync pose && pose.cacheFixedReceiveConfiguration)
+                    || (component is TSMPNetworkTransformSync transformSync && transformSync.cacheFixedReceiveConfiguration)
+                    || (component is TSMPNetworkBlendShapesSync blend && blend.cacheFixedReceiveConfiguration);
+                if (prepared)
+                    throw new UnityEditor.Build.BuildFailedException("[TSMP] Failed to serialize prepared receive data for "
+                        + component.name + " (" + component.GetType().Name + "): " + exception.Message);
                 Debug.LogWarning("[TSMP] Failed to sync Udon proxy state for " + component.GetType().Name + ": " + exception.Message, component);
             }
         }
