@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using K13A.TSMP.Udon;
+using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 #if UDONSHARP
 using UdonSharpEditor;
 #endif
@@ -45,7 +48,50 @@ namespace K13A.TSMP.Editor.Tests
             }
             CheckBindings();
             results.Add("PASS Decoder prepared lookup ordering/duplicate range/policies/malformed configuration");
+            CheckScenePreparation();
+            results.Add("PASS Scene preparation isolates preview/build roots and preserves loaded-scene bindings");
             return string.Join("\n", results) + "\npassed=" + results.Count;
+        }
+
+        private static void CheckScenePreparation()
+        {
+            Require(!EditorApplication.isPlayingOrWillChangePlaymode, "Scene preparation validation requires Edit Mode");
+            var loaded = UnityEngine.Object.FindObjectsOfType<TSMPEncoder>(true).Cast<Component>()
+                .Concat(UnityEngine.Object.FindObjectsOfType<TSMPDecoder>(true)).ToArray();
+            var before = loaded.Select(c => EditorJsonUtility.ToJson(c)).ToArray();
+            Scene first = EditorSceneManager.NewPreviewScene(), second = EditorSceneManager.NewPreviewScene();
+            try
+            {
+                foreach (Scene scene in new[] { first, second })
+                {
+                    var root = new GameObject("Scene preparation validation");
+                    SceneManager.MoveGameObjectToScene(root, scene);
+                    var receiver = TransformReceiver(root, true, false, true, ReceiveInterpolationMode.Continuous);
+                    receiver.networkId = (ushort)(scene == first ? 12001 : 12002);
+                    var encoder = Add<TSMPEncoder>(root); encoder.autoEncode = false;
+                    var decoder = Add<TSMPDecoder>(root); decoder.cacheFixedBindings = true;
+                }
+                foreach (Scene scene in new[] { first, second })
+                {
+                    new SetupPreparation().OnProcessScene(scene, null);
+                    var root = scene.GetRootGameObjects().Single();
+                    var receiver = root.GetComponentInChildren<TSMPNetworkTransformSync>();
+                    var encoder = root.GetComponent<TSMPEncoder>();
+                    var decoder = root.GetComponent<TSMPDecoder>();
+                    Require(encoder.bindingTargets.Length > 0 && encoder.bindingTargets.All(c => c == receiver), "Scene encoder included another scene or omitted its receiver");
+#if !UDONSHARP
+                    Require(encoder.networkBehaviours.SequenceEqual(new TSMPNetworkBehaviour[] { receiver }), "Scene encoder sources incorrect");
+#endif
+                    Require(decoder.bindingTargets.Length > 0 && decoder.bindingTargets.All(c => c == receiver), "Scene decoder scope incorrect");
+                    Require((int)Get(receiver, "_preparedReceiveVersion") == 1 && (int)Get(decoder, "_preparedBindingVersion") == 1, "Scene callback did not prepare fixed data");
+                }
+                Require(before.SequenceEqual(loaded.Select(c => EditorJsonUtility.ToJson(c))), "Scene preparation changed loaded-scene bindings");
+            }
+            finally
+            {
+                EditorSceneManager.ClosePreviewScene(second);
+                EditorSceneManager.ClosePreviewScene(first);
+            }
         }
 
         private static GameObject TransformRoot(string name)

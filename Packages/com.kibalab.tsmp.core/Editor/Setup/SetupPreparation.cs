@@ -98,7 +98,14 @@ namespace K13A.TSMP.Editor
         public void OnProcessScene(Scene scene, BuildReport report)
         {
             PrepareScene(scene);
-            TransSyncBindingBuilder.RebuildSceneBindings(false, scene);
+            // Awake can move senders to DontDestroyOnLoad before this callback.
+            // Match PrepareAll's loaded-scene scope in Editor Play Mode so those
+            // senders are not removed from the encoder's serialized bindings.
+            // Builds and explicit preview-scene preparation must remain isolated.
+            bool editorPlay = report == null && !BuildPipeline.isBuildingPlayer
+                && EditorApplication.isPlayingOrWillChangePlaymode
+                && !EditorSceneManager.IsPreviewScene(scene);
+            TransSyncBindingBuilder.RebuildSceneBindings(false, editorPlay ? default : scene);
         }
 
         private static void PrepareScene(Scene scene)
